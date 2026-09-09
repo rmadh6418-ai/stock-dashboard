@@ -3,46 +3,70 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 
+# 해외 클라우드 접속 차단 방지용 브라우저 헤더
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Referer": "https://m.stock.naver.com/",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
 }
 
 def get_market_indices():
-    """주요 지수, VKOSPI, 환율 수집"""
-    targets = {
-        "코스피 (KOSPI)": "KOSPI",
-        "코스닥 (KOSDAQ)": "KOSDAQ",
-        "코스피 200": "KPI200",
-        "코스닥 150": "KCQ150",
-        "VKOSPI (변동성)": "V-KOSPI200"
-    }
+    """주요 지수, VKOSPI, 환율 수집 (에러 방지 처리 완료)"""
+    targets = [
+        ("코스피 (KOSPI)", "KOSPI"),
+        ("코스닥 (KOSDAQ)", "KOSDAQ"),
+        ("코스피 200", "KPI200"),
+        ("코스닥 150", "KCQ150"),
+        ("VKOSPI (변동성)", "V-KOSPI200")
+    ]
     result = []
-    for name, code in targets.items():
+    
+    for name, code in targets:
         url = f"https://m.stock.naver.com/api/index/{code}/basic"
-        res = requests.get(url, headers=HEADERS).json()
-        now_val = res.get("nowValue", "-")
-        change_rate = float(res.get("changeRate", "0"))
-        change_val = res.get("changeValue", "0")
+        now_val = "-"
+        change_rate = 0.0
+        change_val = "0"
         
-        is_up = change_rate > 0
-        is_down = change_rate < 0
+        try:
+            res = requests.get(url, headers=HEADERS, timeout=10)
+            if res.status_code == 200 and res.text.strip():
+                data = res.json()
+                now_val = data.get("nowValue", "-")
+                rate_str = str(data.get("changeRate", "0")).replace("%", "").replace(",", "")
+                change_rate = float(rate_str)
+                change_val = str(data.get("changeValue", "0"))
+        except Exception:
+            pass
+
         result.append({
             "name": name,
             "value": now_val,
             "change_val": change_val,
             "change_rate": change_rate,
-            "is_up": is_up,
-            "is_down": is_down
+            "is_up": change_rate > 0,
+            "is_down": change_rate < 0
         })
         
     # 원·달러 환율
-    fx_url = "https://m.stock.naver.com/api/exchange/FX_USDKRW/basic"
-    fx_res = requests.get(fx_url, headers=HEADERS).json()
-    fx_rate = float(fx_res.get("changeRate", "0"))
+    fx_val = "-"
+    fx_rate = 0.0
+    fx_change = "0"
+    try:
+        fx_url = "https://m.stock.naver.com/api/exchange/FX_USDKRW/basic"
+        fx_res = requests.get(fx_url, headers=HEADERS, timeout=10)
+        if fx_res.status_code == 200 and fx_res.text.strip():
+            fx_data = fx_res.json()
+            fx_val = fx_data.get("nowValue", "-")
+            fx_rate = float(str(fx_data.get("changeRate", "0")).replace("%", "").replace(",", ""))
+            fx_change = str(fx_data.get("changeValue", "0"))
+    except Exception:
+        pass
+
     result.append({
         "name": "원·달러 환율",
-        "value": f"{fx_res.get('nowValue', '-')}원",
-        "change_val": fx_res.get("changeValue", "0"),
+        "value": f"{fx_val}원" if fx_val != "-" else "-",
+        "change_val": fx_change,
         "change_rate": fx_rate,
         "is_up": fx_rate > 0,
         "is_down": fx_rate < 0
@@ -52,45 +76,56 @@ def get_market_indices():
 def get_sector_data():
     """상위/하위 업종 및 대표 종목 수집"""
     url = "https://finance.naver.com/sise/sise_group.naver?type=upjong"
-    res = requests.get(url, headers=HEADERS)
-    soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-    rows = soup.find("table", class_="type_1").find_all("tr")
-
+    headers_desktop = {
+        "User-Agent": HEADERS["User-Agent"],
+        "Referer": "https://finance.naver.com/"
+    }
+    
     sectors = []
-    for r in rows:
-        cols = r.find_all("td")
-        if len(cols) >= 2 and cols[0].find("a"):
-            name = cols[0].find("a").text.strip()
-            rate_str = cols[1].text.strip().replace("%", "")
-            link = "https://finance.naver.com" + cols[0].find("a")["href"]
-            try:
-                sectors.append({"name": name, "rate": float(rate_str), "link": link})
-            except:
-                continue
+    try:
+        res = requests.get(url, headers=headers_desktop, timeout=10)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+        rows = soup.find("table", class_="type_1").find_all("tr")
+
+        for r in rows:
+            cols = r.find_all("td")
+            if len(cols) >= 2 and cols[0].find("a"):
+                name = cols[0].find("a").text.strip()
+                rate_str = cols[1].text.strip().replace("%", "")
+                link = "https://finance.naver.com" + cols[0].find("a")["href"]
+                try:
+                    sectors.append({"name": name, "rate": float(rate_str), "link": link})
+                except:
+                    continue
+    except Exception:
+        pass
 
     sectors.sort(key=lambda x: x["rate"], reverse=True)
-    top_3 = sectors[:3]
-    bot_3 = sectors[-3:]
+    top_3 = sectors[:3] if len(sectors) >= 3 else sectors
+    bot_3 = sectors[-3:] if len(sectors) >= 3 else []
     bot_3.reverse()
 
     def fetch_stocks(sector_url):
-        s_res = requests.get(sector_url, headers=HEADERS)
-        s_soup = BeautifulSoup(s_res.content.decode("euc-kr", "replace"), "html.parser")
-        s_table = s_soup.find("table", class_="type_5")
         stocks = []
-        if s_table:
-            for r in s_table.find_all("tr")[2:]:
-                tds = r.find_all("td")
-                if len(tds) >= 4 and tds[0].text.strip():
-                    s_name = tds[0].text.strip()
-                    s_rate = tds[3].text.strip().replace("%", "")
-                    try:
-                        rate_val = float(s_rate)
-                        stocks.append({"name": s_name, "rate": rate_val})
-                    except:
-                        pass
-                    if len(stocks) == 3:
-                        break
+        try:
+            s_res = requests.get(sector_url, headers=headers_desktop, timeout=10)
+            s_soup = BeautifulSoup(s_res.content.decode("euc-kr", "replace"), "html.parser")
+            s_table = s_soup.find("table", class_="type_5")
+            if s_table:
+                for r in s_table.find_all("tr")[2:]:
+                    tds = r.find_all("td")
+                    if len(tds) >= 4 and tds[0].text.strip():
+                        s_name = tds[0].text.strip()
+                        s_rate = tds[3].text.strip().replace("%", "")
+                        try:
+                            rate_val = float(s_rate)
+                            stocks.append({"name": s_name, "rate": rate_val})
+                        except:
+                            pass
+                        if len(stocks) == 3:
+                            break
+        except Exception:
+            pass
         return stocks
 
     for s in top_3:
@@ -103,7 +138,6 @@ def get_sector_data():
 def render_html(indices, top_sec, bot_sec):
     now_str = datetime.now().strftime("%Y년 %m월 %d일 %H:%M 마감 기준")
     
-    # 지수 카드 생성
     index_cards = ""
     for idx in indices:
         color_class = "text-up" if idx["is_up"] else ("text-down" if idx["is_down"] else "text-flat")
@@ -120,11 +154,13 @@ def render_html(indices, top_sec, bot_sec):
         </div>
         """
 
-    # 섹터 리스트 생성 함수
     def build_sector_list(sectors, is_up=True):
         html = ""
         sign = "🔺 +" if is_up else "🔻 "
         color_class = "text-up" if is_up else "text-down"
+        if not sectors:
+            return '<div class="sector-item">데이터를 집계 중입니다.</div>'
+            
         for s in sectors:
             stock_tags = ""
             for st in s.get("stocks", []):
@@ -151,7 +187,7 @@ def render_html(indices, top_sec, bot_sec):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>국내 증시 마감 요약 대시보드</title>
+    <title>국내 증시 마감 대시보드</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ background-color: #f4f6f9; color: #1e293b; padding: 16px; max-width: 900px; margin: 0 auto; }}
@@ -165,7 +201,7 @@ def render_html(indices, top_sec, bot_sec):
         .card-value {{ font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 6px; }}
         
-        .section-title {{ font-size: 1.05rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }}
+        .section-title {{ font-size: 1.05rem; font-weight: 700; margin-bottom: 12px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 14px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .sector-item {{ padding: 10px 0; border-bottom: 1px solid #f1f5f9; }}
         .sector-item:last-child {{ border-bottom: none; }}
@@ -176,11 +212,12 @@ def render_html(indices, top_sec, bot_sec):
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 8px; font-size: 0.8rem; }}
         
-        .text-up {{ color: #e11d48; }} /* 상승 빨간색 */
-        .text-down {{ color: #2563eb; }} /* 하락 파란색 */
+        .text-up {{ color: #e11d48; }}
+        .text-down {{ color: #2563eb; }}
         .text-flat {{ color: #64748b; }}
         .bg-up-light {{ background-color: #ffe4e6; }}
         .bg-down-light {{ background-color: #dbeafe; }}
+        .bg-gray-100 {{ background-color: #f1f5f9; }}
     </style>
 </head>
 <body>
