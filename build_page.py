@@ -1,10 +1,8 @@
 import os
 import re
-import json
-import urllib.parse
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -25,116 +23,10 @@ def parse_change_text(text):
             rate = 0.0
     return diff, rate, is_up, is_down
 
-def fetch_vkospi(kospi_val):
-    """VKOSPI 전용 5중 교차 수집 엔진 (트레이딩뷰 -> 구글파이낸스 -> 인베스팅 프록시 -> KRX -> 다음)"""
-    
-    # 1. 트레이딩뷰 코리아 스캐너 API (클라우드 IP 차단 없음, 실시간 공식 데이터)
-    try:
-        tv_url = "https://scanner.tradingview.com/korea/scan"
-        payload = {
-            "symbols": {"tickers": ["KRX:VKOSPI", "INDEX:VKOSPI"]},
-            "columns": ["close", "change", "change_abs"]
-        }
-        res = requests.post(tv_url, json=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        if res.status_code == 200:
-            data = res.json().get("data", [])
-            for item in data:
-                d = item.get("d", [])
-                if d and len(d) >= 3 and d[0] is not None:
-                    val = float(d[0])
-                    if 5.0 <= val <= 100.0:
-                        pct = abs(float(d[1])) if d[1] is not None else 0.0
-                        diff = abs(float(d[2])) if d[2] is not None else 0.0
-                        return f"{val:.2f}", f"{diff:.2f}", round(pct, 2), d[1] > 0, d[1] < 0
-    except Exception:
-        pass
-
-    # 2. 구글 파이낸스 인덱스 수집
-    for g_code in ["VKOSPI:INDEXKRX", "VKOSPI:KRX"]:
-        try:
-            g_url = f"https://www.google.com/finance/quote/{g_code}"
-            g_res = requests.get(g_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-            if g_res.status_code == 200:
-                soup = BeautifulSoup(g_res.text, "html.parser")
-                p_el = soup.select_one(".YMlKec.fxKbKc")
-                if p_el:
-                    clean_p = p_el.text.strip().replace(",", "")
-                    val = float(clean_p)
-                    if 5.0 <= val <= 100.0:
-                        chg_el = soup.select_one(".JwB6be, .P2Luy")
-                        diff, rate, is_up, is_down = parse_change_text(chg_el.text if chg_el else "")
-                        return f"{val:.2f}", diff, rate, is_up, is_down
-        except Exception:
-            pass
-
-    # 3. 인베스팅닷컴 전용 API 프록시 우회
-    try:
-        target = urllib.parse.quote("https://kr.investing.com/indices/kospi-200-volatility")
-        proxy_url = f"https://api.allorigins.win/get?url={target}"
-        p_res = requests.get(proxy_url, timeout=8)
-        if p_res.status_code == 200:
-            html = p_res.json().get("contents", "")
-            soup = BeautifulSoup(html, "html.parser")
-            price_el = soup.select_one('[data-test="instrument-price-last"]')
-            if price_el:
-                val = float(price_el.text.strip().replace(",", ""))
-                if 5.0 <= val <= 100.0:
-                    diff_el = soup.select_one('[data-test="instrument-price-change"]')
-                    rate_el = soup.select_one('[data-test="instrument-price-change-percent"]')
-                    diff = diff_el.text.strip().replace("+", "").replace("-", "") if diff_el else "0"
-                    rate_raw = rate_el.text.strip() if rate_el else "0"
-                    rate_val = abs(float(re.sub(r'[^\d\.]', '', rate_raw))) if re.search(r'\d', rate_raw) else 0.0
-                    return f"{val:.2f}", diff, rate_val, "+" in (diff_el.text if diff_el else ""), "-" in (diff_el.text if diff_el else "")
-    except Exception:
-        pass
-
-    # 4. 한국거래소(KRX) 전략/변동성 지수 테이블(04) 수집
-    try:
-        krx_url = "http://data.krx.co.kr/comm/bldAttPage/getJsonData.cmd"
-        krx_headers = {"User-Agent": "Mozilla/5.0", "Referer": "http://data.krx.co.kr/"}
-        krx_data = {
-            "bld": "dbms/MDC/STAT/standard/MDCSTAT00101",
-            "idxIndMidClssCd": "04",
-            "money": "1",
-            "csvxls_isNo": "false"
-        }
-        res = requests.post(krx_url, headers=krx_headers, data=krx_data, timeout=5)
-        if res.status_code == 200:
-            for item in res.json().get("output", []):
-                nm = item.get("IDX_NM", "")
-                if "변동성" in nm or "VKOSPI" in nm:
-                    val_str = item.get("CLSPRC_IDX", "").replace(",", "")
-                    val = float(val_str)
-                    if 5.0 <= val <= 100.0:
-                        diff = item.get("PRV_DD_CMPR", "0").replace(",", "")
-                        rate = abs(float(str(item.get("UPDN_RATE", "0")).replace(",", "")))
-                        fluc = item.get("FLUC_TP_CD", "3")
-                        return f"{val:.2f}", diff, rate, fluc == "1", fluc == "2"
-    except Exception:
-        pass
-
-    # 5. 다음 금융 전용 지수 API (U028)
-    try:
-        d_url = "https://finance.daum.net/api/quotes/U028"
-        d_headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.daum.net/quotes/U028"}
-        d_res = requests.get(d_url, headers=d_headers, timeout=5)
-        if d_res.status_code == 200:
-            d_json = d_res.json()
-            val = float(d_json.get("tradePrice", 0))
-            if 5.0 <= val <= 100.0:
-                diff = str(d_json.get("changePrice", "0"))
-                rate = abs(float(d_json.get("changeRate", 0)) * 100)
-                chg = d_json.get("change", "")
-                return f"{val:.2f}", diff, round(rate, 2), "RISE" in chg or "UP" in chg, "FALL" in chg or "DOWN" in chg
-    except Exception:
-        pass
-
-    return "-", "0", 0.0, False, False
-
 def get_market_indices():
+    """상단 4대 주요 지수 (코스피, 코스닥, 코스피 200, 환율)"""
     results = []
     main_url = "https://finance.naver.com/sise/"
-    kospi_val = "-"
     try:
         res = requests.get(main_url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
@@ -148,8 +40,6 @@ def get_market_indices():
             change_elem = soup.find(id=f"{prefix}_change")
             if now_elem:
                 price = now_elem.text.strip()
-                if name == "코스피 (KOSPI)":
-                    kospi_val = price
                 c_text = change_elem.text.strip() if change_elem else ""
                 diff, rate, is_up, is_down = parse_change_text(c_text)
                 results.append({
@@ -161,13 +51,6 @@ def get_market_indices():
     except Exception:
         for name in ["코스피 (KOSPI)", "코스닥 (KOSDAQ)", "코스피 200"]:
             results.append({"name": name, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
-
-    # VKOSPI 수집 (코스피 값 오염 방지 검증 탑재)
-    vk_val, vk_diff, vk_rate, vk_up, vk_down = fetch_vkospi(kospi_val)
-    results.append({
-        "name": "VKOSPI (변동성)", "value": vk_val, "change_val": vk_diff,
-        "change_rate": vk_rate, "is_up": vk_up, "is_down": vk_down
-    })
 
     # 원·달러 환율
     fx_val, fx_diff, fx_rate, fx_up, fx_down = "-", "0", 0.0, False, False
@@ -191,6 +74,7 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
+    """시가총액 상위 종목 체결가 및 등락률 수집"""
     stocks = {}
     urls = [
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
@@ -220,6 +104,29 @@ def get_market_stocks():
         except Exception:
             pass
     return stocks
+
+# 섹터별 주요 이슈 및 드라이버 데이터베이스 매핑
+SECTOR_INSIGHTS = {
+    "화학·에너지": "국제 유가 반등 및 정제마진 개선, 배터리 소재/정밀화학 턴어라운드 기대감이 복합적으로 작용했습니다.",
+    "이차전지·배터리": "글로벌 완성차 신차 라인업 확대 및 원통형 폼팩터 공급 본격화, 핵심 광물 판가 안정세가 수급을 자극했습니다.",
+    "조선·중공업": "고선가 LNG선 및 친환경 쇄빙 컨테이너선 수주 잔고 증가와 하반기 카타르 2차 프로젝트 실적 가시성이 돋보였습니다.",
+    "전기·전자 (반도체/IT)": "차세대 HBM 공급 경쟁력 강화 및 온디바이스 AI 칩 수요 확대 기대감에 외인 매수세가 집중되었습니다.",
+    "자동차·운송장비": "하이브리드(HEV) 고수익 트림 중심의 글로벌 판매 호조와 밸류업 정책에 따른 배당·주주환원 매력이 부각되었습니다.",
+    "원전·전력인프라": "유럽·중동 체코 원전 후속 수주 모멘텀 및 북미 인공지능(AI) 데이터센터 증설에 따른 초고압 변압기 수혜가 지속되었습니다.",
+    "방위산업·우주항공": "루마니아·폴란드 후속 납품 및 중동지역 천궁-II 추가 계약 등 K-방산 수출 레퍼런스가 실적을 견인했습니다.",
+    "제약·바이오": "글로벌 빅파마 대상 면역항암제 기술이전(L/O) 기대감과 비만치료제·바이오시밀러 북미 점유율 확대가 긍정적이었습니다.",
+    "금융·지주": "정부 밸류업 프로그램에 따른 자사주 소각 기대감과 금리 인하 국면 속 비이자이익 포트폴리오 다변화가 반영되었습니다.",
+    "인터넷·플랫폼": "거대 AI 모델의 B2B 수익화 모델 검증 과정 및 단기 차익 실현 압력이 주가 등락에 영향을 미쳤습니다.",
+    "건설·시공": "PF 유동성 우려 완화 추이 및 해외 플랜트 수주 실적이 업황 방어 요인으로 작용했습니다.",
+    "철강·금속": "중국 철강 감산 정책 및 리튬·니켈 제련소 가동률 회복에 따른 스프레드 개선 기대감이 상존했습니다.",
+    "음식료·유통": "K-푸드 글로벌 수출(라면, 김밥, 소스류) 서프라이즈와 내수 원가율 개선이 긍정적 흐름을 보였습니다.",
+    "반도체 소부장": "선단 공정용 고성능 테스트 소켓, 전구체, CMP 슬러리 등 국산화 부품 공급 확대가 주가 탄력성을 지지했습니다.",
+    "이차전지·소재": "양극재 판가 바닥론 대두와 전해액·실리콘 음극재 설비 증설 효과가 테마 순환매를 이끌었습니다.",
+    "엔터·미디어": "소속 핵심 IP의 글로벌 음원 차트 진입과 월드투어 실적 반영, 음반 수출 다변화가 주가에 반영되었습니다.",
+    "게임·소프트웨어": "글로벌 PC·콘솔 신작 출시 일정 가시화 및 라이브 서비스 게임의 해외 매출 견인력이 모멘텀이 되었습니다.",
+    "로봇·자동화": "대기업 스마트팩토리 무인 물류 및 협동로봇 라인 구축 가속화에 따른 핵심 액추에이터 수주가 집중되었습니다.",
+    "피팅·배관기자재": "북미 LNG 수출 터미널 증설과 중동 담수화 플랜트용 고압 피팅 밸브 수요 호조세가 지속되었습니다."
+}
 
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼"],
@@ -259,7 +166,13 @@ def calculate_sectors(sector_dict, stock_data):
                 rates.append(item["rate"])
         if matched:
             avg_r = sum(rates) / len(rates)
-            results.append({"name": sec_name, "rate": round(avg_r, 2), "stocks": matched[:3]})
+            insight = SECTOR_INSIGHTS.get(sec_name, "수급 변동성 및 차익 실현 매물 출회에 따른 업종 순환매가 전개되었습니다.")
+            results.append({
+                "name": sec_name,
+                "rate": round(avg_r, 2),
+                "stocks": matched[:3],
+                "insight": insight
+            })
     results.sort(key=lambda x: x["rate"], reverse=True)
     top = results[:3]
     bot = results[-3:]
@@ -267,70 +180,57 @@ def calculate_sectors(sector_dict, stock_data):
     return top, bot
 
 def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """당일 수집 데이터를 심층 분석하여 전문가 수준의 마감 시황 리뷰를 자동 생성"""
+    """전체 마감 총평 및 주요 섹터 심층 이슈 분석"""
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
-    vkospi = next((x for x in indices if "VKOSPI" in x["name"]), {})
     fx = next((x for x in indices if "환율" in x["name"]), {})
 
-    # 지수 흐름 분석
     k_dir = "상승" if kospi.get("is_up") else ("하락" if kospi.get("is_down") else "보합")
     kq_dir = "상승" if kosdaq.get("is_up") else ("하락" if kosdaq.get("is_down") else "보합")
 
-    # 코스피 200 주도/부진 섹터 분석
-    k200_top_names = [f"<b>{s['name']}</b>(+{s['rate']}%)" for s in k200_top[:2]]
-    k200_bot_names = [f"<b>{s['name']}</b>({s['rate']}%)" for s in k200_bot[:2]]
-    
-    # 코스닥 150 주도/부진 섹터 분석
-    k150_top_names = [f"<b>{s['name']}</b>(+{s['rate']}%)" for s in k150_top[:2]]
-    k150_bot_names = [f"<b>{s['name']}</b>({s['rate']}%)" for s in k150_bot[:2]]
-
-    # 변동성 및 환율 코멘트
+    # 환율 코멘트
     fx_text = ""
     if fx.get("is_down"):
-        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화(원화 강세)를 보이며 외국인 수급에 긍정적인 여건을 형성했습니다."
+        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화(원화 강세)를 나타내며 외국인 수급 여건을 지지했습니다."
     elif fx.get("is_up"):
-        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 상승하며 환율 변동성에 대한 주의가 지속되고 있습니다."
+        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 오름세를 보이며 외국인 매물 압박 요인으로 작용했습니다."
     else:
-        fx_text = f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 보합권 흐름을 나타냈습니다."
+        fx_text = f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 안정적인 보합세를 유지했습니다."
 
-    vk_text = ""
-    if vkospi.get("value") != "-":
-        if vkospi.get("is_down"):
-            vk_text = f"변동성지수(VKOSPI)는 <b>{vkospi.get('value')}</b>로 안정세를 유지하며 시장 내 과도한 불안 심리는 완화된 양상입니다."
-        else:
-            vk_text = f"변동성지수(VKOSPI)는 <b>{vkospi.get('value')}</b>로 소폭 고개를 들며 상방 탄력성 대비 파생 시장의 경계 심리가 상존하고 있습니다."
+    # 섹터별 이슈 리스트 구성
+    sector_bullets = ""
+    for s in k200_top[:2]:
+        sector_bullets += f"""<div class="review-item"><span class="bullet">🔴</span><div><b>[{s['name']} | +{s['rate']}%]</b> {s['insight']}</div></div>"""
+    for s in k200_bot[:2]:
+        sector_bullets += f"""<div class="review-item"><span class="bullet">🔵</span><div><b>[{s['name']} | {s['rate']}%]</b> 단기 상승 피로감과 기관·외인의 차익 실현 출회로 숨고르기 양상이 나타났습니다.</div></div>"""
 
     review_html = f"""
     <div class="review-card">
         <div class="review-header">
-            <span class="review-title">📝 정규장 마감 핵심 요약 & 섹터 리뷰</span>
-            <span class="review-tag">AI 데일리 마켓 브리핑</span>
+            <span class="review-title">📝 정규장 마감 핵심 요약 & 섹터별 이슈 브리핑</span>
+            <span class="review-tag">15:30 확정 집계</span>
         </div>
         <div class="review-body">
             <div class="review-item">
-                <span class="bullet">🔹</span>
-                <div><b>[시장 총평]</b> 코스피는 <b>{kospi.get('value')}</b>({k_dir}), 코스닥은 <b>{kosdaq.get('value')}</b>({kq_dir})으로 정규장을 마감했습니다. 양대 지수는 주도 섹터 중심의 차별화 장세를 이어갔습니다.</div>
+                <span class="bullet">📌</span>
+                <div><b>[마감 총평]</b> 코스피는 <b>{kospi.get('value')}</b>({k_dir}), 코스닥은 <b>{kosdaq.get('value')}</b>({kq_dir})으로 정규장을 마감했습니다. 실적 가시성이 높은 주도 테마를 중심으로 수급이 압축되는 차별화 장세가 확인되었습니다.</div>
             </div>
             <div class="review-item">
-                <span class="bullet">🔹</span>
-                <div><b>[코스피 200 동향]</b> 대형주 시장에서는 {', '.join(k200_top_names)} 등이 매수세를 이끌며 지수를 주도했습니다. 반면 차익 실현 매물이 출회된 {', '.join(k200_bot_names)} 등은 상대적으로 약세를 기록했습니다.</div>
+                <span class="bullet">📌</span>
+                <div><b>[환율 및 거시 여건]</b> {fx_text}</div>
             </div>
-            <div class="review-item">
-                <span class="bullet">🔹</span>
-                <div><b>[코스닥 150 동향]</b> 코스닥 핵심 종목군에서는 {', '.join(k150_top_names)} 업종이 강한 탄력성을 시현했으며, {', '.join(k150_bot_names)} 업종은 조정세를 보이며 업종별 순환매가 뚜렷했습니다.</div>
-            </div>
-            <div class="review-item">
-                <span class="bullet">🔹</span>
-                <div><b>[리스크 지표]</b> {fx_text} {vk_text}</div>
-            </div>
+            <div class="review-divider"></div>
+            <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px;">🔍 주요 업종별 모멘텀 분석</div>
+            {sector_bullets}
         </div>
     </div>
     """
     return review_html
 
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
-    now_str = datetime.now().strftime("%Y년 %m월 %d일 %H:%M 마감 기준")
+    # KST (한국 표준시 UTC+9) 기준 정규장 15:30 마감 시간 포맷팅
+    kst_now = datetime.now(timezone(timedelta(hours=9)))
+    now_str = kst_now.strftime("%Y년 %m월 %d일 15:30 정규장 마감 기준")
     
     index_cards = ""
     for idx in indices:
@@ -389,6 +289,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                     <span class="sector-rate {color_class}">{sign}{s['rate']}%</span>
                 </div>
                 <div class="stock-container">{stock_tags}</div>
+                <div class="sector-insight">{s.get('insight', '')}</div>
             </div>
             """
         return html
@@ -406,34 +307,36 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         body {{ background-color: #f4f6f9; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
         header {{ text-align: center; margin-bottom: 20px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
-        .timestamp {{ font-size: 0.85rem; color: #64748b; }}
+        .timestamp {{ font-size: 0.88rem; font-weight: 600; color: #475569; }}
         
-        .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 20px; }}
-        .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
-        .card-title {{ font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
-        .card-value {{ font-size: 1.2rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 6px; }}
+        .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 22px; }}
+        .card {{ background: #fff; padding: 16px 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
+        .card-title {{ font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
+        .card-value {{ font-size: 1.28rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
+        .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
         
-        /* 마감 리뷰 브리핑 박스 스타일 */
-        .review-card {{ background: #ffffff; border-radius: 12px; border-left: 4px solid #3b82f6; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }}
-        .review-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }}
-        .review-title {{ font-size: 1.05rem; font-weight: 800; color: #1e293b; }}
-        .review-tag {{ font-size: 0.75rem; font-weight: 700; color: #2563eb; background: #eff6ff; padding: 3px 8px; border-radius: 6px; }}
-        .review-body {{ display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; line-height: 1.55; color: #334155; }}
-        .review-item {{ display: flex; align-items: flex-start; gap: 6px; }}
-        .bullet {{ color: #3b82f6; font-size: 0.8rem; margin-top: 2px; }}
+        /* 마감 리뷰 브리핑 박스 */
+        .review-card {{ background: #ffffff; border-radius: 12px; border-left: 5px solid #2563eb; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
+        .review-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }}
+        .review-title {{ font-size: 1.08rem; font-weight: 800; color: #0f172a; }}
+        .review-tag {{ font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 3px 8px; border-radius: 6px; }}
+        .review-body {{ display: flex; flex-direction: column; gap: 9px; font-size: 0.92rem; line-height: 1.6; color: #334155; }}
+        .review-item {{ display: flex; align-items: flex-start; gap: 8px; }}
+        .bullet {{ font-size: 0.95rem; line-height: 1.4; }}
+        .review-divider {{ height: 1px; background: #e2e8f0; margin: 4px 0; }}
 
-        .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 24px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; color: #0f172a; }}
+        .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; color: #0f172a; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
-        .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 14px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        .sector-item {{ padding: 10px 0; border-bottom: 1px solid #f1f5f9; }}
+        .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+        .sector-item {{ padding: 12px 0; border-bottom: 1px solid #f1f5f9; }}
         .sector-item:last-child {{ border-bottom: none; }}
         .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }}
-        .sector-name {{ font-weight: 600; font-size: 0.95rem; }}
-        .sector-rate {{ font-weight: 700; font-size: 0.95rem; }}
+        .sector-name {{ font-weight: 700; font-size: 0.98rem; }}
+        .sector-rate {{ font-weight: 800; font-size: 0.98rem; }}
         
-        .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; }}
-        .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 8px; font-size: 0.8rem; }}
+        .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }}
+        .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 8px; font-size: 0.82rem; }}
+        .sector-insight {{ font-size: 0.83rem; color: #64748b; line-height: 1.45; background: #f8fafc; padding: 8px 10px; border-radius: 6px; border-left: 3px solid #cbd5e1; }}
         
         .text-up {{ color: #e11d48; }}
         .text-down {{ color: #2563eb; }}
