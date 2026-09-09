@@ -9,8 +9,13 @@ HEADERS = {
     "Referer": "https://finance.naver.com/"
 }
 
+MOBILE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "Referer": "https://m.stock.naver.com/"
+}
+
 def parse_change_text(text):
-    """문자열에서 등락폭, 등락률, 상승/하락 부호 정밀 추출"""
+    """문자열에서 등락폭, 등락률, 부호 추출"""
     is_up = ("상승" in text) or ("+" in text) or ("▲" in text)
     is_down = ("하락" in text) or ("-" in text) or ("▼" in text)
     nums = re.findall(r'[\d\.,]+', text)
@@ -23,108 +28,126 @@ def parse_change_text(text):
             rate = 0.0
     return diff, rate, is_up, is_down
 
-def fetch_kosdaq150():
-    """코스닥 150 전용 수집 (PC 일별 시세 테이블 우선 조회)"""
-    codes = ["KQ150", "KCQ150"]
-    for c in codes:
+def fetch_kosdaq150(kospi_val):
+    """코스닥 150 전용 수집 (코스피 중복 차단 및 다중 검증)"""
+    # 1. 네이버 모바일 API
+    for code in ["KOSDAQ150", "KQ150", "KCQ150"]:
         try:
-            url = f"https://finance.naver.com/sise/sise_index_day.naver?code={c}"
-            res = requests.get(url, headers=HEADERS, timeout=8)
-            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-            table = soup.find("table", class_="type_1")
-            if table:
-                for tr in table.find_all("tr"):
-                    tds = tr.find_all("td")
-                    if len(tds) >= 4 and tds[1].text.strip():
-                        val_str = tds[1].text.strip()
-                        clean_val = val_str.replace(",", "")
-                        if clean_val.replace(".", "").isdigit():
-                            val = float(clean_val)
-                            if 500 < val < 4000:  # 코스닥 150 지수 범위 검증
-                                diff_str = tds[2].text.strip()
-                                rate_str = tds[3].text.strip()
-                                diff, rate, is_up, is_down = parse_change_text(diff_str + " " + rate_str)
-                                return val_str, diff, rate, is_up, is_down
+            url = f"https://api.stock.naver.com/index/{code}/basic"
+            res = requests.get(url, headers=MOBILE_HEADERS, timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                price = data.get("closePrice") or data.get("nowValue")
+                if price and price != "-" and price != kospi_val:
+                    p_num = float(str(price).replace(",", ""))
+                    if 500 < p_num < 4000:
+                        diff = str(data.get("compareToPreviousClosePrice") or data.get("changeValue", "0")).replace("+", "").replace("-", "")
+                        rate = abs(float(str(data.get("fluctuationsRatio") or data.get("changeRate", "0")).replace("%", "").replace(",", "")))
+                        trend = str(data.get("compareToPreviousPrice", ""))
+                        is_up = ("RISING" in trend) or ("UP" in trend) or (rate > 0)
+                        is_down = ("FALLING" in trend) or ("DOWN" in trend)
+                        return str(price), diff, rate, is_up, is_down
         except Exception:
             pass
 
+    # 2. 네이버 검색 결과 카드 추출 (UTF-8 인코딩)
     try:
-        url = "https://finance.naver.com/sise/sise_index.naver?code=KQ150"
-        res = requests.get(url, headers=HEADERS, timeout=8)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        now_elem = soup.find(id="now_value")
-        if now_elem:
-            val_str = now_elem.text.strip()
-            c_span = soup.find(id="change_value_and_rate")
-            diff, rate, is_up, is_down = parse_change_text(c_span.text.strip() if c_span else "")
-            return val_str, diff, rate, is_up, is_down
+        url = "https://search.naver.com/search.naver?query=%EC%BD%94%EC%8A%A4%EB%8B%A5150"
+        res = requests.get(url, headers=HEADERS, timeout=5)
+        res.encoding = "utf-8"
+        soup = BeautifulSoup(res.text, "html.parser")
+        for card in soup.select(".api_subject_bx, .cs_stock, section, div[class*='stock'], div[class*='sise']"):
+            c_text = card.text
+            if "코스닥 150" in c_text or "코스닥150" in c_text:
+                for st in card.find_all(["strong", "em", "span"]):
+                    txt = st.text.strip().replace(",", "")
+                    if re.match(r'^\d{3,4}\.\d{2}$', txt) and txt != kospi_val.replace(",", ""):
+                        fluct = card.select_one(".sise_fluctuate, .price_info, .change, .fluctuate")
+                        diff, rate, is_up, is_down = parse_change_text(fluct.text if fluct else c_text)
+                        return st.text.strip(), diff, rate, is_up, is_down
     except Exception:
         pass
+
+    # 3. 다음 금융 검색 추출
+    try:
+        url = "https://search.daum.net/search?w=tot&q=%EC%BD%94%EC%8A%A4%EB%8B%A5150"
+        res = requests.get(url, headers=HEADERS, timeout=5)
+        res.encoding = "utf-8"
+        soup = BeautifulSoup(res.text, "html.parser")
+        for el in soup.select(".txt_price, .num_stock, em.f_eb, strong[class*='price'], span[class*='price']"):
+            txt = el.text.strip().replace(",", "")
+            if re.match(r'^\d{3,4}\.\d{2}$', txt) and txt != kospi_val.replace(",", ""):
+                diff, rate, is_up, is_down = parse_change_text(el.parent.text if el.parent else "")
+                return el.text.strip(), diff, rate, is_up, is_down
+    except Exception:
+        pass
+
     return "-", "0", 0.0, False, False
 
 def fetch_vkospi():
-    """VKOSPI 전용 수집 (PC 파생상품 메인 및 일별 시세 3중 교차 추출)"""
-    try:
-        url = "https://finance.naver.com/sise/sise_derivative.naver"
-        res = requests.get(url, headers=HEADERS, timeout=8)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        for tr in soup.find_all("tr"):
-            row_text = tr.text
-            if "VKOSPI" in row_text or "변동성" in row_text:
-                tds = [td.text.strip() for td in tr.find_all(["td", "th"])]
-                line = " ".join(tds)
-                nums = re.findall(r'[\d\.,]+', line)
-                for n in nums:
-                    try:
-                        fv = float(n.replace(',', ''))
-                        if 10.0 <= fv <= 99.0 and '.' in n:
-                            diff, rate, is_up, is_down = parse_change_text(line)
-                            return n, diff, rate, is_up, is_down
-                    except Exception:
-                        continue
-    except Exception:
-        pass
-
-    for c in ["V-KOSPI200", "KPI200_V", "VKOSPI"]:
+    """VKOSPI 전용 수집 (모바일 API -> 포털 카드 3중 교차 검증)"""
+    # 1. 네이버 모바일 API
+    for code in ["V-KOSPI200", "VKOSPI", "KPI200_V", "VKOSPI200"]:
         try:
-            url = f"https://finance.naver.com/sise/sise_index_day.naver?code={c}"
-            res = requests.get(url, headers=HEADERS, timeout=8)
-            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-            table = soup.find("table", class_="type_1")
-            if table:
-                for tr in table.find_all("tr"):
-                    tds = tr.find_all("td")
-                    if len(tds) >= 4 and tds[1].text.strip():
-                        val_str = tds[1].text.strip()
-                        clean_val = val_str.replace(",", "")
-                        if clean_val.replace(".", "").isdigit():
-                            fv = float(clean_val)
-                            if 10.0 <= fv <= 99.0:
-                                diff, rate, is_up, is_down = parse_change_text(tds[2].text + " " + tds[3].text)
-                                return val_str, diff, rate, is_up, is_down
+            url = f"https://api.stock.naver.com/index/{code}/basic"
+            res = requests.get(url, headers=MOBILE_HEADERS, timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                price = data.get("closePrice") or data.get("nowValue")
+                if price and price != "-":
+                    p_num = float(str(price).replace(",", ""))
+                    if 10.0 <= p_num <= 99.0:
+                        diff = str(data.get("compareToPreviousClosePrice") or data.get("changeValue", "0")).replace("+", "").replace("-", "")
+                        rate = abs(float(str(data.get("fluctuationsRatio") or data.get("changeRate", "0")).replace("%", "").replace(",", "")))
+                        trend = str(data.get("compareToPreviousPrice", ""))
+                        is_up = ("RISING" in trend) or ("UP" in trend) or (rate > 0)
+                        is_down = ("FALLING" in trend) or ("DOWN" in trend)
+                        return str(price), diff, rate, is_up, is_down
         except Exception:
             pass
 
+    # 2. 네이버 검색 카드 추출 (UTF-8 인코딩)
     try:
         url = "https://search.naver.com/search.naver?query=VKOSPI"
-        res = requests.get(url, headers=HEADERS, timeout=8)
+        res = requests.get(url, headers=HEADERS, timeout=5)
+        res.encoding = "utf-8"
         soup = BeautifulSoup(res.text, "html.parser")
-        for el in soup.find_all(["strong", "span", "em"]):
-            t = el.text.strip().replace(",", "")
-            if re.match(r'^\d{2}\.\d{2}$', t):
-                fv = float(t)
-                if 10.0 <= fv <= 99.0:
-                    box_text = el.parent.text if el.parent else ""
-                    if "VKOSPI" in box_text or "변동성" in box_text:
-                        diff, rate, is_up, is_down = parse_change_text(box_text)
-                        return t, diff, rate, is_up, is_down
+        for card in soup.select(".api_subject_bx, .cs_stock, section, div[class*='stock'], div[class*='sise']"):
+            c_text = card.text
+            if "VKOSPI" in c_text or "변동성" in c_text:
+                for st in card.find_all(["strong", "em", "span"]):
+                    txt = st.text.strip().replace(",", "")
+                    if re.match(r'^\d{1,2}\.\d{2}$', txt):
+                        p_num = float(txt)
+                        if 10.0 <= p_num <= 99.0:
+                            fluct = card.select_one(".sise_fluctuate, .price_info, .change, .fluctuate")
+                            diff, rate, is_up, is_down = parse_change_text(fluct.text if fluct else c_text)
+                            return txt, diff, rate, is_up, is_down
     except Exception:
         pass
+
+    # 3. 다음 검색 추출
+    try:
+        url = "https://search.daum.net/search?w=tot&q=VKOSPI"
+        res = requests.get(url, headers=HEADERS, timeout=5)
+        res.encoding = "utf-8"
+        soup = BeautifulSoup(res.text, "html.parser")
+        for el in soup.select(".txt_price, .num_stock, em.f_eb, strong[class*='price'], span[class*='price']"):
+            txt = el.text.strip().replace(",", "")
+            if re.match(r'^\d{1,2}\.\d{2}$', txt):
+                p_num = float(txt)
+                if 10.0 <= p_num <= 99.0:
+                    diff, rate, is_up, is_down = parse_change_text(el.parent.text if el.parent else "")
+                    return txt, diff, rate, is_up, is_down
+    except Exception:
+        pass
+
     return "-", "0", 0.0, False, False
 
 def get_market_indices():
     results = []
     main_url = "https://finance.naver.com/sise/"
+    kospi_val = "-"
     try:
         res = requests.get(main_url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
@@ -138,6 +161,8 @@ def get_market_indices():
             change_elem = soup.find(id=f"{prefix}_change")
             if now_elem:
                 price = now_elem.text.strip()
+                if name == "코스피 (KOSPI)":
+                    kospi_val = price
                 c_text = change_elem.text.strip() if change_elem else ""
                 diff, rate, is_up, is_down = parse_change_text(c_text)
                 results.append({
@@ -150,18 +175,21 @@ def get_market_indices():
         for name in ["코스피 (KOSPI)", "코스닥 (KOSDAQ)", "코스피 200"]:
             results.append({"name": name, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
 
-    kq_val, kq_diff, kq_rate, kq_up, kq_down = fetch_kosdaq150()
+    # 코스닥 150 수집 (코스피 값 전달하여 중복 배제)
+    kq_val, kq_diff, kq_rate, kq_up, kq_down = fetch_kosdaq150(kospi_val)
     results.append({
         "name": "코스닥 150", "value": kq_val, "change_val": kq_diff,
         "change_rate": kq_rate, "is_up": kq_up, "is_down": kq_down
     })
 
+    # VKOSPI 수집
     vk_val, vk_diff, vk_rate, vk_up, vk_down = fetch_vkospi()
     results.append({
         "name": "VKOSPI (변동성)", "value": vk_val, "change_val": vk_diff,
         "change_rate": vk_rate, "is_up": vk_up, "is_down": vk_down
     })
 
+    # 환율 수집
     fx_val, fx_diff, fx_rate, fx_up, fx_down = "-", "0", 0.0, False, False
     try:
         m_url = "https://finance.naver.com/marketindex/"
@@ -183,7 +211,7 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
-    """시가총액 상위 종목의 실제 당일 체결가 및 등락률 일괄 추출"""
+    """시가총액 상위 종목 체결가 및 등락률 수집"""
     stocks = {}
     urls = [
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
@@ -214,7 +242,6 @@ def get_market_stocks():
             pass
     return stocks
 
-# 코스피 200 및 코스닥 150 섹터 구성
 KOSPI200_SECTORS = {
     "전기·전자 (반도체/IT)": ["삼성전자", "SK하이닉스", "삼성전기", "LG이노텍"],
     "이차전지·배터리": ["LG에너지솔루션", "POSCO홀딩스", "포스코퓨처엠", "삼성SDI"],
