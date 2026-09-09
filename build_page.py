@@ -1,5 +1,6 @@
 import os
 import re
+import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
@@ -74,7 +75,7 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
-    """시가총액 상위 종목 체결가 및 등락률 수집"""
+    """시가총액 상위 종목 체결가, 등락률 및 종목코드 수집"""
     stocks = {}
     urls = [
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
@@ -94,39 +95,68 @@ def get_market_stocks():
                         a_tag = tds[1].find("a")
                         if a_tag:
                             name = a_tag.text.strip()
+                            href = a_tag.get("href", "")
+                            code_match = re.search(r'code=(\d+)', href)
+                            code = code_match.group(1) if code_match else ""
                             price = tds[2].text.strip()
                             rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
                             try:
                                 rate_val = float(rate_text)
-                                stocks[name] = {"price": price, "rate": rate_val, "market": market}
+                                stocks[name] = {"price": price, "rate": rate_val, "code": code, "market": market}
                             except Exception:
                                 pass
         except Exception:
             pass
     return stocks
 
-# 섹터별 주요 이슈 및 드라이버 데이터베이스 매핑
-SECTOR_INSIGHTS = {
-    "화학·에너지": "국제 유가 반등 및 정제마진 개선, 배터리 소재/정밀화학 턴어라운드 기대감이 복합적으로 작용했습니다.",
-    "이차전지·배터리": "글로벌 완성차 신차 라인업 확대 및 원통형 폼팩터 공급 본격화, 핵심 광물 판가 안정세가 수급을 자극했습니다.",
-    "조선·중공업": "고선가 LNG선 및 친환경 쇄빙 컨테이너선 수주 잔고 증가와 하반기 카타르 2차 프로젝트 실적 가시성이 돋보였습니다.",
-    "전기·전자 (반도체/IT)": "차세대 HBM 공급 경쟁력 강화 및 온디바이스 AI 칩 수요 확대 기대감에 외인 매수세가 집중되었습니다.",
-    "자동차·운송장비": "하이브리드(HEV) 고수익 트림 중심의 글로벌 판매 호조와 밸류업 정책에 따른 배당·주주환원 매력이 부각되었습니다.",
-    "원전·전력인프라": "유럽·중동 체코 원전 후속 수주 모멘텀 및 북미 인공지능(AI) 데이터센터 증설에 따른 초고압 변압기 수혜가 지속되었습니다.",
-    "방위산업·우주항공": "루마니아·폴란드 후속 납품 및 중동지역 천궁-II 추가 계약 등 K-방산 수출 레퍼런스가 실적을 견인했습니다.",
-    "제약·바이오": "글로벌 빅파마 대상 면역항암제 기술이전(L/O) 기대감과 비만치료제·바이오시밀러 북미 점유율 확대가 긍정적이었습니다.",
-    "금융·지주": "정부 밸류업 프로그램에 따른 자사주 소각 기대감과 금리 인하 국면 속 비이자이익 포트폴리오 다변화가 반영되었습니다.",
-    "인터넷·플랫폼": "거대 AI 모델의 B2B 수익화 모델 검증 과정 및 단기 차익 실현 압력이 주가 등락에 영향을 미쳤습니다.",
-    "건설·시공": "PF 유동성 우려 완화 추이 및 해외 플랜트 수주 실적이 업황 방어 요인으로 작용했습니다.",
-    "철강·금속": "중국 철강 감산 정책 및 리튬·니켈 제련소 가동률 회복에 따른 스프레드 개선 기대감이 상존했습니다.",
-    "음식료·유통": "K-푸드 글로벌 수출(라면, 김밥, 소스류) 서프라이즈와 내수 원가율 개선이 긍정적 흐름을 보였습니다.",
-    "반도체 소부장": "선단 공정용 고성능 테스트 소켓, 전구체, CMP 슬러리 등 국산화 부품 공급 확대가 주가 탄력성을 지지했습니다.",
-    "이차전지·소재": "양극재 판가 바닥론 대두와 전해액·실리콘 음극재 설비 증설 효과가 테마 순환매를 이끌었습니다.",
-    "엔터·미디어": "소속 핵심 IP의 글로벌 음원 차트 진입과 월드투어 실적 반영, 음반 수출 다변화가 주가에 반영되었습니다.",
-    "게임·소프트웨어": "글로벌 PC·콘솔 신작 출시 일정 가시화 및 라이브 서비스 게임의 해외 매출 견인력이 모멘텀이 되었습니다.",
-    "로봇·자동화": "대기업 스마트팩토리 무인 물류 및 협동로봇 라인 구축 가속화에 따른 핵심 액추에이터 수주가 집중되었습니다.",
-    "피팅·배관기자재": "북미 LNG 수출 터미널 증설과 중동 담수화 플랜트용 고압 피팅 밸브 수요 호조세가 지속되었습니다."
-}
+def fetch_real_news(keyword, stock_code=""):
+    """네이버 금융 실시간 언론사 뉴스 헤드라인 크롤링"""
+    news_list = []
+    
+    # 1. 종목 코드가 있을 경우: 해당 종목의 네이버 금융 공식 뉴스 크롤링
+    if stock_code:
+        try:
+            url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
+            res = requests.get(url, headers=HEADERS, timeout=5)
+            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+            table = soup.find("table", class_="type5")
+            if table:
+                for tr in table.find_all("tr"):
+                    td_title = tr.find("td", class_="title")
+                    td_info = tr.find("td", class_="info")
+                    if td_title and td_title.find("a"):
+                        a_tag = td_title.find("a")
+                        title = a_tag.text.strip()
+                        link = "https://finance.naver.com" + a_tag["href"]
+                        press = td_info.text.strip() if td_info else "증권뉴스"
+                        news_list.append({"title": title, "press": press, "link": link})
+                        if len(news_list) >= 2:
+                            return news_list
+        except Exception:
+            pass
+
+    # 2. 키워드 기반 네이버 금융 통합 뉴스 크롤링
+    try:
+        enc_query = urllib.parse.quote(keyword, encoding='euc-kr')
+        url = f"https://finance.naver.com/news/news_search.naver?q={enc_query}"
+        res = requests.get(url, headers=HEADERS, timeout=5)
+        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+        dl_list = soup.find_all("dl", class_="articleList") or soup.find_all("dl")
+        for dl in dl_list:
+            dt = dl.find("dd", class_="articleSubject") or dl.find("dt")
+            if dt and dt.find("a"):
+                a_tag = dt.find("a")
+                title = a_tag.text.strip()
+                link = "https://finance.naver.com" + a_tag["href"]
+                summary = dl.find("dd", class_="articleSummary")
+                press = summary.find("span", class_="press").text.strip() if summary and summary.find("span", class_="press") else "네이버뉴스"
+                news_list.append({"title": title, "press": press, "link": link})
+                if len(news_list) >= 2:
+                    return news_list
+    except Exception:
+        pass
+
+    return news_list
 
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼"],
@@ -159,19 +189,26 @@ def calculate_sectors(sector_dict, stock_data):
     for sec_name, stock_names in sector_dict.items():
         matched = []
         rates = []
+        top_stock_code = ""
         for sname in stock_names:
             if sname in stock_data:
                 item = stock_data[sname]
-                matched.append({"name": sname, "rate": item["rate"], "price": item["price"]})
+                matched.append({"name": sname, "rate": item["rate"], "price": item["price"], "code": item.get("code", "")})
                 rates.append(item["rate"])
         if matched:
+            matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
+            top_stock_name = matched[0]["name"]
+            top_stock_code = matched[0].get("code", "")
+            
+            # 실시간 실제 언론사 뉴스 수집
+            news_items = fetch_real_news(top_stock_name, top_stock_code)
             avg_r = sum(rates) / len(rates)
-            insight = SECTOR_INSIGHTS.get(sec_name, "수급 변동성 및 차익 실현 매물 출회에 따른 업종 순환매가 전개되었습니다.")
             results.append({
                 "name": sec_name,
                 "rate": round(avg_r, 2),
                 "stocks": matched[:3],
-                "insight": insight
+                "lead_stock": top_stock_name,
+                "news": news_items
             })
     results.sort(key=lambda x: x["rate"], reverse=True)
     top = results[:3]
@@ -180,7 +217,7 @@ def calculate_sectors(sector_dict, stock_data):
     return top, bot
 
 def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """전체 마감 총평 및 주요 섹터 심층 이슈 분석"""
+    """실시간 뉴스 헤드라인 기반 마감 요약 리뷰 생성"""
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
     fx = next((x for x in indices if "환율" in x["name"]), {})
@@ -188,47 +225,60 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
     k_dir = "상승" if kospi.get("is_up") else ("하락" if kospi.get("is_down") else "보합")
     kq_dir = "상승" if kosdaq.get("is_up") else ("하락" if kosdaq.get("is_down") else "보합")
 
-    # 환율 코멘트
     fx_text = ""
     if fx.get("is_down"):
-        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화(원화 강세)를 나타내며 외국인 수급 여건을 지지했습니다."
+        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 외국인 수급 여건을 지지했습니다."
     elif fx.get("is_up"):
-        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 오름세를 보이며 외국인 매물 압박 요인으로 작용했습니다."
+        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 상승세를 보이며 대형 수출주에 영향을 미쳤습니다."
     else:
-        fx_text = f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 안정적인 보합세를 유지했습니다."
+        fx_text = f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 보합권 흐름을 나타냈습니다."
 
-    # 섹터별 이슈 리스트 구성
-    sector_bullets = ""
-    for s in k200_top[:2]:
-        sector_bullets += f"""<div class="review-item"><span class="bullet">🔴</span><div><b>[{s['name']} | +{s['rate']}%]</b> {s['insight']}</div></div>"""
-    for s in k200_bot[:2]:
-        sector_bullets += f"""<div class="review-item"><span class="bullet">🔵</span><div><b>[{s['name']} | {s['rate']}%]</b> 단기 상승 피로감과 기관·외인의 차익 실현 출회로 숨고르기 양상이 나타났습니다.</div></div>"""
+    news_bullets = ""
+    target_sectors = [(k200_top[0], "🔴", "코스피 상승 주도"), (k150_top[0], "🔴", "코스닥 상승 주도")]
+    if k200_bot:
+        target_sectors.append((k200_bot[0], "🔵", "코스피 하락 섹터"))
+    
+    for s, icon, label in target_sectors:
+        n_text = ""
+        if s.get("news"):
+            first_n = s["news"][0]
+            n_text = f'<a href="{first_n["link"]}" target="_blank" class="news-link">"{first_n["title"]}"</a> <span class="press-badge">{first_n["press"]}</span>'
+        else:
+            n_text = f"{s['lead_stock']} 등 주력 종목 중심의 수급 공방 지속"
+        news_bullets += f"""
+        <div class="review-item">
+            <span class="bullet">{icon}</span>
+            <div><b>[{label}: {s['name']} | {s['rate']:+}%]</b> {news_bullets_title_clean(n_text)}</div>
+        </div>
+        """
 
     review_html = f"""
     <div class="review-card">
         <div class="review-header">
-            <span class="review-title">📝 정규장 마감 핵심 요약 & 섹터별 이슈 브리핑</span>
-            <span class="review-tag">15:30 확정 집계</span>
+            <span class="review-title">📝 정규장 마감 핵심 요약 & 실시간 언론사 뉴스 헤드라인</span>
+            <span class="review-tag">네이버 금융 공식 뉴스 연동</span>
         </div>
         <div class="review-body">
             <div class="review-item">
                 <span class="bullet">📌</span>
-                <div><b>[마감 총평]</b> 코스피는 <b>{kospi.get('value')}</b>({k_dir}), 코스닥은 <b>{kosdaq.get('value')}</b>({kq_dir})으로 정규장을 마감했습니다. 실적 가시성이 높은 주도 테마를 중심으로 수급이 압축되는 차별화 장세가 확인되었습니다.</div>
+                <div><b>[마감 총평]</b> 코스피는 <b>{kospi.get('value')}</b>({k_dir}), 코스닥은 <b>{kosdaq.get('value')}</b>({kq_dir})으로 정규장을 마감했습니다.</div>
             </div>
             <div class="review-item">
                 <span class="bullet">📌</span>
-                <div><b>[환율 및 거시 여건]</b> {fx_text}</div>
+                <div><b>[환율 여건]</b> {fx_text}</div>
             </div>
             <div class="review-divider"></div>
-            <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px;">🔍 주요 업종별 모멘텀 분석</div>
-            {sector_bullets}
+            <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px;">📰 당일 주요 섹터별 언론사 보도 헤드라인</div>
+            {news_bullets}
         </div>
     </div>
     """
     return review_html
 
+def news_bullets_title_clean(text):
+    return text.replace("포토", "").replace("종합", "").strip()
+
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
-    # KST (한국 표준시 UTC+9) 기준 정규장 15:30 마감 시간 포맷팅
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     now_str = kst_now.strftime("%Y년 %m월 %d일 15:30 정규장 마감 기준")
     
@@ -282,6 +332,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 st_sign = "+" if st["rate"] > 0 else ""
                 stock_tags += f'<span class="stock-pill">{st["name"]} <b class="{st_color}">{st_sign}{st["rate"]}%</b></span>'
             
+            # 실시간 뉴스 헤드라인 태그 생성
+            news_tags = ""
+            if s.get("news"):
+                for n in s["news"][:1]:
+                    news_tags += f"""<div class="sector-news">📰 <a href="{n['link']}" target="_blank" class="news-link">{n['title']}</a> <span class="press-badge">{n['press']}</span></div>"""
+            else:
+                news_tags = f"""<div class="sector-news" style="color: #94a3b8;">당일 집계된 관련 특징주 뉴스가 없습니다.</div>"""
+
             html += f"""
             <div class="sector-item">
                 <div class="sector-header">
@@ -289,7 +347,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                     <span class="sector-rate {color_class}">{sign}{s['rate']}%</span>
                 </div>
                 <div class="stock-container">{stock_tags}</div>
-                <div class="sector-insight">{s.get('insight', '')}</div>
+                {news_tags}
             </div>
             """
         return html
@@ -324,6 +382,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .review-item {{ display: flex; align-items: flex-start; gap: 8px; }}
         .bullet {{ font-size: 0.95rem; line-height: 1.4; }}
         .review-divider {{ height: 1px; background: #e2e8f0; margin: 4px 0; }}
+        
+        .news-link {{ color: #0f172a; text-decoration: none; font-weight: 600; transition: color 0.2s; }}
+        .news-link:hover {{ color: #2563eb; text-decoration: underline; }}
+        .press-badge {{ font-size: 0.72rem; color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; margin-left: 4px; font-weight: 500; }}
 
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; color: #0f172a; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
@@ -336,7 +398,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 8px; font-size: 0.82rem; }}
-        .sector-insight {{ font-size: 0.83rem; color: #64748b; line-height: 1.45; background: #f8fafc; padding: 8px 10px; border-radius: 6px; border-left: 3px solid #cbd5e1; }}
+        .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; }}
         
         .text-up {{ color: #e11d48; }}
         .text-down {{ color: #2563eb; }}
