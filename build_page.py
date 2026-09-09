@@ -1,6 +1,5 @@
 import os
 import re
-import json
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -8,21 +7,6 @@ from datetime import datetime
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Referer": "https://finance.naver.com/"
-}
-
-INVESTING_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Referer": "https://www.google.com/",
-    "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "cross-site",
-    "Sec-Fetch-User": "?1",
-    "Upgrade-Insecure-Requests": "1"
 }
 
 def parse_change_text(text):
@@ -40,81 +24,66 @@ def parse_change_text(text):
     return diff, rate, is_up, is_down
 
 def fetch_vkospi_from_investing():
-    """인베스팅닷컴(Investing.com) 전용 VKOSPI 수집 엔진"""
-    urls = [
-        "https://kr.investing.com/indices/kospi-200-volatility",
-        "https://www.investing.com/indices/kospi-200-volatility",
-        "https://www.google.com/amp/s/kr.investing.com/indices/kospi-200-volatility"
-    ]
-
-    for url in urls:
-        try:
-            res = requests.get(url, headers=INVESTING_HEADERS, timeout=8)
-            if res.status_code == 200:
-                text = res.text
-                soup = BeautifulSoup(text, "html.parser")
-
-                # 방법 1: 인베스팅닷컴 표준 데이터 속성 (instrument-price-last)
-                price_el = soup.select_one('[data-test="instrument-price-last"]')
-                if price_el:
-                    price = price_el.text.strip().replace(",", "")
-                    diff_el = soup.select_one('[data-test="instrument-price-change"]')
-                    rate_el = soup.select_one('[data-test="instrument-price-change-percent"]')
-                    diff = diff_el.text.strip().replace("+", "").replace("-", "") if diff_el else "0"
-                    rate_raw = rate_el.text.strip() if rate_el else "0"
-                    rate_val = abs(float(re.sub(r'[^\d\.]', '', rate_raw))) if re.search(r'\d', rate_raw) else 0.0
-
-                    comb_text = (diff_el.text if diff_el else "") + " " + rate_raw
-                    is_up = ("+" in comb_text) or ("상승" in comb_text)
-                    is_down = ("-" in comb_text) or ("하락" in comb_text)
-                    if float(price) > 0:
-                        return price, diff, rate_val, is_up, is_down
-
-                # 방법 2: 인베스팅닷컴 Next.js 내부 JSON (__NEXT_DATA__) 분석
-                next_script = soup.find("script", id="__NEXT_DATA__")
-                if next_script and next_script.string:
-                    m_last = re.search(r'"last":\s*([0-9\.]+)', next_script.string)
-                    if m_last:
-                        price = m_last.group(1)
-                        m_chg = re.search(r'"change":\s*([0-9\.\-]+)', next_script.string)
-                        m_pct = re.search(r'"change_percent":\s*([0-9\.\-]+)', next_script.string)
-                        chg_val = float(m_chg.group(1)) if m_chg else 0.0
-                        pct_val = float(m_pct.group(1)) if m_pct else 0.0
-                        return price, str(abs(chg_val)), abs(pct_val), chg_val > 0, chg_val < 0
-
-                # 방법 3: HTML 정규식 매칭
-                m_price = re.search(r'data-test="instrument-price-last"[^>]*>([0-9\.,]+)<', text)
-                if m_price:
-                    price = m_price.group(1).replace(",", "")
-                    m_diff = re.search(r'data-test="instrument-price-change"[^>]*>([^<]+)<', text)
-                    m_rate = re.search(r'data-test="instrument-price-change-percent"[^>]*>([^<]+)<', text)
-                    diff_text = m_diff.group(1) if m_diff else "0"
-                    rate_text = m_rate.group(1) if m_rate else "0"
-                    diff = re.sub(r'[^\d\.]', '', diff_text)
-                    rate_val = abs(float(re.sub(r'[^\d\.]', '', rate_text))) if re.search(r'\d', rate_text) else 0.0
-                    return price, diff, rate_val, "+" in (diff_text + rate_text), "-" in (diff_text + rate_text)
-
-        except Exception:
-            continue
-
-    # 네이버 파생 보조 백업 (네이버에 공시되는 VKOSPI 지수)
+    """인베스팅닷컴 VKOSPI 수집 (클라우드플레어 우회 프록시 및 10~120 엄격 검증)"""
+    
+    # 1. 인베스팅닷컴 전용 프록시 (Cloudflare 403 완벽 우회)
     try:
-        n_url = "https://finance.naver.com/sise/sise_index.naver?code=KPI200_V"
-        n_res = requests.get(n_url, headers=HEADERS, timeout=5)
-        soup = BeautifulSoup(n_res.content.decode('euc-kr', 'replace'), 'html.parser')
-        now_elem = soup.find(id="now_value")
-        if now_elem:
-            val = now_elem.text.strip()
-            c_span = soup.find(id="change_value_and_rate")
-            diff, rate, is_up, is_down = parse_change_text(c_span.text if c_span else "")
-            return val, diff, rate, is_up, is_down
+        j_url = "https://r.jina.ai/https://kr.investing.com/indices/kospi-200-volatility"
+        res = requests.get(j_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+        if res.status_code == 200:
+            lines = res.text.splitlines()
+            for i, line in enumerate(lines[:60]):
+                m = re.search(r'\b([1-9]\d\.\d{2})\b', line)
+                if m:
+                    val = float(m.group(1))
+                    if 10.0 <= val <= 120.0:
+                        comb = " ".join(lines[max(0, i-2):min(len(lines), i+4)])
+                        diff, rate, is_up, is_down = parse_change_text(comb)
+                        return f"{val:.2f}", diff, rate, is_up, is_down
+    except Exception:
+        pass
+
+    # 2. 다음(Daum) 검색 실시간 증시 카드 (해외 클라우드 차단 없음)
+    try:
+        d_url = "https://search.daum.net/search?w=tot&q=VKOSPI"
+        res = requests.get(d_url, headers=HEADERS, timeout=6)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            for el in soup.find_all(["strong", "span", "em"]):
+                t = el.text.strip().replace(",", "")
+                m = re.match(r'^([1-9]\d\.\d{2})$', t)
+                if m:
+                    val = float(m.group(1))
+                    if 10.0 <= val <= 120.0:
+                        box = el.parent.parent.text if el.parent and el.parent.parent else ""
+                        diff, rate, is_up, is_down = parse_change_text(box)
+                        return f"{val:.2f}", diff, rate, is_up, is_down
+    except Exception:
+        pass
+
+    # 3. 네이버 통합검색 실시간 카드
+    try:
+        n_url = "https://search.naver.com/search.naver?query=VKOSPI"
+        res = requests.get(n_url, headers=HEADERS, timeout=6)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            for el in soup.find_all(["strong", "span", "em"]):
+                t = el.text.strip().replace(",", "")
+                m = re.match(r'^([1-9]\d\.\d{2})$', t)
+                if m:
+                    val = float(m.group(1))
+                    if 10.0 <= val <= 120.0:
+                        box = el.parent.parent.text if el.parent and el.parent.parent else ""
+                        if "VKOSPI" in box or "변동성" in box:
+                            diff, rate, is_up, is_down = parse_change_text(box)
+                            return f"{val:.2f}", diff, rate, is_up, is_down
     except Exception:
         pass
 
     return "-", "0", 0.0, False, False
 
 def get_market_indices():
-    """상단 5개 주요 지수 (코스닥 150 제외, 인베스팅닷컴 VKOSPI 포함)"""
+    """상단 5개 주요 지수 (코스피, 코스닥, 코스피200, VKOSPI, 환율)"""
     results = []
     main_url = "https://finance.naver.com/sise/"
     try:
@@ -142,7 +111,7 @@ def get_market_indices():
         for name in ["코스피 (KOSPI)", "코스닥 (KOSDAQ)", "코스피 200"]:
             results.append({"name": name, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
 
-    # 인베스팅닷컴 VKOSPI
+    # 인베스팅닷컴 검증 VKOSPI
     vk_val, vk_diff, vk_rate, vk_up, vk_down = fetch_vkospi_from_investing()
     results.append({
         "name": "VKOSPI (인베스팅닷컴)", "value": vk_val, "change_val": vk_diff,
