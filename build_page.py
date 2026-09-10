@@ -6,11 +6,6 @@ from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
 
-try:
-    from google import genai
-except ImportError:
-    genai = None
-
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
@@ -153,184 +148,6 @@ SECTOR_MOMENTUM_THEMES = {
     "피팅·배관기자재": "조선·해양플랜트 및 EPC 배관 기자재 수주",
 }
 
-
-
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_MAX_OUTPUT_TOKENS = int(os.environ.get("GEMINI_MAX_OUTPUT_TOKENS", "1800"))
-_GEMINI_ANALYSIS_CACHE = None
-
-
-def _strip_html(value):
-    if not value:
-        return ""
-    value = re.sub(r"<[^>]+>", " ", str(value))
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def generate_gemini_market_analysis(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """실제 수집된 시장 데이터를 Gemini가 직접 종합 분석합니다."""
-    global _GEMINI_ANALYSIS_CACHE
-
-    if _GEMINI_ANALYSIS_CACHE is not None:
-        return _GEMINI_ANALYSIS_CACHE
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        print("[INFO] GEMINI_API_KEY가 없어 Gemini 분석을 건너뜁니다.")
-        return None
-
-    if genai is None:
-        print("[ERROR] google-genai 패키지가 설치되어 있지 않습니다.")
-        return None
-
-    def compact_indices(items):
-        return [{
-            "name": x.get("name"),
-            "value": x.get("value"),
-            "change": x.get("change_val"),
-            "change_rate": x.get("change_rate"),
-            "direction": "상승" if x.get("is_up") else ("하락" if x.get("is_down") else "보합")
-        } for x in items]
-
-    def compact_sectors(items):
-        result = []
-        for s in items:
-            result.append({
-                "sector": s.get("name"),
-                "sector_change_rate": s.get("rate"),
-                "lead_stock": s.get("lead_stock"),
-                "stocks": [{
-                    "name": st.get("name"),
-                    "price": st.get("price"),
-                    "change_rate": st.get("rate")
-                } for st in s.get("stocks", [])[:3]],
-                "news": [{
-                    "title": _strip_html(n.get("title")),
-                    "press": _strip_html(n.get("press"))
-                } for n in s.get("news", [])[:2]]
-            })
-        return result
-
-    market_data = {
-        "indices": compact_indices(indices),
-        "kospi200_strong": compact_sectors(k200_top),
-        "kospi200_weak": compact_sectors(k200_bot),
-        "kosdaq150_strong": compact_sectors(k150_top),
-        "kosdaq150_weak": compact_sectors(k150_bot)
-    }
-
-    prompt = f"""
-당신은 한국 주식시장을 분석하는 전문 애널리스트입니다.
-
-아래 데이터는 오늘 수집한 국내 증시 실제 데이터입니다.
-데이터에 없는 사실을 만들지 마십시오.
-특히 외국인/기관 수급, 정책 발표, 실적, 특정 뉴스의 원인을 데이터에 없는데
-사실처럼 단정하지 마십시오. 필요한 경우 '가능성', '추정', '해석'으로 표현하십시오.
-
-다음 항목을 종합해서 투자자에게 유용한 마감 분석을 작성하세요.
-
-[시장 한줄 요약]
-오늘 시장을 한 문장으로 요약
-
-[오늘 시장 핵심]
-코스피·코스닥 움직임을 숫자와 함께 해석하고 핵심 특징 설명
-
-[주도 흐름]
-- 코스피: 가장 강한 섹터와 주요 종목/뉴스를 연결해서 설명
-- 코스닥: 가장 강한 섹터와 주요 종목/뉴스를 연결해서 설명
-
-[약세 흐름]
-- 코스피: 가장 약한 섹터와 특징
-- 코스닥: 가장 약한 섹터와 특징
-
-[환율 체크]
-원/달러 환율이 확인되는 경우 시장에 미칠 수 있는 영향을 설명
-
-[내일 체크포인트]
-1. 가장 중요한 확인 사항
-2. 두 번째 확인 사항
-3. 세 번째 확인 사항
-
-[단기 투자 시사점]
-단기 투자자가 주의하거나 확인할 점을 1~2문장으로 설명.
-특정 종목의 매수/매도 추천은 하지 마세요.
-
-작성 규칙:
-- 한국어
-- 700~1200자
-- 숫자를 단순 나열하지 말고 서로 연결해서 해석
-- HTML 태그 사용 금지
-- 확인되지 않은 사실을 단정하지 않기
-
-실제 데이터:
-{json.dumps(market_data, ensure_ascii=False, indent=2)}
-"""
-
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config={
-                "temperature": 0.25,
-                "max_output_tokens": GEMINI_MAX_OUTPUT_TOKENS
-            }
-        )
-        result = getattr(response, "text", None)
-        if result:
-            _GEMINI_ANALYSIS_CACHE = result.strip()
-            print("[SUCCESS] Gemini 시장 분석 생성 완료")
-            return _GEMINI_ANALYSIS_CACHE
-
-        print("[ERROR] Gemini 응답에 텍스트가 없습니다.")
-    except Exception as e:
-        print(f"[ERROR] Gemini 시장 분석 실패: {e}")
-
-    return None
-
-
-def gemini_analysis_to_html(analysis):
-    """Gemini 텍스트 분석을 대시보드 HTML로 표시."""
-    if not analysis:
-        return (
-            '<div class="review-item"><span class="bullet">⚠️</span>'
-            '<div>Gemini 분석을 사용할 수 없어 기본 분석을 표시합니다.</div></div>'
-        )
-
-    html = []
-    in_list = False
-
-    for raw in analysis.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-
-        safe = (line.replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;"))
-
-        if line.startswith("[") and line.endswith("]"):
-            if in_list:
-                html.append("</div>")
-                in_list = False
-            html.append(
-                f'<div class="gemini-section-title">{safe[1:-1]}</div>'
-            )
-        elif line.startswith("- ") or re.match(r"^\d+\.\s", line):
-            if not in_list:
-                html.append('<div class="gemini-list">')
-                in_list = True
-            html.append(f'<div class="gemini-list-item">{safe}</div>')
-        else:
-            if in_list:
-                html.append("</div>")
-                in_list = False
-            html.append(f'<div class="gemini-paragraph">{safe}</div>')
-
-    if in_list:
-        html.append("</div>")
-
-    return "\n".join(html)
 
 def generate_sector_summary(sec_name, rate, matched_stocks):
   """섹터 등락률과 구성 종목 움직임을 바탕으로 업종 동향 핵심 요약 문장 자동 생성"""
@@ -822,46 +639,105 @@ def calculate_sectors(sector_dict, stock_data):
   return top, bot
 
 
-
 def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """Gemini 기반 종합 시장 마감 분석."""
-    analysis = generate_gemini_market_analysis(
-        indices, k200_top, k200_bot, k150_top, k150_bot
+  kospi = next((x for x in indices if "코스피" in x["name"]), {})
+  kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
+  fx = next((x for x in indices if "환율" in x["name"]), {})
+
+  k_dir = (
+      "상승"
+      if kospi.get("is_up")
+      else ("하락" if kospi.get("is_down") else "보합")
+  )
+  kq_dir = (
+      "상승"
+      if kosdaq.get("is_up")
+      else ("하락" if kosdaq.get("is_down") else "보합")
+  )
+
+  fx_text = ""
+  if fx.get("is_down"):
+    fx_text = (
+        f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 수급 여건을"
+        " 지지했습니다."
+    )
+  elif fx.get("is_up"):
+    fx_text = (
+        f"원·달러 환율이 <b>{fx.get('value')}</b>로 상승세를 보이며 대형"
+        " 수출주에 영향을 미쳤습니다."
+    )
+  else:
+    fx_text = (
+        f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 보합권 흐름을"
+        " 나타냈습니다."
     )
 
-    if analysis:
-        body = gemini_analysis_to_html(analysis)
-        tag = "Gemini AI 시장분석"
+  target_sectors = []
+  if k200_top:
+    s = k200_top[0]
+    icon = "🔴" if s["rate"] > 0 else "🔵"
+    lbl = (
+        "코스피 상승 주도" if s["rate"] > 0 else "코스피 상대 강세 (최소 낙폭)"
+    )
+    target_sectors.append((s, icon, lbl))
+
+  if k150_top:
+    s = k150_top[0]
+    icon = "🔴" if s["rate"] > 0 else "🔵"
+    lbl = (
+        "코스닥 상승 주도" if s["rate"] > 0 else "코스닥 상대 강세 (최소 낙폭)"
+    )
+    target_sectors.append((s, icon, lbl))
+
+  if k200_bot:
+    s = k200_bot[0]
+    target_sectors.append((s, "🔵", "코스피 낙폭 과대 섹터"))
+
+  news_bullets = ""
+  for s, icon, label in target_sectors:
+    n_text = ""
+    if s.get("news"):
+      first_n = s["news"][0]
+      clean_t = first_n["title"].replace('"', "&quot;")
+      n_text = (
+          f'<a href="{first_n["link"]}" target="_blank"'
+          f' class="news-link">"{clean_t}"</a> <span'
+          f' class="press-badge">{first_n["press"]}</span>'
+      )
     else:
-        kospi = next((x for x in indices if "코스피" in x["name"]), {})
-        kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
-        fx = next((x for x in indices if "환율" in x["name"]), {})
+      n_text = f"{s['lead_stock']} 등 주력 종목 중심 수급 공방"
 
-        k_dir = "상승" if kospi.get("is_up") else ("하락" if kospi.get("is_down") else "보합")
-        kq_dir = "상승" if kosdaq.get("is_up") else ("하락" if kosdaq.get("is_down") else "보합")
-
-        body = f"""
-        <div class="review-item"><span class="bullet">📌</span>
-        <div><b>[시장 동향]</b> 코스피 <b>{kospi.get('value')}</b>({k_dir}),
-        코스닥 <b>{kosdaq.get('value')}</b>({kq_dir})을 기록했습니다.</div></div>
-        <div class="review-item"><span class="bullet">📌</span>
-        <div><b>[환율 흐름]</b> 원·달러 <b>{fx.get('value')}</b></div></div>
-        <div class="review-item"><span class="bullet">⚠️</span>
-        <div><b>[AI 분석]</b> Gemini 분석을 사용할 수 없습니다.</div></div>
+    rate_sign = "+" if s["rate"] > 0 else "-"
+    news_bullets += f"""
+        <div class="review-item">
+            <span class="bullet">{icon}</span>
+            <div><b>[{label}: {s['name']} | {rate_sign}{abs(s['rate']):.2f}%]</b> {n_text.replace("포토", "").replace("종합", "").strip()}</div>
+        </div>
         """
-        tag = "기본 데이터 분석"
 
-    return f"""
+  review_html = f"""
     <div class="review-card">
         <div class="review-header">
             <span class="review-title">📝 정규장 핵심 마감 총평 & 주요 이슈</span>
-            <span class="review-tag">{tag}</span>
+            <span class="review-tag">공식 언론사 속보</span>
         </div>
         <div class="review-body">
-            {body}
+            <div class="review-item">
+                <span class="bullet">📌</span>
+                <div><b>[시장 동향]</b> 코스피 <b>{kospi.get('value')}</b>({k_dir}), 코스닥 <b>{kosdaq.get('value')}</b>({kq_dir})을 기록했습니다.</div>
+            </div>
+            <div class="review-item">
+                <span class="bullet">📌</span>
+                <div><b>[환율 흐름]</b> {fx_text}</div>
+            </div>
+            <div class="review-divider"></div>
+            <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px;">📰 당일 주요 섹터별 언론사 보도 헤드라인 (경제·기업 핵심 뉴스)</div>
+            {news_bullets}
         </div>
     </div>
     """
+  return review_html
+
 
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
   index_cards = ""
@@ -1000,30 +876,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .review-item {{ display: flex; align-items: flex-start; gap: 8px; }}
         .bullet {{ font-size: 0.95rem; line-height: 1.4; }}
         .review-divider {{ height: 1px; background: #e2e8f0; margin: 4px 0; }}
-
-        .gemini-section-title {{
-            font-size: 0.94rem;
-            font-weight: 800;
-            color: #0f172a;
-            margin-top: 5px;
-            margin-bottom: 3px;
-            padding: 5px 8px;
-            background: #f1f5f9;
-            border-radius: 6px;
-        }}
-        .gemini-paragraph {{
-            line-height: 1.65;
-        }}
-        .gemini-list {{
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            padding-left: 5px;
-        }}
-        .gemini-list-item {{
-            line-height: 1.55;
-        }}
-
         
         .news-link {{ color: #0f172a; text-decoration: none; font-weight: 600; }}
         .news-link:hover {{ color: #2563eb; text-decoration: underline; }}
