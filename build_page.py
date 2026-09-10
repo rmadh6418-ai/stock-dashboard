@@ -138,7 +138,6 @@ def get_market_indices():
         "is_down": False,
     })
 
-  # 원·달러 환율 추가
   results.append(get_exchange_rate())
   return results
 
@@ -625,13 +624,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         body {{ background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
         
         header {{ text-align: center; margin-bottom: 18px; }}
-        h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
+        h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 8px; }}
         
         .status-bar {{ display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin-top: 6px; }}
         .timestamp {{ font-size: 0.86rem; font-weight: 600; color: #334155; background: #e2e8f0; padding: 4px 12px; border-radius: 20px; }}
         .live-status {{ font-size: 0.80rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; }}
         .status-live {{ background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }}
         .status-closed {{ background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }}
+        .timer-badge {{ font-size: 0.80rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 4px 10px; border-radius: 20px; }}
+        .last-sync {{ font-size: 0.76rem; color: #64748b; margin-left: 4px; }}
         .btn-refresh {{ background: #2563eb; color: #fff; border: none; padding: 5px 12px; border-radius: 20px; font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }}
         .btn-refresh:hover {{ background: #1d4ed8; }}
         
@@ -641,7 +642,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .card-value {{ font-size: 1.30rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; transition: color 0.3s; }}
         .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
         
-        .review-card {{ background: #ffffff; border-radius: 12px; border-left: 5px solid #2563eb; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
+        .review-card {{ background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
         .review-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }}
         .review-title {{ font-size: 1.05rem; font-weight: 800; color: #0f172a; }}
         .review-tag {{ font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 3px 8px; border-radius: 6px; }}
@@ -689,7 +690,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         <div class="status-bar">
             <span class="timestamp" id="live-clock">🕒 시간 계산 중...</span>
             <span class="live-status" id="market-status">동기화 확인 중</span>
-            <button class="btn-refresh" id="btn-refresh" onclick="fetchLiveMarketData()">🔄 실시간 새로고침</button>
+            <span class="timer-badge" id="countdown-badge">⏱️ 60초 후 갱신</span>
+            <button class="btn-refresh" id="btn-refresh" onclick="manualRefresh()">🔄 지금 새로고침</button>
+            <span class="last-sync" id="last-sync-badge">마지막 갱신: 대기 중</span>
         </div>
     </header>
 
@@ -720,6 +723,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     </div>
 
     <script>
+        let countdownSeconds = 60;
+        let isFetching = false;
+
         // 한국 표준시(KST) 시계 및 정규장 상태 판정
         function updateLiveClock() {{
             const now = new Date();
@@ -759,15 +765,38 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         setInterval(updateLiveClock, 1000);
         updateLiveClock();
 
-        // CORS 우회 프록시 통신 함수
+        // 1분(60초) 자동 카운트다운 타이머
+        setInterval(() => {{
+            countdownSeconds--;
+            const countEl = document.getElementById('countdown-badge');
+            if (countdownSeconds <= 0) {{
+                countdownSeconds = 60;
+                if (!isFetching) fetchLiveMarketData();
+            }}
+            if (countEl) {{
+                countEl.textContent = '⏱️ ' + countdownSeconds + '초 후 갱신';
+            }}
+        }}, 1000);
+
+        function manualRefresh() {{
+            countdownSeconds = 60;
+            const countEl = document.getElementById('countdown-badge');
+            if (countEl) countEl.textContent = '⏱️ 60초 후 갱신';
+            fetchLiveMarketData();
+        }}
+
+        // 캐시 무효화(Cache-Buster)를 적용한 다중 프록시 통신
         async function fetchWithProxy(targetUrl) {{
+            const cacheParam = (targetUrl.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+            const finalUrl = targetUrl + cacheParam;
             const proxies = [
+                (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
                 (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
-                (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u)
+                (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u)
             ];
             for (const getProxy of proxies) {{
                 try {{
-                    const res = await fetch(getProxy(targetUrl), {{ cache: 'no-store' }});
+                    const res = await fetch(getProxy(finalUrl), {{ cache: 'no-store' }});
                     if (res.ok) {{
                         const data = await res.json();
                         if (data) return data;
@@ -777,61 +806,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             throw new Error('프록시 호출 실패');
         }}
 
-        // 실시간 시세 동기화 (지수 3종 + 환율 1종 + 개별 종목)
+        // 실시간 시세 동기화 메인 함수
         async function fetchLiveMarketData() {{
+            if (isFetching) return;
+            isFetching = true;
+
             const btn = document.getElementById('btn-refresh');
             if (btn) {{
-                btn.textContent = '⏳ 시세 갱신 중...';
+                btn.textContent = '⏳ 갱신 중...';
                 btn.disabled = true;
             }}
 
-            // (1) 주요 증시 지수 3종 (코스피, 코스닥, 코스피200)
-            const indexTargets = [
-                {{ key: 'KOSPI', url: 'https://m.stock.naver.com/api/index/KOSPI/basic' }},
-                {{ key: 'KOSDAQ', url: 'https://m.stock.naver.com/api/index/KOSDAQ/basic' }},
-                {{ key: 'KPI200', url: 'https://m.stock.naver.com/api/index/KPI200/basic' }}
-            ];
-
-            indexTargets.forEach(async (item) => {{
-                try {{
-                    const data = await fetchWithProxy(item.url);
-                    const valEl = document.getElementById('val-' + item.key);
-                    const badgeEl = document.getElementById('badge-' + item.key);
-                    if (!valEl || !badgeEl || !data) return;
-
-                    const price = data.closePrice;
-                    const diff = data.compareToPreviousClosePrice || '0';
-                    const rate = Math.abs(parseFloat(data.fluctuationsRatio || 0));
-
-                    const cd = String(data.compareToPreviousPrice?.code || '3');
-                    const isUp = (cd === '1' || cd === '2');
-                    const isDown = (cd === '4' || cd === '5');
-
-                    const sign = isUp ? '▲ +' : (isDown ? '▼ -' : '― ');
-                    const colorClass = isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat');
-                    const badgeBg = isUp ? 'bg-up-light' : (isDown ? 'bg-down-light' : 'bg-gray-100');
-
-                    valEl.textContent = price;
-                    badgeEl.className = 'badge ' + badgeBg + ' ' + colorClass;
-                    badgeEl.textContent = sign + rate.toFixed(2) + '% (' + diff + ')';
-                    
-                    valEl.classList.remove('flash-update');
-                    void valEl.offsetWidth;
-                    valEl.classList.add('flash-update');
-                }} catch (err) {{}}
-            }});
-
-            // (2) 원·달러 환율 전용 실시간 갱신 (두나무 공식 환율 API: CORS 지원)
+            // (1) 원·달러 환율 갱신 (두나무 공식 API - 브라우저 직접 호출 최우선)
             try {{
+                const fxUrl = 'https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD&_t=' + Date.now();
                 let fxItem = null;
                 try {{
-                    const fxRes = await fetch("https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD", {{ cache: 'no-store' }});
+                    const fxRes = await fetch(fxUrl, {{ cache: 'no-store' }});
                     if (fxRes.ok) {{
                         const arr = await fxRes.json();
                         if (arr && arr.length > 0) fxItem = arr[0];
                     }}
-                }} catch (e) {{
-                    const arr = await fetchWithProxy("https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD");
+                }} catch (err) {{
+                    const arr = await fetchWithProxy('https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD');
                     if (arr && arr.length > 0) fxItem = arr[0];
                 }}
 
@@ -861,43 +858,89 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 }}
             }} catch (fxErr) {{}}
 
-            // (3) 종목 실시간 시세 갱신
-            const stockElements = document.querySelectorAll('.stock-pill[data-stock-code]');
-            stockElements.forEach(async (el) => {{
-                const code = el.getAttribute('data-stock-code');
-                if (!code) return;
+            // (2) 3대 증시 지수 갱신 (코스피, 코스닥, 코스피200)
+            const indexTargets = [
+                {{ key: 'KOSPI', url: 'https://m.stock.naver.com/api/index/KOSPI/basic' }},
+                {{ key: 'KOSDAQ', url: 'https://m.stock.naver.com/api/index/KOSDAQ/basic' }},
+                {{ key: 'KPI200', url: 'https://m.stock.naver.com/api/index/KPI200/basic' }}
+            ];
 
+            await Promise.all(indexTargets.map(async (item) => {{
                 try {{
-                    const stockUrl = 'https://m.stock.naver.com/api/stock/' + code + '/basic';
-                    const sData = await fetchWithProxy(stockUrl);
-                    if (!sData) return;
+                    const data = await fetchWithProxy(item.url);
+                    const valEl = document.getElementById('val-' + item.key);
+                    const badgeEl = document.getElementById('badge-' + item.key);
+                    if (!valEl || !badgeEl || !data) return;
 
-                    const price = sData.closePrice;
-                    const sRate = Math.abs(parseFloat(sData.fluctuationsRatio || 0));
-                    const cd = String(sData.compareToPreviousPrice?.code || '3');
+                    const price = data.closePrice;
+                    const diff = data.compareToPreviousClosePrice || '0';
+                    const rate = Math.abs(parseFloat(data.fluctuationsRatio || 0));
+
+                    const cd = String(data.compareToPreviousPrice?.code || '3');
                     const isUp = (cd === '1' || cd === '2');
                     const isDown = (cd === '4' || cd === '5');
 
-                    const rateEl = el.querySelector('.stock-rate');
-                    const priceEl = el.querySelector('.stock-price');
+                    const sign = isUp ? '▲ +' : (isDown ? '▼ -' : '― ');
+                    const colorClass = isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat');
+                    const badgeBg = isUp ? 'bg-up-light' : (isDown ? 'bg-down-light' : 'bg-gray-100');
 
-                    if (rateEl) {{
-                        rateEl.className = 'stock-rate ' + (isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat'));
-                        const rateSign = isUp ? '+' : (isDown ? '-' : '');
-                        rateEl.textContent = rateSign + sRate.toFixed(2) + '%';
-                    }}
-                    if (priceEl) {{
-                        priceEl.textContent = '(' + price + '원)';
-                    }}
-                }} catch (e) {{}}
-            }});
+                    valEl.textContent = price;
+                    badgeEl.className = 'badge ' + badgeBg + ' ' + colorClass;
+                    badgeEl.textContent = sign + rate.toFixed(2) + '% (' + diff + ')';
+                    
+                    valEl.classList.remove('flash-update');
+                    void valEl.offsetWidth;
+                    valEl.classList.add('flash-update');
+                }} catch (err) {{}}
+            }}));
 
-            setTimeout(() => {{
-                if (btn) {{
-                    btn.textContent = '🔄 실시간 새로고침';
-                    btn.disabled = false;
-                }}
-            }}, 800);
+            // (3) 화면 내 종목들 순차 갱신 (프록시 차단 방지를 위해 3개씩 분할 호출)
+            const stockElements = Array.from(document.querySelectorAll('.stock-pill[data-stock-code]'));
+            for (let i = 0; i < stockElements.length; i += 3) {{
+                const chunk = stockElements.slice(i, i + 3);
+                await Promise.all(chunk.map(async (el) => {{
+                    const code = el.getAttribute('data-stock-code');
+                    if (!code) return;
+                    try {{
+                        const stockUrl = 'https://m.stock.naver.com/api/stock/' + code + '/basic';
+                        const sData = await fetchWithProxy(stockUrl);
+                        if (!sData) return;
+
+                        const price = sData.closePrice;
+                        const sRate = Math.abs(parseFloat(sData.fluctuationsRatio || 0));
+                        const cd = String(sData.compareToPreviousPrice?.code || '3');
+                        const isUp = (cd === '1' || cd === '2');
+                        const isDown = (cd === '4' || cd === '5');
+
+                        const rateEl = el.querySelector('.stock-rate');
+                        const priceEl = el.querySelector('.stock-price');
+
+                        if (rateEl) {{
+                            rateEl.className = 'stock-rate ' + (isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat'));
+                            const rateSign = isUp ? '+' : (isDown ? '-' : '');
+                            rateEl.textContent = rateSign + sRate.toFixed(2) + '%';
+                        }}
+                        if (priceEl) {{
+                            priceEl.textContent = '(' + price + '원)';
+                        }}
+                    }} catch (e) {{}}
+                }}));
+                await new Promise(r => setTimeout(r, 120));
+            }}
+
+            // 갱신 시각 완료 표시
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('ko-KR', {{ hour12: false }});
+            const lastSyncEl = document.getElementById('last-sync-badge');
+            if (lastSyncEl) {{
+                lastSyncEl.textContent = '마지막 갱신: ' + timeStr + ' ✅';
+            }}
+
+            if (btn) {{
+                btn.textContent = '🔄 지금 새로고침';
+                btn.disabled = false;
+            }}
+            isFetching = false;
         }}
 
         window.addEventListener('DOMContentLoaded', () => {{
