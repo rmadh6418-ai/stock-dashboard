@@ -1001,7 +1001,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .bullet {{ font-size: 0.95rem; line-height: 1.4; }}
         .review-divider {{ height: 1px; background: #e2e8f0; margin: 4px 0; }}
 
-        .gemini-section-title {
+        .gemini-section-title {{
             font-size: 0.94rem;
             font-weight: 800;
             color: #0f172a;
@@ -1010,19 +1010,19 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             padding: 5px 8px;
             background: #f1f5f9;
             border-radius: 6px;
-        }
-        .gemini-paragraph {
+        }}
+        .gemini-paragraph {{
             line-height: 1.65;
-        }
-        .gemini-list {
+        }}
+        .gemini-list {{
             display: flex;
             flex-direction: column;
             gap: 3px;
             padding-left: 5px;
-        }
-        .gemini-list-item {
+        }}
+        .gemini-list-item {{
             line-height: 1.55;
-        }
+        }}
 
         
         .news-link {{ color: #0f172a; text-decoration: none; font-weight: 600; }}
