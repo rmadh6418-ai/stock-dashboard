@@ -125,6 +125,70 @@ BUSINESS_NEWS_KEYWORDS = [
     "공급계약",
 ]
 
+# 섹터별 고유 핵심 모멘텀/테마 사전
+SECTOR_MOMENTUM_THEMES = {
+    "화학·에너지": "국제 유가 변동 및 정제마진, 석유화학 업황",
+    "이차전지·배터리": "글로벌 전기차 수요 및 배터리 셀·소재 수급",
+    "조선·중공업": "고부가가치 선박 수주 및 신조선가 상승 추세",
+    "전기·전자 (반도체/IT)": "AI 인프라 투자 및 차세대 반도체·부품 수요",
+    "자동차·운송장비": "완성차 글로벌 판매 실적 및 전동화 비중",
+    "원전·전력인프라": "AI 전력망 증설 및 글로벌 전력기기·원전 수요",
+    "방위산업·우주항공": "K-방산 글로벌 수출 수주 호조 및 안보 수요",
+    "제약·바이오": "신약 파이프라인 성과 및 글로벌 기술수출 기대감",
+    "금융·지주": "주주환원 정책(밸류업) 및 금리 환경",
+    "인터넷·플랫폼": "AI 신규 서비스 수익화 및 플랫폼 실적",
+    "건설·시공": "국내외 인프라 수주 및 부동산 PF 환경",
+    "철강·금속": "원자재 가격 및 글로벌 철강·비철금속 수요",
+    "음식료·유통": "K-푸드 글로벌 수출 성장세 및 원가율 개선",
+    "이차전지·소재": "양극재·음극재 등 핵심 소재 수급 및 판가 추이",
+    "반도체 소부장": "차세대 패키징 및 반도체 공정 장비·소재 납품",
+    "엔터·미디어": "소속 아티스트 글로벌 활동 및 콘텐츠 음원 매출",
+    "게임·소프트웨어": "신작 출시 성과 및 글로벌 플랫폼 확장",
+    "로봇·자동화": "산업용 로봇 및 스마트팩토리 자동화 수요",
+    "피팅·배관기자재": "조선·해양플랜트 및 EPC 배관 기자재 수주",
+}
+
+
+def generate_sector_summary(sec_name, rate, matched_stocks):
+  """섹터 등락률과 구성 종목 움직임을 바탕으로 업종 동향 핵심 요약 문장 자동 생성"""
+  theme = SECTOR_MOMENTUM_THEMES.get(sec_name, "시장 수급 및 업황 흐름")
+  if not matched_stocks:
+    return (
+        f"{sec_name} 섹터는 주요 종목 간 수급 공방이 이어지며"
+        f" {rate:+.2f}%를 기록했습니다."
+    )
+
+  parts = []
+  for s in matched_stocks[:2]:
+    sign = "+" if s["rate"] > 0 else ""
+    parts.append(f"{s['name']}({sign}{s['rate']:.2f}%)")
+  stock_str = ", ".join(parts)
+
+  if rate >= 1.0:
+    return (
+        f"{stock_str} 등 주력 종목 전반에 강한 매수세가 유입되며 섹터가"
+        f" {rate:+.2f}% 상승했습니다. {theme} 호조 기대감이 긍정적으로"
+        " 작용했습니다."
+    )
+  elif rate > 0.0:
+    return (
+        f"{stock_str} 등이 고른 오름세를 나타내며 {rate:+.2f}% 견조한 흐름을"
+        f" 유지했습니다. {theme} 관련 모멘텀이 지지력을 보였습니다."
+    )
+  elif rate == 0.0:
+    return f"{stock_str} 등 주요 종목 간 등락이 엇갈리며 보합(0.00%)으로 마감했습니다."
+  elif rate > -1.0:
+    return (
+        f"{stock_str} 등에서 차익 매물이 소폭 출회되며 {rate:.2f}%"
+        " 약보합권으로 마감했습니다."
+    )
+  else:
+    return (
+        f"{stock_str} 등 핵심 종목을 중심으로 매도 압력이 가중되며"
+        f" {rate:.2f}% 하락했습니다. {theme} 관련 차익 실현 매물이"
+        " 집중되었습니다."
+    )
+
 
 def get_news_score(title, stock_name):
   """뉴스 제목을 분석하여 경제·기업 관련도를 채점하고 비경제 뉴스를 걸러냄"""
@@ -560,11 +624,13 @@ def calculate_sectors(sector_dict, stock_data):
       top_stock_code = matched[0].get("code", "")
       news_items = fetch_real_news(top_stock_name, top_stock_code)
       avg_r = sum(rates) / len(rates)
+      summary_text = generate_sector_summary(sec_name, avg_r, matched)
       results.append({
           "name": sec_name,
           "rate": round(avg_r, 2),
           "stocks": matched[:3],
           "lead_stock": top_stock_name,
+          "summary": summary_text,
           "news": news_items,
       })
   results.sort(key=lambda x: x["rate"], reverse=True)
@@ -745,6 +811,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 <span class="stock-price">({st['price']}원)</span>
             </span>"""
 
+      summary_html = (
+          f'<div class="sector-summary"><span class="summary-badge">💡 동향'
+          f' 분석</span> {s.get("summary", "")}</div>'
+          if s.get("summary")
+          else ""
+      )
+
       news_tags = ""
       if s.get("news"):
         for n in s["news"][:1]:
@@ -759,6 +832,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                     <span class="sector-rate {color_class}">{rate_display}</span>
                 </div>
                 <div class="stock-container">{stock_tags}</div>
+                {summary_html}
                 {news_tags}
             </div>
             """
@@ -795,7 +869,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .card-value {{ font-size: 1.30rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; transition: color 0.3s; }}
         .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
         
-        .review-card {{ background: #ffffff; border-radius: 12px; border-left: 5px solid #2563eb; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
+        .review-card {{ background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
         .review-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }}
         .review-title {{ font-size: 1.05rem; font-weight: 800; color: #0f172a; }}
         .review-tag {{ font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 3px 8px; border-radius: 6px; }}
@@ -811,15 +885,20 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; color: #0f172a; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        .sector-item {{ padding: 12px 0; border-bottom: 1px solid #f1f5f9; }}
+        .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; }}
         .sector-item:last-child {{ border-bottom: none; }}
-        .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }}
-        .sector-name {{ font-weight: 700; font-size: 0.98rem; }}
+        .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+        .sector-name {{ font-weight: 800; font-size: 1.02rem; color: #0f172a; }}
         .sector-rate {{ font-weight: 800; font-size: 0.98rem; }}
         
-        .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }}
+        .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
         .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
+        
+        /* 섹터별 동향 요약 카드 스타일 */
+        .sector-summary {{ font-size: 0.86rem; line-height: 1.55; color: #334155; background: #f1f5f9; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; border-left: 3px solid #64748b; }}
+        .summary-badge {{ font-weight: 800; color: #0f172a; display: inline-block; margin-right: 4px; }}
+
         .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; }}
         
         /* 한국 증시 표준 색상: 상승=빨간색, 하락=파란색 */
