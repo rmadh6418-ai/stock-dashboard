@@ -22,7 +22,8 @@ DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    # 💡 요청하신 대로 더 강력한 추론 능력을 가진 Pro 모델로 변경했습니다.
+    gemini_model = genai.GenerativeModel('gemini-1.5-pro')
 else:
     gemini_model = None
     print("[WARNING] GEMINI_API_KEY가 설정되지 않아 기본 텍스트 생성 모드로 작동합니다.")
@@ -72,7 +73,6 @@ SECTOR_MOMENTUM_THEMES = {
 def generate_gemini_summary(sec_name, rate, matched_stocks):
     """Gemini AI를 호출하여 섹터 동향을 실제 전문적으로 분석 및 요약"""
     if not gemini_model:
-        # API 키가 없거나 초기화 실패 시 기존 하드코딩 방식 폴백
         return f"{sec_name} 섹터는 주요 종목 간 수급 공방이 이어지며 {rate:+.2f}%를 기록했습니다."
 
     if not matched_stocks:
@@ -238,7 +238,6 @@ def get_investor_trend():
                 for dd in dds:
                     text = dd.text.strip()
                     if text.startswith("개인") or text.startswith("외국인") or text.startswith("기관"):
-                        # text 형식: "개인 1,234억" 또는 "외국인 -123억"
                         entity = text.split(" ")[0]
                         val_str = text.replace(entity, "").strip()
                         
@@ -319,7 +318,7 @@ def get_market_indices():
         })
 
     results.append(get_exchange_rate())
-    results.append(get_us_treasury_10y()) # 미국채 10년물 추가
+    results.append(get_us_treasury_10y())
     return results
 
 
@@ -405,7 +404,7 @@ def calculate_sectors(sector_dict, stock_data):
             news_items = fetch_real_news(top_stock_name, top_stock_code)
             avg_r = sum(rates) / len(rates)
             
-            # 여기서 Gemini AI 호출
+            # 여기서 Gemini API 호출
             summary_text = generate_gemini_summary(sec_name, avg_r, matched)
             
             results.append({
