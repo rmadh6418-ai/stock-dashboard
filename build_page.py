@@ -18,176 +18,165 @@ DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
 # 경제·기업과 무관한 뉴스 필터링용 제외 키워드 목록
 EXCLUDE_NEWS_KEYWORDS = [
-    "콘서트",
-    "포크",
-    "음악회",
-    "축제",
-    "페스티벌",
-    "공연",
-    "전시회",
-    "문화",
-    "봉사",
-    "기부",
-    "나눔",
-    "장학",
-    "사회공헌",
-    "바자회",
-    "캠페인",
-    "후원",
-    "부고",
-    "부음",
-    "화혼",
-    "결혼",
-    "인사",
-    "동정",
-    "알림",
-    "모집",
-    "채용",
-    "이벤트",
-    "경품",
-    "할인",
-    "프로모션",
-    "쿠폰",
-    "체험단",
-    "선착순",
-    "추첨",
-    "골프대회",
-    "마라톤",
-    "시상식",
-    "장학금",
-    "헌혈",
-    "가을",
-    "여행",
-    "맛집",
-    "포토",
-    "영상",
-    "방송",
-    "예능",
+    "콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화",
+    "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원",
+    "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용",
+    "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨",
+    "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집",
+    "포토", "영상", "방송", "예능"
 ]
 
 # 경제·기업·증시 관련 핵심 키워드 목록
 BUSINESS_NEWS_KEYWORDS = [
-    "실적",
-    "매출",
-    "영업익",
-    "영업이익",
-    "순이익",
-    "수주",
-    "계약",
-    "투자",
-    "공급",
-    "인수",
-    "합병",
-    "M&A",
-    "증설",
-    "공시",
-    "주가",
-    "상승",
-    "하락",
-    "급등",
-    "급락",
-    "수출",
-    "양산",
-    "출시",
-    "기술",
-    "개발",
-    "협력",
-    "제휴",
-    "공장",
-    "가동",
-    "수혜",
-    "흑자",
-    "적자",
-    "전망",
-    "목표가",
-    "배당",
-    "지분",
-    "증자",
-    "특허",
-    "사업",
-    "성장",
-    "솔루션",
-    "생산",
-    "상장",
-    "신제품",
-    "AI",
-    "반도체",
-    "배터리",
-    "로봇",
-    "방산",
-    "원전",
-    "바이오",
-    "임상",
-    "승인",
-    "신약",
-    "수주잔고",
-    "체결",
-    "공급계약",
+    "실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급",
+    "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락",
+    "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜",
+    "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장",
+    "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산",
+    "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"
 ]
 
-# 섹터별 고유 핵심 모멘텀/테마 사전
-SECTOR_MOMENTUM_THEMES = {
-    "화학·에너지": "국제 유가 변동 및 정제마진, 석유화학 업황",
-    "이차전지·배터리": "글로벌 전기차 수요 및 배터리 셀·소재 수급",
-    "조선·중공업": "고부가가치 선박 수주 및 신조선가 상승 추세",
-    "전기·전자 (반도체/IT)": "AI 인프라 투자 및 차세대 반도체·부품 수요",
-    "자동차·운송장비": "완성차 글로벌 판매 실적 및 전동화 비중",
-    "원전·전력인프라": "AI 전력망 증설 및 글로벌 전력기기·원전 수요",
-    "방위산업·우주항공": "K-방산 글로벌 수출 수주 호조 및 안보 수요",
-    "제약·바이오": "신약 파이프라인 성과 및 글로벌 기술수출 기대감",
-    "금융·지주": "주주환원 정책(밸류업) 및 금리 환경",
-    "인터넷·플랫폼": "AI 신규 서비스 수익화 및 플랫폼 실적",
-    "건설·시공": "국내외 인프라 수주 및 부동산 PF 환경",
-    "철강·금속": "원자재 가격 및 글로벌 철강·비철금속 수요",
-    "음식료·유통": "K-푸드 글로벌 수출 성장세 및 원가율 개선",
-    "이차전지·소재": "양극재·음극재 등 핵심 소재 수급 및 판가 추이",
-    "반도체 소부장": "차세대 패키징 및 반도체 공정 장비·소재 납품",
-    "엔터·미디어": "소속 아티스트 글로벌 활동 및 콘텐츠 음원 매출",
-    "게임·소프트웨어": "신작 출시 성과 및 글로벌 플랫폼 확장",
-    "로봇·자동화": "산업용 로봇 및 스마트팩토리 자동화 수요",
-    "피팅·배관기자재": "조선·해양플랜트 및 EPC 배관 기자재 수주",
+# 업종별 심층 분석 프레임 및 대표 트리거
+SECTOR_DEEP_DRIVERS = {
+    "방위산업·우주항공": {
+        "theme": "지정학적 안보 리스크 지속과 K-방산 글로벌 수출 계약 모멘텀",
+        "up_driver": "유럽·중동향 대규모 무기 체계 추가 수주 기대감과 실적 턴어라운드",
+        "down_driver": "단기 급등에 따른 차익 매물 출회 및 프로젝트 납기 일정 관망세",
+    },
+    "금융·지주": {
+        "theme": "기업 밸류업 프로그램 및 주주환원율(자사주 소각·배당) 확대 기대감",
+        "up_driver": "실적 대비 저평가 매력과 외국인 중심의 주주환원 배당 수급 유입",
+        "down_driver": "시장 금리 변동성에 따른 순이자마진(NIM) 둔화 우려",
+    },
+    "전기·전자 (반도체/IT)": {
+        "theme": "글로벌 빅테크의 AI 데이터센터 투자 확대 및 HBM/차세대 메모리 수요",
+        "up_driver": "고성능 반도체 공급 계약 호조와 테크 소부장 전반의 낙수효과",
+        "down_driver": "글로벌 IT 세트 수요 회복 지연 및 공급망 내 기술 분쟁 이슈",
+    },
+    "화학·에너지": {
+        "theme": "국제 유가(WTI) 급변 및 정유 정제마진 추이, 석유화학 스프레드",
+        "up_driver": "정제마진 반등 및 고부가가치 스페셜티 제품 중심 실적 방어",
+        "down_driver": "유가 변동성 확대와 중국발 석유화학 공급 과잉에 따른 수익성 둔화",
+    },
+    "원전·전력인프라": {
+        "theme": "글로벌 AI 전력망 인프라 교체 주기 및 신규 원전 수출 프로젝트",
+        "up_driver": "초고압 변압기 등 북미·유럽향 수주잔고 급증과 국산화 성과",
+        "down_driver": "고점 부담에 따른 기관 차익 실현 및 송배전망 정책 불확실성",
+    },
+    "제약·바이오": {
+        "theme": "글로벌 임상 결과 발표, 기술수출(L/O) 계약 및 바이오시밀러 처방 확대",
+        "up_driver": "핵심 파이프라인의 미국·유럽 승인 가시화 및 기술이전 호재",
+        "down_driver": "임상 불확실성 및 금리 인하 속도 조절에 따른 성장주 밸류에이션 부담",
+    },
+    "이차전지·배터리": {
+        "theme": "글로벌 전기차(EV) 캐즘(일시적 수요 둔화) 극복 및 차세대 셀 양산",
+        "up_driver": "ESS(에너지저장장치)향 대규모 납품 수주 및 리튬 가격 안정화",
+        "down_driver": "완성차 업체들의 EV 전환 속도 조절과 단기 가동률 하락 부담",
+    },
+    "조선·중공업": {
+        "theme": "고부가가치 LNG선·컨테이너선 중심의 3년치 이상 선가 상승 수주잔고",
+        "up_driver": "선가 상승분 반영에 따른 조선사 영업이익 본격 흑자 확대",
+        "down_driver": "원자재(후판) 가격 부담 및 단기 급등 후 숨고르기 양상",
+    },
+    "자동차·운송장비": {
+        "theme": "하이브리드(HEV) 중심 글로벌 판매 호조 및 주주환원 확대",
+        "up_driver": "북미·유럽 시장 점유율 선방 및 환율 효과에 따른 견고한 영업이익",
+        "down_driver": "주요국 관세 정책 리스크 및 글로벌 완성차 판가 경쟁 심화",
+    },
+    "로봇·자동화": {
+        "theme": "스마트팩토리 자동화 및 휴머노이드 액추에이터/부품 양산 역량",
+        "up_driver": "대기업과의 전략적 협업 강화 및 핵심 액추에이터 양산 경쟁력 부각",
+        "down_driver": "실적 대비 높은 밸류에이션 부담에 따른 테마성 변동성 확대",
+    },
+    "반도체 소부장": {
+        "theme": "선단 공정용 첨단 장비(HPSP, 한미반도체 등) 및 후공정 패키징 기술",
+        "up_driver": "신규 증설 라인향 장비 조기 반입 및 국산화 부품 채택 확대",
+        "down_driver": "반도체 칩 제조사의 설비투자(Capex) 보수적 집행 우려",
+    },
+    "인터넷·플랫폼": {
+        "theme": "생성형 AI 서비스의 B2B 수익화 및 디지털 광고·커머스 회복세",
+        "up_driver": "수익성 중심 체질 개선과 플랫폼 AI 기능 상용화 성과",
+        "down_driver": "국내외 규제 이슈 및 빅테크 간 AI 개발 경쟁 비용 증가",
+    },
+    "이차전지·소재": {
+        "theme": "양극재·음극재 및 전해액 등 핵심 소재의 고객사 다변화 및 판가 추이",
+        "up_driver": "북미 현지 공장 조기 양산 및 신규 공급계약 체결 소식",
+        "down_driver": "메탈 판가 연동 하락에 따른 재고평가손실 우려",
+    },
 }
 
 
-def generate_sector_summary(sec_name, rate, matched_stocks):
-  """섹터 등락률과 구성 종목 움직임을 바탕으로 업종 동향 핵심 요약 문장 자동 생성"""
-  theme = SECTOR_MOMENTUM_THEMES.get(sec_name, "시장 수급 및 업황 흐름")
-  if not matched_stocks:
-    return (
-        f"{sec_name} 섹터는 주요 종목 간 수급 공방이 이어지며"
-        f" {rate:+.2f}%를 기록했습니다."
-    )
+def generate_sector_summary(sec_name, rate, matched_stocks, news_items):
+  """종목 분산도, 실제 뉴스 이슈, 고유 산업 드라이버를 결합한 심층 분석 리포트 생성"""
+  driver_info = SECTOR_DEEP_DRIVERS.get(
+      sec_name,
+      {
+          "theme": f"{sec_name} 관련 업황 사이클 및 기관·외국인 수급",
+          "up_driver": "견조한 수급 유입 및 실적 개선 기대감",
+          "down_driver": "차익 실현 매물 출회 및 거시 환경 관망세",
+      },
+  )
 
+  up_stocks = [s for s in matched_stocks if s["rate"] > 0]
+  down_stocks = [s for s in matched_stocks if s["rate"] < 0]
+  total_cnt = len(matched_stocks)
+
+  # 1. 수급 구조 판정
+  if len(up_stocks) == total_cnt and total_cnt > 0:
+    breadth_desc = "주요 구성 종목 전체에 고른 매수세가 강하게 유입되는 동반 강세 흐름"
+  elif len(down_stocks) == total_cnt and total_cnt > 0:
+    breadth_desc = "섹터 내 전 종목에 걸쳐 동반 매도세가 출회되는 전방위 하방 압력"
+  elif up_stocks and (len(up_stocks) > len(down_stocks)):
+    breadth_desc = "일부 조정 종목이 혼재되었으나 대형 주도주 중심의 매수세가 섹터 상승을 견인"
+  elif down_stocks and (len(down_stocks) > len(up_stocks)):
+    breadth_desc = "선별적 방어 종목에도 불구하고 핵심 대형주의 낙폭이 커지며 섹터 전반을 압박"
+  else:
+    breadth_desc = "종목별 개별 호재와 수급이 엇갈리며 뚜렷한 방향성 탐색을 이어가는 흐름"
+
+  # 2. 뉴스 핵심 키워드 추출
+  news_issue_point = ""
+  if news_items:
+    n_title = news_items[0]["title"]
+    clean_title = re.sub(r"\[.*?\]|\(.*?\)", "", n_title).strip()
+    news_issue_point = f"특히 당일 <b>'{clean_title[:38]}...'</b> 등 주요 이슈가 부각되며 시장의 이목을 집중시켰습니다."
+
+  # 3. 등락률에 따른 심층 진단 합성
   parts = []
   for s in matched_stocks[:2]:
     sign = "+" if s["rate"] > 0 else ""
-    parts.append(f"{s['name']}({sign}{s['rate']:.2f}%)")
+    parts.append(f"<b>{s['name']}</b>({sign}{s['rate']:.2f}%)")
   stock_str = ", ".join(parts)
 
   if rate >= 1.0:
-    return (
-        f"{stock_str} 등 주력 종목 전반에 강한 매수세가 유입되며 섹터가"
-        f" {rate:+.2f}% 상승했습니다. {theme} 호조 기대감이 긍정적으로"
-        " 작용했습니다."
+    verdict = (
+        f"{stock_str} 등이 강한 탄력을 나타냈습니다. "
+        f"{driver_info['theme']} 속에서 {driver_info['up_driver']} 요인이 강한 모멘텀으로 작용했으며, "
+        f"{breadth_desc}을 나타냈습니다. {news_issue_point}"
     )
   elif rate > 0.0:
-    return (
-        f"{stock_str} 등이 고른 오름세를 나타내며 {rate:+.2f}% 견조한 흐름을"
-        f" 유지했습니다. {theme} 관련 모멘텀이 지지력을 보였습니다."
+    verdict = (
+        f"{stock_str} 등이 견조한 흐름을 이어갔습니다. "
+        f"{driver_info['theme']}에 대한 긍정적 시각이 유지되는 가운데, "
+        f"{breadth_desc}을 보이며 마감했습니다. {news_issue_point}"
     )
   elif rate == 0.0:
-    return f"{stock_str} 등 주요 종목 간 등락이 엇갈리며 보합(0.00%)으로 마감했습니다."
+    verdict = (
+        f"{stock_str} 등락이 팽팽히 맞서며 보합권으로 마무리되었습니다. "
+        f"{driver_info['theme']}을 둘러싼 관망 심리가 짙은 상황입니다."
+    )
   elif rate > -1.0:
-    return (
-        f"{stock_str} 등에서 차익 매물이 소폭 출회되며 {rate:.2f}%"
-        " 약보합권으로 마감했습니다."
+    verdict = (
+        f"{stock_str} 등에서 단기 매물이 일부 출회되며 소폭 조정을 받았습니다. "
+        f"{driver_info['theme']} 불확실성 속에 {breadth_desc}이 나타났습니다. {news_issue_point}"
     )
   else:
-    return (
-        f"{stock_str} 등 핵심 종목을 중심으로 매도 압력이 가중되며"
-        f" {rate:.2f}% 하락했습니다. {theme} 관련 차익 실현 매물이"
-        " 집중되었습니다."
+    verdict = (
+        f"{stock_str} 등을 중심으로 가파른 매도세가 집중되었습니다. "
+        f"{driver_info['theme']} 부담과 함께 {driver_info['down_driver']} 요인이 복합 작용하여, "
+        f"{breadth_desc}을 기록했습니다. {news_issue_point}"
     )
+
+  return verdict
 
 
 def get_news_score(title, stock_name):
@@ -225,9 +214,7 @@ def fetch_real_news(keyword, stock_code=""):
     try:
       url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
       res = requests.get(url, headers=HEADERS, timeout=6)
-      soup = BeautifulSoup(
-          res.content.decode("euc-kr", "replace"), "html.parser"
-      )
+      soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
       table = soup.find("table", class_="type5")
       if table:
         for tr in table.find_all("tr"):
@@ -352,21 +339,9 @@ def get_exchange_rate():
 def get_market_indices():
   """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 정확 수집"""
   targets = [
-      (
-          "코스피 (KOSPI)",
-          "KOSPI",
-          "https://m.stock.naver.com/api/index/KOSPI/basic",
-      ),
-      (
-          "코스닥 (KOSDAQ)",
-          "KOSDAQ",
-          "https://m.stock.naver.com/api/index/KOSDAQ/basic",
-      ),
-      (
-          "코스피 200",
-          "KPI200",
-          "https://m.stock.naver.com/api/index/KPI200/basic",
-      ),
+      ("코스피 (KOSPI)", "KOSPI", "https://m.stock.naver.com/api/index/KOSPI/basic"),
+      ("코스닥 (KOSDAQ)", "KOSDAQ", "https://m.stock.naver.com/api/index/KOSDAQ/basic"),
+      ("코스피 200", "KPI200", "https://m.stock.naver.com/api/index/KPI200/basic"),
   ]
   results = []
   for name, key, url in targets:
@@ -416,29 +391,15 @@ def get_market_stocks():
   """시가총액 상위 종목 체결가, 등락률 및 종목코드 수집"""
   stocks = {}
   urls = [
-      (
-          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1",
-          "KOSPI",
-      ),
-      (
-          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2",
-          "KOSPI",
-      ),
-      (
-          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1",
-          "KOSDAQ",
-      ),
-      (
-          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2",
-          "KOSDAQ",
-      ),
+      ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
+      ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
+      ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
+      ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
   ]
   for u, market in urls:
     try:
       res = requests.get(u, headers=HEADERS, timeout=8)
-      soup = BeautifulSoup(
-          res.content.decode("euc-kr", "replace"), "html.parser"
-      )
+      soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
       table = soup.find("table", class_="type_2")
       if table:
         for tr in table.find_all("tr"):
@@ -468,78 +429,15 @@ def get_market_stocks():
 
 
 KOSPI200_SECTORS = {
-    "화학·에너지": [
-        "LG화학",
-        "S-Oil",
-        "SK이노베이션",
-        "롯데케미칼",
-        "SK가스",
-        "GS",
-        "한국가스공사",
-    ],
-    "이차전지·배터리": [
-        "LG에너지솔루션",
-        "POSCO홀딩스",
-        "포스코퓨처엠",
-        "삼성SDI",
-        "엘앤에프",
-        "에코프로머티",
-    ],
-    "조선·중공업": [
-        "HD현대중공업",
-        "한화오션",
-        "삼성중공업",
-        "HD한국조선해양",
-        "한화엔진",
-        "HD현대",
-        "HD현대마린엔진",
-        "HD현대마린솔루션",
-    ],
-    "전기·전자 (반도체/IT)": [
-        "삼성전자",
-        "SK하이닉스",
-        "삼성전기",
-        "LG이노텍",
-        "한미반도체",
-    ],
+    "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사"],
+    "이차전지·배터리": ["LG에너지솔루션", "POSCO홀딩스", "포스코퓨처엠", "삼성SDI", "엘앤에프", "에코프로머티"],
+    "조선·중공업": ["HD현대중공업", "한화오션", "삼성중공업", "HD한국조선해양", "한화엔진", "HD현대", "HD현대마린엔진", "HD현대마린솔루션"],
+    "전기·전자 (반도체/IT)": ["삼성전자", "SK하이닉스", "삼성전기", "LG이노텍", "한미반도체"],
     "자동차·운송장비": ["현대차", "기아", "현대모비스"],
-    "원전·전력인프라": [
-        "한국전력",
-        "두산에너빌리티",
-        "한전기술",
-        "한전KPS",
-        "효성중공업",
-        "산일전기",
-        "대한전선",
-        "일진전기",
-        "LS ELECTRIC",
-        "HD현대일렉트릭",
-    ],
-    "방위산업·우주항공": [
-        "한화에어로스페이스",
-        "현대로템",
-        "한국항공우주",
-        "한화시스템",
-        "LIG넥스원",
-    ],
-    "제약·바이오": [
-        "삼성바이오로직스",
-        "셀트리온",
-        "유한양행",
-        "한미약품",
-        "SK바이오팜",
-    ],
-    "금융·지주": [
-        "KB금융",
-        "신한지주",
-        "하나금융지주",
-        "메리츠금융지주",
-        "기업은행",
-        "미래에셋증권",
-        "삼성증권",
-        "우리금융지주",
-        "한국금융지주",
-    ],
+    "원전·전력인프라": ["한국전력", "두산에너빌리티", "한전기술", "한전KPS", "효성중공업", "산일전기", "대한전선", "일진전기", "LS ELECTRIC", "HD현대일렉트릭"],
+    "방위산업·우주항공": ["한화에어로스페이스", "현대로템", "한국항공우주", "한화시스템", "LIG넥스원"],
+    "제약·바이오": ["삼성바이오로직스", "셀트리온", "유한양행", "한미약품", "SK바이오팜"],
+    "금융·지주": ["KB금융", "신한지주", "하나금융지주", "메리츠금융지주", "기업은행", "미래에셋증권", "삼성증권", "우리금융지주"],
     "인터넷·플랫폼": ["NAVER", "카카오", "크래프톤"],
     "건설·시공": ["현대건설", "대우건설", "GS건설", "DL이앤씨"],
     "철강·금속": ["고려아연", "현대제철", "동국제강"],
@@ -547,58 +445,12 @@ KOSPI200_SECTORS = {
 }
 
 KOSDAQ150_SECTORS = {
-    "제약·바이오": [
-        "알테오젠",
-        "HLB",
-        "삼천당제약",
-        "리가켐바이오",
-        "휴젤",
-        "에스티팜",
-        "HK이노엔",
-        "동국제약",
-        "지투지바이오",
-        "디엔디파마텍",
-        "올릭스",
-    ],
-    "이차전지·소재": [
-        "에코프로비엠",
-        "에코프로",
-        "엔켐",
-        "대주전자재료",
-        "서진시스템",
-        "나노신소재",
-        "피엔티",
-    ],
-    "반도체 소부장": [
-        "HPSP",
-        "리노공업",
-        "주성엔지니어링",
-        "이오테크닉스",
-        "솔브레인",
-        "동진쎄미켐",
-        "티씨케이",
-        "ISC",
-        "하나머티리얼즈",
-        "대덕전자",
-        "유진테크",
-        "심텍",
-        "원익IPS",
-        "DB하이텍",
-        "테크윙",
-        "파크시스템스",
-    ],
+    "제약·바이오": ["알테오젠", "HLB", "삼천당제약", "리가켐바이오", "휴젤", "에스티팜", "HK이노엔", "동국제약", "지투지바이오", "디엔디파마텍", "올릭스"],
+    "이차전지·소재": ["에코프로비엠", "에코프로", "엔켐", "대주전자재료", "서진시스템", "나노신소재", "피엔티"],
+    "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "DB하이텍", "테크윙", "파크시스템스"],
     "엔터·미디어": ["JYP Ent.", "에스엠", "스튜디오드래곤", "CJ ENM"],
     "게임·소프트웨어": ["펄어비스", "카카오게임즈", "위메이드"],
-    "로봇·자동화": [
-        "레인보우로보틱스",
-        "로보티즈",
-        "에스에프에이",
-        "휴림로봇",
-        "로보스타",
-        "에스피지",
-        "하이젠알앤엠",
-        "삼현",
-    ],
+    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현"],
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
@@ -624,7 +476,7 @@ def calculate_sectors(sector_dict, stock_data):
       top_stock_code = matched[0].get("code", "")
       news_items = fetch_real_news(top_stock_name, top_stock_code)
       avg_r = sum(rates) / len(rates)
-      summary_text = generate_sector_summary(sec_name, avg_r, matched)
+      summary_text = generate_sector_summary(sec_name, avg_r, matched, news_items)
       results.append({
           "name": sec_name,
           "rate": round(avg_r, 2),
@@ -645,49 +497,28 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
   kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
   fx = next((x for x in indices if "환율" in x["name"]), {})
 
-  k_dir = (
-      "상승"
-      if kospi.get("is_up")
-      else ("하락" if kospi.get("is_down") else "보합")
-  )
-  kq_dir = (
-      "상승"
-      if kosdaq.get("is_up")
-      else ("하락" if kosdaq.get("is_down") else "보합")
-  )
+  k_dir = "상승" if kospi.get("is_up") else ("하락" if kospi.get("is_down") else "보합")
+  kq_dir = "상승" if kosdaq.get("is_up") else ("하락" if kosdaq.get("is_down") else "보합")
 
   fx_text = ""
   if fx.get("is_down"):
-    fx_text = (
-        f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 수급 여건을"
-        " 지지했습니다."
-    )
+    fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 수급 여건을 지지했습니다."
   elif fx.get("is_up"):
-    fx_text = (
-        f"원·달러 환율이 <b>{fx.get('value')}</b>로 상승세를 보이며 대형"
-        " 수출주에 영향을 미쳤습니다."
-    )
+    fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 상승세를 보이며 대형 수출주에 영향을 미쳤습니다."
   else:
-    fx_text = (
-        f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 보합권 흐름을"
-        " 나타냈습니다."
-    )
+    fx_text = f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 보합권 흐름을 나타냈습니다."
 
   target_sectors = []
   if k200_top:
     s = k200_top[0]
     icon = "🔴" if s["rate"] > 0 else "🔵"
-    lbl = (
-        "코스피 상승 주도" if s["rate"] > 0 else "코스피 상대 강세 (최소 낙폭)"
-    )
+    lbl = "코스피 상승 주도" if s["rate"] > 0 else "코스피 상대 강세 (최소 낙폭)"
     target_sectors.append((s, icon, lbl))
 
   if k150_top:
     s = k150_top[0]
     icon = "🔴" if s["rate"] > 0 else "🔵"
-    lbl = (
-        "코스닥 상승 주도" if s["rate"] > 0 else "코스닥 상대 강세 (최소 낙폭)"
-    )
+    lbl = "코스닥 상승 주도" if s["rate"] > 0 else "코스닥 상대 강세 (최소 낙폭)"
     target_sectors.append((s, icon, lbl))
 
   if k200_bot:
@@ -700,11 +531,7 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
     if s.get("news"):
       first_n = s["news"][0]
       clean_t = first_n["title"].replace('"', "&quot;")
-      n_text = (
-          f'<a href="{first_n["link"]}" target="_blank"'
-          f' class="news-link">"{clean_t}"</a> <span'
-          f' class="press-badge">{first_n["press"]}</span>'
-      )
+      n_text = f'<a href="{first_n["link"]}" target="_blank" class="news-link">"{clean_t}"</a> <span class="press-badge">{first_n["press"]}</span>'
     else:
       n_text = f"{s['lead_stock']} 등 주력 종목 중심 수급 공방"
 
@@ -812,8 +639,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             </span>"""
 
       summary_html = (
-          f'<div class="sector-summary"><span class="summary-badge">💡 동향'
-          f' 분석</span> {s.get("summary", "")}</div>'
+          f'<div class="sector-summary"><div class="summary-header"><span'
+          ' class="summary-badge">🔍 섹터 심층'
+          f' 분석</span></div><div class="summary-body">{s.get("summary",'
+          ' "")}</div></div>'
           if s.get("summary")
           else ""
       )
@@ -885,21 +714,24 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; color: #0f172a; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; }}
+        .sector-item {{ padding: 16px 0; border-bottom: 1px solid #f1f5f9; }}
         .sector-item:last-child {{ border-bottom: none; }}
         .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
-        .sector-name {{ font-weight: 800; font-size: 1.02rem; color: #0f172a; }}
-        .sector-rate {{ font-weight: 800; font-size: 0.98rem; }}
+        .sector-name {{ font-weight: 800; font-size: 1.05rem; color: #0f172a; }}
+        .sector-rate {{ font-weight: 800; font-size: 1.0rem; }}
         
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
         .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
         
-        /* 섹터별 동향 요약 카드 스타일 */
-        .sector-summary {{ font-size: 0.86rem; line-height: 1.55; color: #334155; background: #f1f5f9; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; border-left: 3px solid #64748b; }}
-        .summary-badge {{ font-weight: 800; color: #0f172a; display: inline-block; margin-right: 4px; }}
+        /* 심층 분석 카드 전용 스타일 */
+        .sector-summary {{ font-size: 0.88rem; line-height: 1.65; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 11px 14px; margin-bottom: 8px; border-left: 4px solid #3b82f6; }}
+        .summary-header {{ margin-bottom: 4px; }}
+        .summary-badge {{ font-weight: 800; font-size: 0.82rem; color: #1d4ed8; background: #dbeafe; padding: 2px 7px; border-radius: 4px; display: inline-block; }}
+        .summary-body {{ color: #1e293b; }}
+        .summary-body b {{ color: #0f172a; font-weight: 700; }}
 
-        .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; }}
+        .sector-news {{ font-size: 0.84rem; color: #475569; background: #ffffff; border: 1px dashed #cbd5e1; padding: 7px 10px; border-radius: 6px; }}
         
         /* 한국 증시 표준 색상: 상승=빨간색, 하락=파란색 */
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
@@ -1054,7 +886,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 }} catch (err) {{}}
             }});
 
-            // (2) 원·달러 환율 전용 실시간 갱신 (두나무 공식 환율 API: CORS 지원)
+            // (2) 원·달러 환율 전용 실시간 갱신 (두나무 공식 환율 API)
             try {{
                 let fxItem = null;
                 try {{
