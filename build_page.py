@@ -315,10 +315,11 @@ def get_market_indices():
             "change_rate": 0.0, "is_up": False, "is_down": False,
         })
 
+    # 지표 수집 영역 (은값 -> 금값으로 수정됨)
     results.append(get_exchange_rate())
     results.append(get_world_market_index("미국채 10년물", "US_10Y", "IR_TNX", "%"))
     results.append(get_world_market_index("미국채 30년물", "US_30Y", "IR_TYX", "%"))
-    results.append(get_world_market_index("은값(Silver)", "COM_SILVER", "CMB_SI", "$"))
+    results.append(get_world_market_index("금값(Gold)", "COM_GOLD", "CMDT_GC", "$"))
     results.append(get_world_market_index("엔·달러 환율", "FX_USDJPY", "FX_USDJPY", "엔"))
     
     return results
