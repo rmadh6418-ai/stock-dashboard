@@ -384,77 +384,221 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
+SECTOR_INSIGHTS = {
+    "화학·에너지": (
+        "국제유가 변동성과 정제마진 스프레드, 중국 내수 부양책에 따른 석유화학"
+        " 수요 회복 여부"
+    ),
+    "이차전지·배터리": (
+        "글로벌 EV 캐즘(수요 둔화) 장기화 우려와 ESS향 신규 수요, 리튬·니켈 등"
+        " 핵심 원자재 가격 동향"
+    ),
+    "조선·중공업": (
+        "고부가가치 친환경 선박(LNG·암모니아) 중심의 선가 상승세와 글로벌"
+        " 발주잔고 확대"
+    ),
+    "전기·전자 (반도체/IT)": (
+        "AI 가속기 및 HBM(고대역폭메모리) 수요 가시성, 미국 빅테크 CAPEX 및"
+        " 글로벌 반도체 업황"
+    ),
+    "자동차·운송장비": (
+        "하이브리드(HEV) 중심의 견고한 글로벌 판매량 및 환율 효과,"
+        " 주주환원(밸류업) 기대감"
+    ),
+    "원전·전력인프라": (
+        "글로벌 AI 데이터센터 증설에 따른 전력망 확충 수혜와 초고압"
+        " 변압기·전선 수출 호조"
+    ),
+    "방위산업·우주항공": (
+        "지정학적 리스크 장기화에 따른 K-방산 수주잔고 증가 및 안정적인 해외"
+        " 수출 파이프라인"
+    ),
+    "제약·바이오": (
+        "금리 인하 사이클 진입에 따른 유동성 유입 기대와 주요 파이프라인의"
+        " 글로벌 기술수출(L/O) 및 임상 성과"
+    ),
+    "금융·지주": (
+        "기업 밸류업 프로그램 관련 자사주 소각·배당 확대 등 주주환원율 제고와"
+        " 금리 경로에 따른 순이자마진(NIM)"
+    ),
+    "인터넷·플랫폼": (
+        "AI 기술의 비즈니스 모델 접목 및 커머스·광고 부문의 수익성 방어력"
+    ),
+    "건설·시공": (
+        "부동산 PF 리스크 및 원자재비 상승 부담 대비 해외 플랜트·토목"
+        " 프로젝트 수주 가시성"
+    ),
+    "철강·금속": (
+        "중국산 저가 철강재 유입에 따른 판가 압박과 전방 산업(건설·가전) 수요"
+        " 회복 속도"
+    ),
+    "음식료·유통": (
+        "K-푸드 수출 모멘텀 지속성 및 원자재 곡물가 안정화에 따른 마진 스프레드"
+        " 개선"
+    ),
+    "반도체 소부장": (
+        "전방 칩메이커들의 첨단 패키징 및 선단공정 장비·소재 발주 사이클"
+    ),
+    "엔터·미디어": (
+        "음원·음반 실적 추이 및 글로벌 월드투어 재개, 신인 아티스트 데뷔"
+        " 모멘텀"
+    ),
+    "게임·소프트웨어": (
+        "신작 흥행 성과 및 글로벌 라이선스 확장, 개발비 효율화에 따른 수익성"
+        " 턴어라운드"
+    ),
+    "로봇·자동화": (
+        "제조업 인력난 대응을 위한 자동화 설비 도입과 휴머노이드·협동로봇 시장"
+        " 개화 기대감"
+    ),
+    "피팅·배관기자재": (
+        "조선·해양플랜트 및 LNG 터미널 증설에 연동된 산업용 관이음쇠 수주"
+        " 동향"
+    ),
+}
+
 
 def generate_sector_summary(sec_name, avg_rate, stocks, news_items):
-  """섹터별 등락 현황, 수급 주도주, 언론 이슈를 종합한 맞춤 요약 생성"""
-  if avg_rate >= 1.5:
-    trend_txt = (
-        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 급등하며 장중 강한 탄력을"
-        " 나타냈습니다."
+  """단순 뉴스 인용을 탈피하고, 산업 펀더멘털·등락 강도·수급 분산·모멘텀을 심층 분석한 리포트 생성"""
+  base_insight = SECTOR_INSIGHTS.get(
+      sec_name, "업종 고유의 펀더멘털 및 시장 수급 환경"
+  )
+
+  if avg_rate >= 2.0:
+    tone = (
+        f"평균 {avg_rate:+.2f}% 급등하며 시장의 강력한 주도주 역할을"
+        " 수행했습니다."
     )
+    action = "상승 추세가 강하게 분출되며 매수세가 공격적으로 유입되었습니다."
   elif avg_rate > 0:
-    trend_txt = (
-        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 상승하며 견조한 우상향 흐름을"
-        " 보였습니다."
+    tone = (
+        f"평균 {avg_rate:+.2f}% 상승하며 견조한 우상향 탄력을 보였습니다."
     )
-  elif avg_rate <= -1.5:
-    trend_txt = (
-        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 하락하며 매도 물량 출회에"
-        " 따른 조정을 받았습니다."
+    action = "지수 대비 상대적 우위를 점하며 하방 경직성을 확보했습니다."
+  elif avg_rate <= -2.0:
+    tone = (
+        f"평균 {avg_rate:+.2f}% 급락하며 단기 하방 압력이 크게"
+        " 확대되었습니다."
+    )
+    action = (
+        "차익 실현 및 위험 회피성 매물이 출회되며 지지선 테스트가"
+        " 진행되었습니다."
     )
   elif avg_rate < 0:
-    trend_txt = (
-        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 소폭 밀리며 숨고르기 장세를"
-        " 기록했습니다."
+    tone = (
+        f"평균 {avg_rate:+.2f}% 소폭 조정을 받으며 숨고르기 국면을"
+        " 나타냈습니다."
+    )
+    action = (
+        "상승 피로감에 따른 단기 매물 소화와 함께 관망세가 짙어졌습니다."
     )
   else:
-    trend_txt = f"{sec_name} 섹터는 뚜렷한 방향성 없이 보합세를 유지했습니다."
+    tone = "보합권(0.00%)에 머물며 방향성 탐색 과정을 거쳤습니다."
+    action = "수급 공방 속에서 뚜렷한 모멘텀을 대기하는 흐름이었습니다."
 
-  up_stocks = [s for s in stocks if s["rate"] > 0]
-  down_stocks = [s for s in stocks if s["rate"] < 0]
+  up_cnt = sum(1 for s in stocks if s["rate"] > 0)
+  down_cnt = sum(1 for s in stocks if s["rate"] < 0)
+  total_cnt = len(stocks)
   lead = stocks[0] if stocks else None
 
   if lead:
     lead_sign = "+" if lead["rate"] > 0 else ""
-    lead_info = f"{lead['name']}({lead_sign}{lead['rate']:.2f}%)"
-    if len(stocks) > 1 and len(up_stocks) == len(stocks):
-      breadth_txt = (
-          f"{lead_info}을(를) 중심으로 편입 종목 전반에 동반 매수세가"
-          " 확산되었습니다."
+    lead_str = f"{lead['name']}({lead_sign}{lead['rate']:.2f}%)"
+    if up_cnt == total_cnt and total_cnt > 1:
+      stock_analysis = (
+          f"특히 {lead_str}을(를) 선봉으로 섹터 내 주요 종목군에 고른 동반"
+          " 매수세가 집중되었습니다."
       )
-    elif len(stocks) > 1 and len(down_stocks) == len(stocks):
-      breadth_txt = (
-          f"{lead_info} 등 주요 종목 전반에 걸쳐 동반 매도세가 우위를"
-          " 보였습니다."
+    elif down_cnt == total_cnt and total_cnt > 1:
+      stock_analysis = (
+          f"특히 {lead_str}을(를) 비롯한 바스켓 종목군 전반에 동반 매도 압력이"
+          " 지배적이었습니다."
+      )
+    elif abs(lead["rate"] - avg_rate) > 2.0:
+      stock_analysis = (
+          f"전체 업종 흐름 대비 {lead_str}의 개별 수급 변동성이 두드러진 차별화"
+          " 장세를 보였습니다."
       )
     else:
-      breadth_txt = (
-          f"대장주인 {lead_info}의 변동성을 축으로 개별 종목별 수급 차별화가"
-          " 전개되었습니다."
+      stock_analysis = (
+          f"주요 대장주인 {lead_str}의 주가 흐름을 중심으로 지지선 구축"
+          " 공방이 전개되었습니다."
       )
   else:
-    breadth_txt = "구성 종목 전반의 수급 공방이 팽팽하게 이어졌습니다."
+    stock_analysis = "종목별 수급 분산이 이어졌습니다."
 
+  catalyst_txt = ""
   if news_items:
-    first_news = news_items[0]
-    clean_title = (
-        first_news["title"]
-        .replace("[", "")
-        .replace("]", "")
-        .replace("포토", "")
-        .strip()
-    )
-    news_txt = (
-        f"주요 이슈로는 '{clean_title}'({first_news['press']}) 등이"
-        " 부각되었습니다."
-    )
+    combined_titles = " ".join([n["title"] for n in news_items])
+    pos_words = [
+        "수주",
+        "실적",
+        "급등",
+        "돌파",
+        "호조",
+        "상승",
+        "성장",
+        "공급",
+        "계약",
+        "인수",
+        "수출",
+        "AI",
+        "인공지능",
+        "전력",
+        "수혜",
+    ]
+    neg_words = [
+        "하락",
+        "급락",
+        "부진",
+        "우려",
+        "적자",
+        "위기",
+        "악화",
+        "매도",
+        "손실",
+        "소송",
+        "충격",
+    ]
+
+    found_pos = [w for w in pos_words if w in combined_titles]
+    found_neg = [w for w in neg_words if w in combined_titles]
+
+    if found_pos and avg_rate > 0:
+      catalyst_txt = (
+          f"시장에서는 관련 기업들의 '{found_pos[0]}' 이슈 및 수혜 기대감이 주요"
+          " 상승 동력으로 작용했습니다."
+      )
+    elif found_neg and avg_rate < 0:
+      catalyst_txt = (
+          f"시장에서는 업황 내 '{found_neg[0]}' 관련 경계 심리가 매물 출회의"
+          " 빌미를 제공했습니다."
+      )
+    else:
+      clean_t = (
+          news_items[0]["title"]
+          .replace("[", "")
+          .replace("]", "")
+          .replace("포토", "")
+          .replace("종합", "")
+          .strip()
+      )
+      if len(clean_t) > 25:
+        clean_t = clean_t[:25] + "..."
+      catalyst_txt = (
+          f"개별 뉴스 플로우로는 '{clean_t}' 등의 소식이 유입되며 투자 심리에"
+          " 영향을 미쳤습니다."
+      )
   else:
-    news_txt = (
-        "개별 이슈보다는 시장 거시 매크로 환경 및 수급 흐름에"
-        " 연동되었습니다."
+    catalyst_txt = (
+        f"단기 개별 이슈보다는 {base_insight} 등 거시 매크로 환경 변화에 민감하게"
+        " 반응하고 있습니다."
     )
 
-  return f"{trend_txt} {breadth_txt} {news_txt}"
+  return (
+      f"<b>{sec_name}</b>은(는) {base_insight}이(가) 핵심 축인 가운데, 당일 {tone}"
+      f" {action} {stock_analysis} {catalyst_txt}"
+  )
 
 
 def calculate_sectors(sector_dict, stock_data):
@@ -674,7 +818,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         news_tags = """<div class="sector-news" style="color: #94a3b8;">당일 집계된 관련 특징주 뉴스가 없습니다.</div>"""
 
       summary_tag = (
-          f"""<div class="sector-summary">💡 <b>섹터 종합 요약:</b>"""
+          f"""<div class="sector-summary">📊 <b>섹터 심층 분석:</b>"""
           f""" {s.get('summary', '')}</div>"""
       )
 
@@ -752,7 +896,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
         .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; margin-bottom: 6px; }}
         
-        .sector-summary {{ font-size: 0.83rem; line-height: 1.6; color: #334155; background: #f1f5f9; border-radius: 6px; padding: 8px 12px; border-left: 3px solid #64748b; }}
+        .sector-summary {{ font-size: 0.83rem; line-height: 1.65; color: #334155; background: #f8fafc; border-radius: 6px; padding: 9px 12px; border: 1px solid #e2e8f0; border-left-width: 3px; border-left-color: #0284c7; }}
         .sector-summary b {{ color: #0f172a; }}
 
         /* 한국 증시 표준 색상: 상승=빨간색, 하락=파란색 */
@@ -905,19 +1049,14 @@ def send_kakao_alert(indices, k200_top, k150_top):
     k200_lead = k200_top[0]["name"] if k200_top else "집계중"
     k150_lead = k150_top[0]["name"] if k150_top else "집계중"
 
-    msg_text = (
-        f"📊 [정규장 마감 리포트] {date_str}\n\n"
-        f"• 코스피: {kospi.get('value')}"
-        f" ({k_sign}{abs(kospi.get('change_rate', 0)):.2f}%,"
-        f" {kospi.get('change_val')})\n"
-        f"• 코스닥: {kosdaq.get('value')}"
-        f" ({kq_sign}{abs(kosdaq.get('change_rate', 0)):.2f}%,"
-        f" {kosdaq.get('change_val')})\n"
-        f"• 원·달러: {fx.get('value')}"
-        f" ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)\n"
-        f"• 상대강세: {k200_lead} / {k150_lead}\n\n"
-        f"상세 업종 동향과 뉴스는 아래 버튼을 눌러 확인하세요."
-    )
+    msg_text = f"""📊 [정규장 마감 리포트] {date_str}
+
+• 코스피: {kospi.get('value')} ({k_sign}{abs(kospi.get('change_rate', 0)):.2f}%, {kospi.get('change_val')})
+• 코스닥: {kosdaq.get('value')} ({kq_sign}{abs(kosdaq.get('change_rate', 0)):.2f}%, {kosdaq.get('change_val')})
+• 원·달러: {fx.get('value')} ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)
+• 상대강세: {k200_lead} / {k150_lead}
+
+상세 업종 동향과 뉴스는 아래 버튼을 눌러 확인하세요."""
 
     send_url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
     headers = {"Authorization": f"Bearer {access_token}"}
