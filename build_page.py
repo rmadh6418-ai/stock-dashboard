@@ -41,7 +41,7 @@ def generate_dynamic_sector_analysis(sec_name, rate, matched_stocks, news_items)
   stock_summary_text = ", ".join([f"{s['name']}({'+' if s['rate']>0 else ''}{s['rate']:.2f}%)" for s in matched_stocks[:3]])
   news_title = news_items[0]["title"] if news_items else "관련 핵심 특징주 뉴스 집계 중"
 
-  # 1. Gemini AI API 연동 시도 (등록되어 있다면 AI가 직접 분석)
+  # 1. Gemini AI API 연동 시도
   if api_key:
     prompt = f"""
     당신은 전문 금융 애널리스트입니다. 아래의 당일 마감 데이터를 바탕으로 해당 섹터의 주가 흐름과 시장 의미를 통찰력 있게 1~2문장으로 분석해 주세요. 고정된 문장 틀을 사용하지 말고 당일 데이터를 입체적으로 해석해 주세요. 마크다운이나 불필요한 서식 없이 순수 텍스트만 출력하세요.
@@ -66,16 +66,16 @@ def generate_dynamic_sector_analysis(sec_name, rate, matched_stocks, news_items)
     except Exception:
       pass
 
-  # 2. API가 없을 경우: 당일 수집된 종목별 등락 추이와 뉴스 키워드를 조합하여 매번 다르게 생성하는 동적 조합 분석기
+  # 2. API가 없을 경우: 실시간 데이터를 조합하여 매번 다르게 생성하는 동적 조합 분석기
   top_stock = matched_stocks[0] if matched_stocks else {"name": sec_name, "rate": rate}
   other_stocks = ", ".join([s['name'] for s in matched_stocks[1:3]]) if len(matched_stocks) > 1 else "동종 업계"
   
   if rate >= 2.0:
     return f"당일 {top_stock['name']}({top_stock['rate']:+.2f}%)을 필두로 {other_stocks} 등이 가파른 매수세를 유입시키며 섹터 전반의 급등(+{rate:.2f}%)을 주도했습니다. 특히 '{news_title[:32]}...' 관련 보도가 투자 심리를 강하게 자극했습니다."
   elif rate >= 0.5:
-    return f"{top_stock['name']}이({가:=top_stock['name']}가) +{top_stock['rate']:.2f}%의 양호한 흐름을 보인 가운데, {other_stocks} 등 주요 종목들이 동반 상승하며 섹터가 +{rate:.2f}% 우상향 곡선을 그렸습니다."
+    return f"{top_stock['name']}이(+{top_stock['rate']:.2f}%) 양호한 흐름을 보인 가운데, {other_stocks} 등 주요 종목들이 동반 상승하며 섹터가 +{rate:.2f}% 우상향 곡선을 그렸습니다."
   elif rate > 0.0:
-    return f"보합권에서 출발한 후 {top_stock['name']} 등 일부 종목의 선별적 반등에 힘입어 +{rate:.2f%:.2f}% 강보합 마감했습니다. 수급 유입 강도는 다소 제한적인 모습입니다."
+    return f"보합권에서 출발한 후 {top_stock['name']} 등 일부 종목의 선별적 반등에 힘입어 +{rate:.2f}% 강보합 마감했습니다. 수급 유입 강도는 다소 제한적인 모습입니다."
   elif rate == 0.0:
     return f"구성 종목 간 매수와 매도 공방이 팽팽하게 맞서며 {sec_name} 지수는 보합(0.00%) 상태로 정규장을 마쳤습니다."
   elif rate > -1.0:
