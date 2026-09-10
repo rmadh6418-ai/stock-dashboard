@@ -33,18 +33,18 @@ def parse_change_text(text):
 
 
 def get_market_indices():
-  """상단 4대 주요 지수 (코스피, 코스닥, 코스피 200, 환율)"""
+  """상단 4대 주요 지수 (코스피, 코스닥, 코스피 200, 환율) 초기 데이터 수집"""
   results = []
   main_url = "https://finance.naver.com/sise/"
   try:
     res = requests.get(main_url, headers=HEADERS, timeout=10)
     soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
     targets = [
-        ("코스피 (KOSPI)", "KOSPI"),
-        ("코스닥 (KOSDAQ)", "KOSDAQ"),
-        ("코스피 200", "KPI200"),
+        ("코스피 (KOSPI)", "KOSPI", "KOSPI"),
+        ("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ"),
+        ("코스피 200", "KPI200", "KPI200"),
     ]
-    for name, prefix in targets:
+    for name, prefix, code_key in targets:
       now_elem = soup.find(id=f"{prefix}_now")
       change_elem = soup.find(id=f"{prefix}_change")
       if now_elem:
@@ -53,6 +53,7 @@ def get_market_indices():
         diff, rate, is_up, is_down = parse_change_text(c_text)
         results.append({
             "name": name,
+            "code_key": code_key,
             "value": price,
             "change_val": diff,
             "change_rate": rate,
@@ -62,6 +63,7 @@ def get_market_indices():
       else:
         results.append({
             "name": name,
+            "code_key": code_key,
             "value": "-",
             "change_val": "0",
             "change_rate": 0.0,
@@ -69,9 +71,14 @@ def get_market_indices():
             "is_down": False,
         })
   except Exception:
-    for name in ["코스피 (KOSPI)", "코스닥 (KOSDAQ)", "코스피 200"]:
+    for name, prefix, code_key in [
+        ("코스피 (KOSPI)", "KOSPI", "KOSPI"),
+        ("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ"),
+        ("코스피 200", "KPI200", "KPI200"),
+    ]:
       results.append({
           "name": name,
+          "code_key": code_key,
           "value": "-",
           "change_val": "0",
           "change_rate": 0.0,
@@ -96,6 +103,7 @@ def get_market_indices():
     pass
   results.append({
       "name": "원·달러 환율",
+      "code_key": "FX_USDKRW",
       "value": fx_val,
       "change_val": fx_diff,
       "change_rate": fx_rate,
@@ -384,8 +392,8 @@ def calculate_sectors(sector_dict, stock_data):
 
 
 def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
-  kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
-  kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
+  kospi = next((x for x in indices if "코스피" in x["name"]), {})
+  kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
   fx = next((x for x in indices if "환율" in x["name"]), {})
 
   k_dir = (
@@ -402,8 +410,8 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
   fx_text = ""
   if fx.get("is_down"):
     fx_text = (
-        f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 외국인"
-        " 수급 여건을 지지했습니다."
+        f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 수급 여건을"
+        " 지지했습니다."
     )
   elif fx.get("is_up"):
     fx_text = (
@@ -434,7 +442,7 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
           f' class="press-badge">{first_n["press"]}</span>'
       )
     else:
-      n_text = f"{s['lead_stock']} 등 주력 종목 중심의 수급 공방 지속"
+      n_text = f"{s['lead_stock']} 등 주력 종목 중심 수급 형성"
     news_bullets += f"""
         <div class="review-item">
             <span class="bullet">{icon}</span>
@@ -445,17 +453,17 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
   review_html = f"""
     <div class="review-card">
         <div class="review-header">
-            <span class="review-title">📝 정규장 마감 핵심 요약 & 실시간 언론사 뉴스 헤드라인</span>
-            <span class="review-tag">네이버 금융 공식 뉴스 연동</span>
+            <span class="review-title">📝 정규장 핵심 마감 총평 & 주요 이슈</span>
+            <span class="review-tag">공식 언론사 속보</span>
         </div>
         <div class="review-body">
             <div class="review-item">
                 <span class="bullet">📌</span>
-                <div><b>[마감 총평]</b> 코스피는 <b>{kospi.get('value')}</b>({k_dir}), 코스닥은 <b>{kosdaq.get('value')}</b>({kq_dir})으로 정규장을 마감했습니다.</div>
+                <div><b>[시장 동향]</b> 코스피 <b>{kospi.get('value')}</b>({k_dir}), 코스닥 <b>{kosdaq.get('value')}</b>({kq_dir})을 기록했습니다.</div>
             </div>
             <div class="review-item">
                 <span class="bullet">📌</span>
-                <div><b>[환율 여건]</b> {fx_text}</div>
+                <div><b>[환율 흐름]</b> {fx_text}</div>
             </div>
             <div class="review-divider"></div>
             <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px;">📰 당일 주요 섹터별 언론사 보도 헤드라인</div>
@@ -494,10 +502,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
 
     index_cards += f"""
-        <div class="card">
+        <div class="card" data-index-target="{idx['code_key']}">
             <div class="card-title">{idx['name']}</div>
-            <div class="card-value">{idx['value']}</div>
-            <div class="badge {badge_bg} {color_class}">
+            <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
+            <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">
                 {rate_text}{diff_text}
             </div>
         </div>
@@ -519,7 +527,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             else ("text-down" if st["rate"] < 0 else "text-flat")
         )
         st_sign = "+" if st["rate"] > 0 else ""
-        stock_tags += f'<span class="stock-pill">{st["name"]} <b class="{st_color}">{st_sign}{st["rate"]}%</b></span>'
+        code_attr = (
+            f'data-stock-code="{st.get("code", "")}"' if st.get("code") else ""
+        )
+        stock_tags += f"""
+            <span class="stock-pill" {code_attr}>
+                <span class="stock-name">{st['name']}</span> 
+                <b class="stock-rate {st_color}">{st_sign}{st['rate']}%</b>
+                <span class="stock-price">({st['price']}원)</span>
+            </span>"""
 
       news_tags = ""
       if s.get("news"):
@@ -549,30 +565,38 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>국내 정규장 마감 대시보드</title>
+    <title>실시간 국내 증시 대시보드</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
-        body {{ background-color: #f4f6f9; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
-        header {{ text-align: center; margin-bottom: 20px; }}
+        body {{ background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
+        
+        header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .timestamp {{ font-size: 0.88rem; font-weight: 600; color: #475569; background: #e2e8f0; display: inline-block; padding: 5px 14px; border-radius: 20px; }}
+        
+        .status-bar {{ display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin-top: 6px; }}
+        .timestamp {{ font-size: 0.86rem; font-weight: 600; color: #334155; background: #e2e8f0; padding: 4px 12px; border-radius: 20px; }}
+        .live-status {{ font-size: 0.80rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; }}
+        .status-live {{ background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }}
+        .status-closed {{ background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }}
+        .btn-refresh {{ background: #2563eb; color: #fff; border: none; padding: 5px 12px; border-radius: 20px; font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }}
+        .btn-refresh:hover {{ background: #1d4ed8; }}
         
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 22px; }}
-        .card {{ background: #fff; padding: 16px 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
+        .card {{ background: #fff; padding: 16px 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; transition: transform 0.2s; }}
         .card-title {{ font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
-        .card-value {{ font-size: 1.28rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
+        .card-value {{ font-size: 1.30rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; transition: color 0.3s; }}
+        .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; transition: all 0.3s; }}
         
-        .review-card {{ background: #ffffff; border-radius: 12px; border-left: 5px solid #2563eb; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
+        .review-card {{ background: #ffffff; border-radius: 12px; border-left: 5px solid #2563eb; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
         .review-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }}
-        .review-title {{ font-size: 1.08rem; font-weight: 800; color: #0f172a; }}
+        .review-title {{ font-size: 1.05rem; font-weight: 800; color: #0f172a; }}
         .review-tag {{ font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 3px 8px; border-radius: 6px; }}
         .review-body {{ display: flex; flex-direction: column; gap: 9px; font-size: 0.92rem; line-height: 1.6; color: #334155; }}
         .review-item {{ display: flex; align-items: flex-start; gap: 8px; }}
         .bullet {{ font-size: 0.95rem; line-height: 1.4; }}
         .review-divider {{ height: 1px; background: #e2e8f0; margin: 4px 0; }}
         
-        .news-link {{ color: #0f172a; text-decoration: none; font-weight: 600; transition: color 0.2s; }}
+        .news-link {{ color: #0f172a; text-decoration: none; font-weight: 600; }}
         .news-link:hover {{ color: #2563eb; text-decoration: underline; }}
         .press-badge {{ font-size: 0.72rem; color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; margin-left: 4px; font-weight: 500; }}
 
@@ -586,21 +610,32 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .sector-rate {{ font-weight: 800; font-size: 0.98rem; }}
         
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }}
-        .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 8px; font-size: 0.82rem; }}
+        .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; transition: background 0.3s; }}
+        .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
         .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; }}
         
-        .text-up {{ color: #e11d48; }}
-        .text-down {{ color: #2563eb; }}
-        .text-flat {{ color: #64748b; }}
+        .text-up {{ color: #e11d48; font-weight: 700; }}
+        .text-down {{ color: #2563eb; font-weight: 700; }}
+        .text-flat {{ color: #64748b; font-weight: 700; }}
         .bg-up-light {{ background-color: #ffe4e6; }}
         .bg-down-light {{ background-color: #dbeafe; }}
         .bg-gray-100 {{ background-color: #f1f5f9; }}
+        
+        .flash-update {{ animation: flashAnim 0.8s ease; }}
+        @keyframes flashAnim {{
+            0% {{ background-color: #fef08a; }}
+            100% {{ background-color: transparent; }}
+        }}
     </style>
 </head>
 <body>
     <header>
-        <h1>📊 국내 정규장 마감 대시보드</h1>
-        <div class="timestamp" id="visit-time">방문 시간 확인 중...</div>
+        <h1>📊 실시간 국내 증시 대시보드</h1>
+        <div class="status-bar">
+            <span class="timestamp" id="live-clock">🕒 시간 계산 중...</span>
+            <span class="live-status" id="market-status">동기화 확인 중</span>
+            <button class="btn-refresh" id="btn-refresh" onclick="fetchLiveMarketData()">🔄 실시간 새로고침</button>
+        </div>
     </header>
 
     <div class="grid-indices">
@@ -630,9 +665,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     </div>
 
     <script>
-        function updateVisitTime() {{
+        // 1. 한국 표준시(KST) 실시간 시계 및 장 상태 판정
+        function updateLiveClock() {{
             const now = new Date();
-            const options = {{
+            const kstFormatter = new Intl.DateTimeFormat('ko-KR', {{
                 timeZone: 'Asia/Seoul',
                 year: 'numeric',
                 month: 'long',
@@ -642,11 +678,139 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 minute: '2-digit',
                 second: '2-digit',
                 hour12: false
-            }};
-            const timeStr = new Intl.DateTimeFormat('ko-KR', options).format(now);
-            document.getElementById('visit-time').innerHTML = '🕒 방문 시간: <b>' + timeStr + '</b> (KST) | 15:30 정규장 마감 기준';
+            }});
+            const clockText = kstFormatter.format(now);
+            const clockEl = document.getElementById('live-clock');
+            if (clockEl) clockEl.textContent = '🕒 ' + clockText + ' (KST)';
+
+            // 장중 여부 판정 (월~금, 09:00 ~ 15:30)
+            const kstDate = new Date(now.toLocaleString("en-US", {{ timeZone: "Asia/Seoul" }}));
+            const day = kstDate.getDay(); // 0:일, 6:토
+            const hour = kstDate.getHours();
+            const min = kstDate.getMinutes();
+            const timeVal = hour * 60 + min;
+            const isWeekday = (day >= 1 && day <= 5);
+            const isMarketOpen = isWeekday && (timeVal >= 540 && timeVal < 930); // 09:00 ~ 15:30
+
+            const statusEl = document.getElementById('market-status');
+            if (statusEl) {{
+                if (isMarketOpen) {{
+                    statusEl.className = 'live-status status-live';
+                    statusEl.textContent = '🔴 실시간 장중 연동 중';
+                }} else {{
+                    statusEl.className = 'live-status status-closed';
+                    statusEl.textContent = '🏁 15:30 정규장 마감 확정';
+                }}
+            }}
         }}
-        updateVisitTime();
+        setInterval(updateLiveClock, 1000);
+        updateLiveClock();
+
+        // 2. 다중 프록시를 활용한 CORS 우회 실시간 데이터 호출기
+        async function fetchWithProxy(targetUrl) {{
+            const proxies = [
+                (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+                (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u)
+            ];
+            for (const getProxy of proxies) {{
+                try {{
+                    const res = await fetch(getProxy(targetUrl), {{ cache: 'no-store' }});
+                    if (res.ok) {{
+                        const data = await res.json();
+                        if (data) return data;
+                    }}
+                }} catch (e) {{}}
+            }}
+            throw new Error('모든 프록시 호출 실패');
+        }}
+
+        // 3. 지수 및 종목 실시간 시세 동기화 함수
+        async function fetchLiveMarketData() {{
+            const btn = document.getElementById('btn-refresh');
+            if (btn) {{
+                btn.textContent = '⏳ 시세 갱신 중...';
+                btn.disabled = true;
+            }}
+
+            // (1) 주요 지수 갱신
+            const indexMap = [
+                {{ key: 'KOSPI', url: 'https://m.stock.naver.com/api/index/KOSPI/basic' }},
+                {{ key: 'KOSDAQ', url: 'https://m.stock.naver.com/api/index/KOSDAQ/basic' }},
+                {{ key: 'KPI200', url: 'https://m.stock.naver.com/api/index/KPI200/basic' }},
+                {{ key: 'FX_USDKRW', url: 'https://m.stock.naver.com/api/marketindex/item/FX_USDKRW' }}
+            ];
+
+            indexMap.forEach(async (item) => {{
+                try {{
+                    const data = await fetchWithProxy(item.url);
+                    const valEl = document.getElementById('val-' + item.key);
+                    const badgeEl = document.getElementById('badge-' + item.key);
+                    if (!valEl || !badgeEl || !data) return;
+
+                    const price = (item.key === 'FX_USDKRW') ? (data.closePrice + '원') : data.closePrice;
+                    const diff = data.compareToPreviousClosePrice || '0';
+                    const rate = parseFloat(data.fluctuationsRatio || 0);
+                    
+                    const code = data.compareToPreviousPrice?.code || '';
+                    const isUp = (code === '2' || code === '1' || rate > 0);
+                    const isDown = (code === '5' || code === '4' || rate < 0);
+
+                    const sign = isUp ? '▲ +' : (isDown ? '▼ -' : '― ');
+                    const colorClass = isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat');
+                    const badgeBg = isUp ? 'bg-up-light' : (isDown ? 'bg-down-light' : 'bg-gray-100');
+
+                    valEl.textContent = price;
+                    badgeEl.className = 'badge ' + badgeBg + ' ' + colorClass;
+                    badgeEl.textContent = sign + Math.abs(rate).toFixed(2) + '% (' + diff + ')';
+                    
+                    valEl.classList.remove('flash-update');
+                    void valEl.offsetWidth;
+                    valEl.classList.add('flash-update');
+                }} catch (err) {{}}
+            }});
+
+            // (2) 화면 내 노출된 종목 실시간 체결가 갱신
+            const stockElements = document.querySelectorAll('.stock-pill[data-stock-code]');
+            stockElements.forEach(async (el) => {{
+                const code = el.getAttribute('data-stock-code');
+                if (!code) return;
+
+                try {{
+                    const stockUrl = 'https://m.stock.naver.com/api/stock/' + code + '/basic';
+                    const sData = await fetchWithProxy(stockUrl);
+                    if (!sData) return;
+
+                    const price = sData.closePrice;
+                    const rate = parseFloat(sData.fluctuationsRatio || 0);
+                    const cd = sData.compareToPreviousPrice?.code || '';
+                    const isUp = (cd === '2' || cd === '1' || rate > 0);
+                    const isDown = (cd === '5' || cd === '4' || rate < 0);
+
+                    const rateEl = el.querySelector('.stock-rate');
+                    const priceEl = el.querySelector('.stock-price');
+
+                    if (rateEl) {{
+                        rateEl.className = 'stock-rate ' + (isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat'));
+                        rateEl.textContent = (isUp ? '+' : '') + rate.toFixed(2) + '%';
+                    }}
+                    if (priceEl) {{
+                        priceEl.textContent = '(' + price + '원)';
+                    }}
+                }} catch (e) {{}}
+            }});
+
+            setTimeout(() => {{
+                if (btn) {{
+                    btn.textContent = '🔄 실시간 새로고침';
+                    btn.disabled = false;
+                }}
+            }}, 800);
+        }}
+
+        // 페이지 접속 시 즉시 1회 실시간 동기화 실행
+        window.addEventListener('DOMContentLoaded', () => {{
+            fetchLiveMarketData();
+        }});
     </script>
 </body>
 </html>
@@ -682,8 +846,8 @@ def send_kakao_alert(indices, k200_top, k150_top):
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     date_str = kst_now.strftime("%m/%d 15:30 마감")
 
-    kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
-    kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
+    kospi = next((x for x in indices if "코스피" in x["name"]), {})
+    kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
     fx = next((x for x in indices if "환율" in x["name"]), {})
 
     k_sign = "+" if kospi.get("is_up") else ""
@@ -698,7 +862,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
         f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{kosdaq.get('change_rate')}%, {kosdaq.get('change_val')})\n"
         f"• 원·달러: {fx.get('value')}\n"
         f"• 주도섹터: {k200_lead} / {k150_lead}\n\n"
-        f"상세 업종 동향과 뉴스는 아래 버튼을 눌러 확인하세요."
+        f"언제든 접속 시 실시간 시세가 자동 동기화됩니다."
     )
 
     send_url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
@@ -711,7 +875,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
                 "web_url": DASHBOARD_URL,
                 "mobile_web_url": DASHBOARD_URL,
             },
-            "button_title": "📊 증시 대시보드 바로가기",
+            "button_title": "📊 실시간 대시보드 바로가기",
         })
     }
     s_res = requests.post(send_url, headers=headers, data=payload, timeout=5)
