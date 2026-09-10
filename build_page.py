@@ -18,11 +18,9 @@ HEADERS = {
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
 # --- Gemini API 설정 ---
-# GitHub Secrets 또는 환경변수에 GEMINI_API_KEY를 등록해야 작동합니다.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # 💡 요청하신 대로 더 강력한 추론 능력을 가진 Pro 모델로 변경했습니다.
     gemini_model = genai.GenerativeModel('gemini-1.5-pro')
 else:
     gemini_model = None
@@ -186,10 +184,10 @@ def fetch_real_news(keyword, stock_code=""):
     return candidates[:2]
 
 
-def get_us_treasury_10y():
-    """네이버 금융 시장지표에서 미국채 10년물 금리 추출"""
+def get_world_market_index(name, code_key, marketindexCd, unit=""):
+    """네이버 금융 시장지표에서 글로벌 지표 단일 추출 (미국채, 귀금속, 환율 등 통합 함수)"""
     try:
-        url = "https://finance.naver.com/marketindex/worldDailyQuote.naver?marketindexCd=IR_TNX"
+        url = f"https://finance.naver.com/marketindex/worldDailyQuote.naver?marketindexCd={marketindexCd}"
         res = requests.get(url, headers=HEADERS, timeout=8)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         table = soup.find("table", class_="tbl_exchange today")
@@ -204,19 +202,19 @@ def get_us_treasury_10y():
             is_down = "하락" in str(tds[2])
             
             return {
-                "name": "미국채 10년물",
-                "code_key": "US_10Y",
-                "value": f"{val}%",
+                "name": name,
+                "code_key": code_key,
+                "value": f"{val}{unit}",
                 "change_val": diff,
                 "change_rate": float(rate.replace("%", "")) if rate != "-" else 0.0,
                 "is_up": is_up,
                 "is_down": is_down,
             }
     except Exception as e:
-        print(f"[ERROR] 미국채 금리 파싱 오류: {e}")
+        print(f"[ERROR] {name} 파싱 오류: {e}")
         
     return {
-        "name": "미국채 10년물", "code_key": "US_10Y", "value": "-", 
+        "name": name, "code_key": code_key, "value": "-", 
         "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False
     }
 
@@ -318,7 +316,11 @@ def get_market_indices():
         })
 
     results.append(get_exchange_rate())
-    results.append(get_us_treasury_10y())
+    results.append(get_world_market_index("미국채 10년물", "US_10Y", "IR_TNX", "%"))
+    results.append(get_world_market_index("미국채 30년물", "US_30Y", "IR_TYX", "%"))
+    results.append(get_world_market_index("은값(Silver)", "COM_SILVER", "CMB_SI", "$"))
+    results.append(get_world_market_index("엔·달러 환율", "FX_USDJPY", "FX_USDJPY", "엔"))
+    
     return results
 
 
@@ -404,7 +406,6 @@ def calculate_sectors(sector_dict, stock_data):
             news_items = fetch_real_news(top_stock_name, top_stock_code)
             avg_r = sum(rates) / len(rates)
             
-            # 여기서 Gemini API 호출
             summary_text = generate_gemini_summary(sec_name, avg_r, matched)
             
             results.append({
@@ -587,8 +588,6 @@ def render_html(indices, investor_data, k200_top, k200_bot, k150_top, k150_bot):
         .live-status {{ font-size: 0.80rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; }}
         .status-live {{ background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }}
         .status-closed {{ background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }}
-        .btn-refresh {{ background: #2563eb; color: #fff; border: none; padding: 5px 12px; border-radius: 20px; font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }}
-        .btn-refresh:hover {{ background: #1d4ed8; }}
         
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }}
         .card {{ background: #fff; padding: 16px 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
