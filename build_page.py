@@ -17,11 +17,70 @@ HEADERS = {
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
 
-def get_market_indices():
-  """네이버 공식 모바일 API를 활용하여 4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 정확 수집
+def get_exchange_rate():
+  """원·달러 환율 데이터 수집 (1순위: 공식 실시간 환율 API, 2순위: 네이버 금융 크롤링 백업)"""
+  try:
+    url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
+    res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+    if res.status_code == 200:
+      data = res.json()
+      if data and len(data) > 0:
+        item = data[0]
+        price = f"{item['basePrice']:,.2f}원"
+        diff = f"{item['changePrice']:,.2f}"
+        rate = round(item.get("changeRate", 0) * 100, 2)
+        chg = item.get("change", "EVEN")
+        is_up = chg == "RISE"
+        is_down = chg == "FALL"
+        return {
+            "name": "원·달러 환율",
+            "code_key": "FX_USDKRW",
+            "value": price,
+            "change_val": diff,
+            "change_rate": rate,
+            "is_up": is_up,
+            "is_down": is_down,
+        }
+  except Exception:
+    pass
 
-  코드 규격: 1(상한), 2(상승), 3(보합), 4(하한), 5(하락)
-  """
+  try:
+    m_url = "https://finance.naver.com/marketindex/"
+    res = requests.get(m_url, headers=HEADERS, timeout=8)
+    soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+    box = soup.find("div", class_="head_info")
+    if box:
+      val_text = box.find("span", class_="value").text.strip().replace(",", "")
+      price = f"{float(val_text):,.2f}원"
+      diff = box.find("span", class_="change").text.strip()
+      box_text = box.text
+      is_up = ("상승" in box_text) or ("+" in box_text)
+      is_down = ("하락" in box_text) or ("-" in box_text)
+      return {
+          "name": "원·달러 환율",
+          "code_key": "FX_USDKRW",
+          "value": price,
+          "change_val": diff,
+          "change_rate": 0.0,
+          "is_up": is_up,
+          "is_down": is_down,
+      }
+  except Exception:
+    pass
+
+  return {
+      "name": "원·달러 환율",
+      "code_key": "FX_USDKRW",
+      "value": "-",
+      "change_val": "0",
+      "change_rate": 0.0,
+      "is_up": False,
+      "is_down": False,
+  }
+
+
+def get_market_indices():
+  """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 정확 수집"""
   targets = [
       (
           "코스피 (KOSPI)",
@@ -38,11 +97,6 @@ def get_market_indices():
           "KPI200",
           "https://m.stock.naver.com/api/index/KPI200/basic",
       ),
-      (
-          "원·달러 환율",
-          "FX_USDKRW",
-          "https://m.stock.naver.com/api/marketindex/item/FX_USDKRW",
-      ),
   ]
   results = []
   for name, key, url in targets:
@@ -51,8 +105,6 @@ def get_market_indices():
       if res.status_code == 200:
         data = res.json()
         val = data.get("closePrice", "-")
-        if key == "FX_USDKRW" and not str(val).endswith("원"):
-          val = f"{val}원"
         diff = data.get("compareToPreviousClosePrice", "0")
         try:
           rate = abs(float(data.get("fluctuationsRatio", 0)))
@@ -85,6 +137,9 @@ def get_market_indices():
         "is_up": False,
         "is_down": False,
     })
+
+  # 원·달러 환율 추가
+  results.append(get_exchange_rate())
   return results
 
 
@@ -433,11 +488,11 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
     else:
       n_text = f"{s['lead_stock']} 등 주력 종목 중심 수급 공방"
 
-    rate_sign = "+" if s["rate"] > 0 else ""
+    rate_sign = "+" if s["rate"] > 0 else "-"
     news_bullets += f"""
         <div class="review-item">
             <span class="bullet">{icon}</span>
-            <div><b>[{label}: {s['name']} | {rate_sign}{s['rate']}%]</b> {n_text.replace("포토", "").replace("종합", "").strip()}</div>
+            <div><b>[{label}: {s['name']} | {rate_sign}{abs(s['rate']):.2f}%]</b> {n_text.replace("포토", "").replace("종합", "").strip()}</div>
         </div>
         """
 
@@ -481,7 +536,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
       color_class = "text-flat"
       badge_bg = "bg-gray-100"
 
-    rate_text = f"{sign}{idx['change_rate']:.2f}%"
+    rate_text = (
+        f"{sign}{abs(idx['change_rate']):.2f}%"
+        if idx["change_rate"] != 0.0
+        else f"{sign}0.00%"
+    )
     diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
 
     index_cards += f"""
@@ -505,13 +564,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         sign = "▲ +"
         color_class = "text-up"
       elif r < 0:
-        sign = "▼ "
+        sign = "▼ -"
         color_class = "text-down"
       else:
         sign = "― "
         color_class = "text-flat"
 
-      rate_display = f"{sign}{r:.2f}%" if r < 0 else f"{sign}{r:.2f}%"
+      rate_display = f"{sign}{abs(r):.2f}%"
 
       stock_tags = ""
       for st in s.get("stocks", []):
@@ -521,14 +580,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             if st_r > 0
             else ("text-down" if st_r < 0 else "text-flat")
         )
-        st_sign = "+" if st_r > 0 else ""
+        st_sign = "+" if st_r > 0 else ("-" if st_r < 0 else "")
         code_attr = (
             f'data-stock-code="{st.get("code", "")}"' if st.get("code") else ""
         )
         stock_tags += f"""
             <span class="stock-pill" {code_attr}>
                 <span class="stock-name">{st['name']}</span> 
-                <b class="stock-rate {st_color}">{st_sign}{st_r:.2f}%</b>
+                <b class="stock-rate {st_color}">{st_sign}{abs(st_r):.2f}%</b>
                 <span class="stock-price">({st['price']}원)</span>
             </span>"""
 
@@ -718,7 +777,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             throw new Error('프록시 호출 실패');
         }}
 
-        // 실시간 시세 동기화 (한국 기준 등락 부호 정확 판정)
+        // 실시간 시세 동기화 (지수 3종 + 환율 1종 + 개별 종목)
         async function fetchLiveMarketData() {{
             const btn = document.getElementById('btn-refresh');
             if (btn) {{
@@ -726,25 +785,24 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 btn.disabled = true;
             }}
 
-            const indexMap = [
+            // (1) 주요 증시 지수 3종 (코스피, 코스닥, 코스피200)
+            const indexTargets = [
                 {{ key: 'KOSPI', url: 'https://m.stock.naver.com/api/index/KOSPI/basic' }},
                 {{ key: 'KOSDAQ', url: 'https://m.stock.naver.com/api/index/KOSDAQ/basic' }},
-                {{ key: 'KPI200', url: 'https://m.stock.naver.com/api/index/KPI200/basic' }},
-                {{ key: 'FX_USDKRW', url: 'https://m.stock.naver.com/api/marketindex/item/FX_USDKRW' }}
+                {{ key: 'KPI200', url: 'https://m.stock.naver.com/api/index/KPI200/basic' }}
             ];
 
-            indexMap.forEach(async (item) => {{
+            indexTargets.forEach(async (item) => {{
                 try {{
                     const data = await fetchWithProxy(item.url);
                     const valEl = document.getElementById('val-' + item.key);
                     const badgeEl = document.getElementById('badge-' + item.key);
                     if (!valEl || !badgeEl || !data) return;
 
-                    const price = (item.key === 'FX_USDKRW') ? (data.closePrice + '원') : data.closePrice;
+                    const price = data.closePrice;
                     const diff = data.compareToPreviousClosePrice || '0';
                     const rate = Math.abs(parseFloat(data.fluctuationsRatio || 0));
 
-                    // 네이버 공식 코드 기준 판정: 1/2는 상승, 4/5는 하락
                     const cd = String(data.compareToPreviousPrice?.code || '3');
                     const isUp = (cd === '1' || cd === '2');
                     const isDown = (cd === '4' || cd === '5');
@@ -763,7 +821,47 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 }} catch (err) {{}}
             }});
 
-            // 종목 실시간 시세 갱신
+            // (2) 원·달러 환율 전용 실시간 갱신 (두나무 공식 환율 API: CORS 지원)
+            try {{
+                let fxItem = null;
+                try {{
+                    const fxRes = await fetch("https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD", {{ cache: 'no-store' }});
+                    if (fxRes.ok) {{
+                        const arr = await fxRes.json();
+                        if (arr && arr.length > 0) fxItem = arr[0];
+                    }}
+                }} catch (e) {{
+                    const arr = await fetchWithProxy("https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD");
+                    if (arr && arr.length > 0) fxItem = arr[0];
+                }}
+
+                if (fxItem) {{
+                    const valEl = document.getElementById('val-FX_USDKRW');
+                    const badgeEl = document.getElementById('badge-FX_USDKRW');
+                    if (valEl && badgeEl) {{
+                        const price = Number(fxItem.basePrice).toLocaleString('ko-KR', {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }}) + '원';
+                        const diff = Number(fxItem.changePrice).toFixed(2);
+                        const rate = (Number(fxItem.changeRate) * 100).toFixed(2);
+
+                        const isUp = (fxItem.change === 'RISE');
+                        const isDown = (fxItem.change === 'FALL');
+
+                        const sign = isUp ? '▲ +' : (isDown ? '▼ -' : '― ');
+                        const colorClass = isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat');
+                        const badgeBg = isUp ? 'bg-up-light' : (isDown ? 'bg-down-light' : 'bg-gray-100');
+
+                        valEl.textContent = price;
+                        badgeEl.className = 'badge ' + badgeBg + ' ' + colorClass;
+                        badgeEl.textContent = sign + rate + '% (' + diff + ')';
+
+                        valEl.classList.remove('flash-update');
+                        void valEl.offsetWidth;
+                        valEl.classList.add('flash-update');
+                    }}
+                }}
+            }} catch (fxErr) {{}}
+
+            // (3) 종목 실시간 시세 갱신
             const stockElements = document.querySelectorAll('.stock-pill[data-stock-code]');
             stockElements.forEach(async (el) => {{
                 const code = el.getAttribute('data-stock-code');
@@ -854,15 +952,23 @@ def send_kakao_alert(indices, k200_top, k150_top):
         if kosdaq.get("is_up")
         else ("▼ -" if kosdaq.get("is_down") else "")
     )
+    fx_sign = (
+        "▲ +" if fx.get("is_up") else ("▼ -" if fx.get("is_down") else "")
+    )
 
     k200_lead = k200_top[0]["name"] if k200_top else "집계중"
     k150_lead = k150_top[0]["name"] if k150_top else "집계중"
 
     msg_text = (
         f"📊 [정규장 마감 리포트] {date_str}\n\n"
-        f"• 코스피: {kospi.get('value')} ({k_sign}{kospi.get('change_rate'):.2f}%, {kospi.get('change_val')})\n"
-        f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{kosdaq.get('change_rate'):.2f}%, {kosdaq.get('change_val')})\n"
-        f"• 원·달러: {fx.get('value')}\n"
+        f"• 코스피: {kospi.get('value')}"
+        f" ({k_sign}{abs(kospi.get('change_rate', 0)):.2f}%,"
+        f" {kospi.get('change_val')})\n"
+        f"• 코스닥: {kosdaq.get('value')}"
+        f" ({kq_sign}{abs(kosdaq.get('change_rate', 0)):.2f}%,"
+        f" {kosdaq.get('change_val')})\n"
+        f"• 원·달러: {fx.get('value')}"
+        f" ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)\n"
         f"• 상대강세: {k200_lead} / {k150_lead}\n\n"
         f"언제든 접속 시 실시간 시세가 자동 동기화됩니다."
     )
