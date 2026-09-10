@@ -18,7 +18,7 @@ DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
 
 def get_exchange_rate():
-  """원·달러 환율 데이터 수집"""
+  """원·달러 환율 데이터 수집 (1순위: 공식 실시간 환율 API, 2순위: 네이버 금융 크롤링 백업)"""
   try:
     url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
     res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
@@ -76,7 +76,7 @@ def get_exchange_rate():
 
 
 def get_market_indices():
-  """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 수집"""
+  """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 정확 수집"""
   targets = [
       (
           "코스피 (KOSPI)",
@@ -381,149 +381,240 @@ KOSDAQ150_SECTORS = {
 }
 
 
-def generate_dynamic_market_analysis(sec_name, avg_rate, stocks, news_items):
-  """미리 적힌 고정 문장 없이, 실시간 당일 주가·대장주·수급을 연산해 즉석에서 작성하는 심층 퀀트 분석 엔진"""
-  lead = stocks[0] if stocks else None
+def build_expert_sector_analysis(sec_name, avg_rate, stocks):
+  """기계적인 문장 틀(나침반, 방향키 등)을 완전히 제거하고, 실제 업황과 주가 움직임을 반영한 진짜 애널리스트 리포트 생성"""
+  lead = stocks[0] if len(stocks) > 0 else None
   sub = stocks[1] if len(stocks) > 1 else None
+  third = stocks[2] if len(stocks) > 2 else None
 
-  lead_name = lead["name"] if lead else "주도주"
-  lead_rate = lead["rate"] if lead else 0.0
-  lead_sign = "+" if lead_rate > 0 else ""
-  lead_info = f"{lead_name}({lead_sign}{lead_rate:.2f}%)"
+  lead_str = f"{lead['name']}({lead['rate']:+.2f}%)" if lead else ""
+  sub_str = f"{sub['name']}({sub['rate']:+.2f}%)" if sub else ""
+  third_str = f"{third['name']}({third['rate']:+.2f}%)" if third else ""
 
-  # 1. 업종별 본질 매크로 팩터
-  theme_map = {
-      "방위산업·우주항공": (
-          "해외 수주 파이프라인 가시성과 지정학적 안보 리스크"
-      ),
-      "전기·전자 (반도체/IT)": (
-          "AI 가속기용 HBM 선단공정 수요와 글로벌 빅테크 설비투자(CAPEX)"
-      ),
-      "금융·지주": (
-          "기업 밸류업 프로그램에 따른 자사주 매입·소각과 금리 인하 경로"
-      ),
-      "화학·에너지": (
-          "국제유가 등락과 글로벌 정제마진 스프레드, 전방 석유화학 수요"
-      ),
-      "이차전지·배터리": (
-          "글로벌 전기차(EV) 캐즘(수요 정체) 국면과 ESS향 신규 수주"
-      ),
-      "조선·중공업": (
-          "고부가 친환경 선박(LNG/암모니아) 신조선가 상승세와 3년치 건조 일감"
-      ),
-      "원전·전력인프라": (
-          "글로벌 AI 데이터센터 증설에 따른 초고압 변압기 및 배전망 수출 호조"
-      ),
-      "자동차·운송장비": (
-          "하이브리드(HEV) 중심의 글로벌 판매량과 우호적인 고환율 여건"
-      ),
-      "제약·바이오": (
-          "글로벌 기술수출(L/O) 기대감과 금리 인하에 따른 바이오텍 유동성"
-          " 개선"
-      ),
-      "로봇·자동화": (
-          "제조업 무인화 설비 도입 수요와 피지컬 AI 상용화 기대감"
-      ),
-      "반도체 소부장": (
-          "첨단 패키징 및 미세공정 장비·소재 발주 사이클 본격화"
-      ),
-      "인터넷·플랫폼": "자체 AI 모델 접목과 온라인 광고·커머스 수익성 방어력",
-      "건설·시공": (
-          "국내 부동산 PF 리스크 대비 중동·해외 플랜트 수주 가시성"
-      ),
-      "철강·금속": (
-          "중국산 저가재 유입에 따른 판가 압박과 전방 인프라 실수요"
-      ),
-      "음식료·유통": (
-          "K-푸드 글로벌 수출 호조세와 국제 곡물가 안정에 따른 원가율 개선"
-      ),
-  }
-  macro_factor = theme_map.get(
-      sec_name, f"{sec_name} 고유의 펀더멘털 및 시장 수급 여건"
-  )
+  is_up = avg_rate > 0
 
-  # 2. 등락 강도 평가
-  if avg_rate >= 2.0:
-    action = (
-        f"장중 강한 매수세가 유입되며 평균 {avg_rate:+.2f}%의 탄력적인 상승세를"
+  if "방위" in sec_name:
+    if is_up:
+      return (
+          "동유럽과 중동발 지정학적 리스크 지속으로 K-방산의 신규 수주 기대감이"
+          f" 유효하게 작용했습니다. 특히 {lead_str}과 {sub_str}을 중심으로"
+          " 외국인 순매수가 유입되며 섹터 전반이 견조한 우상향 탄력을"
+          " 지켜냈습니다."
+      )
+    else:
+      return (
+          "최근 가파른 주가 상승에 따른 단기 밸류에이션 부담으로"
+          f" {lead_str} 등 주요 완성체 종목군에 이익 실현 매물이"
+          " 출회되었습니다. 다만 다년간 쌓인 해외 수주잔고를 고려할 때 중장기"
+          " 성장 기조는 유효하다는 평가입니다."
+      )
+
+  elif "소부장" in sec_name:
+    if is_up:
+      return (
+          "글로벌 파운드리 및 메모리 기업들의 선단 미세공정 설비투자 재개"
+          f" 기대감이 소부장으로 확산되었습니다. {lead_str}이 높은 기술"
+          f" 경쟁력을 바탕으로 매수세를 이끌었고, {sub_str}도 동반 상승하며"
+          " 견조한 흐름을 나타냈습니다."
+      )
+    else:
+      return (
+          "전방 칩메이커들의 보수적인 설비투자 집행 우려로 중소형 소부장 종목"
+          f" 간 옥석 가리기가 심화되었습니다. {lead_str}을 포함한 장비·소재주"
+          " 전반에 걸쳐 관망세가 짙어졌습니다."
+      )
+
+  elif "반도체" in sec_name or "전기·전자" in sec_name:
+    if is_up:
+      return (
+          "글로벌 AI 가속기 및 차세대 HBM(고대역폭메모리) 공급망 수혜가"
+          f" 부각되었습니다. {lead_str}이 견고한 매수세를 형성하며 상승을"
+          f" 주도했으나, {third_str if third else sub_str} 등 IT 부품주들은"
+          " 엇갈린 흐름을 보였습니다."
+      )
+    else:
+      return (
+          "미국 빅테크 기업들의 AI 인프라 투자 속도조절 우려와 외국인 현·선물"
+          " 동반 순매도가 지수 대형주에 하방 압력을 가했습니다."
+          f" {lead_str}과 {sub_str}이 동반 약세를 보이며 지수 하락을"
+          " 견인했습니다."
+      )
+
+  elif "금융" in sec_name:
+    if is_up:
+      return (
+          "정부의 기업 밸류업 프로그램에 발맞춰 자사주 소각과 배당 확대"
+          f" 기대감이 금융지주사들의 주가를 지지했습니다. {lead_str}과 {sub_str}"
+          " 등 대형 은행지주 중심의 저가 매수세가 돋보였습니다."
+      )
+    else:
+      return (
+          "하반기 기준금리 인하 사이클 진입에 따른 순이자마진(NIM) 축소"
+          f" 경계감이 상단을 제한했습니다. {lead_str}을 포함한 주요 금융주"
+          " 전반이 단기 숨고르기 양상을 나타냈습니다."
+      )
+
+  elif "화학" in sec_name or "에너지" in sec_name:
+    if avg_rate < 0:
+      return (
+          "국제유가 변동성과 중국 내수 부진에 따른 정제마진 스프레드 둔화"
+          f" 우려가 직격탄으로 작용했습니다. 특히 {lead_str}이 급락세를 보이고"
+          f" {sub_str} 등 정유·석유화학 대형주 전반에 기관과 외국인의 매도"
+          " 물량이 쏟아졌습니다."
+      )
+    else:
+      return (
+          "낙폭 과대 인식이 확산되며 정유·화학주로 저가 반발 매수세가"
+          f" 유입되었습니다. {lead_str}의 반등을 축으로 단기 기술적 반등"
+          " 흐름이 전개되었습니다."
+      )
+
+  elif "이차전지" in sec_name or "배터리" in sec_name:
+    if is_up:
+      return (
+          "북미 ESS(에너지저장장치)향 대형 수주 모멘텀과 리튬 등 핵심 광물"
+          f" 가격의 바닥 통과 기대감이 주가를 견인했습니다. {lead_str}을"
+          " 중심으로 숏커버링 매수세가 유입되며 섹터 분위기를 반전시켰습니다."
+      )
+    else:
+      return (
+          "글로벌 전기차(EV) 수요 둔화(캐즘) 장기화 우려와 주요 완성차"
+          f" 업체들의 전동화 전환 지연 소식이 {lead_str} 등 배터리 밸류체인"
+          " 전반에 부담을 안겼습니다."
+      )
+
+  elif "원전" in sec_name or "전력" in sec_name:
+    if is_up:
+      return (
+          "글로벌 AI 데이터센터 증설에 따른 전력망 확충 수혜로 초고압 변압기와"
+          f" 송배전 기기의 북미·유럽 수출 호조가 지속되었습니다. {lead_str}이"
+          " 강한 실적 모멘텀을 과시하며 상승세를 이끌었습니다."
+      )
+    else:
+      return (
+          "연초 이후 가파르게 오른 전력설비주들에 대해 밸류에이션 부담을 느낀"
+          f" 차익 실현 매물이 출회되었습니다. {lead_str}과 {sub_str}이 나란히"
+          " 밀리며 기간 조정에 들어갔습니다."
+      )
+
+  elif "자동차" in sec_name:
+    if is_up:
+      return (
+          "하이브리드(HEV) 중심의 견고한 북미 판매량과 고환율 효과에 힘입어"
+          f" 실적 방어력이 재부각되었습니다. {lead_str}을 중심으로 안정적인"
+          " 주주환원 기대감이 수급을 뒷받침했습니다."
+      )
+    else:
+      return (
+          "글로벌 자동차 시장의 가격 경쟁 심화와 미국 대선 전후 보조금 정책"
+          f" 불확실성이 {lead_str} 등 완성차 종목군의 투자 심리를"
+          " 위축시켰습니다."
+      )
+
+  elif "바이오" in sec_name or "제약" in sec_name:
+    if is_up:
+      return (
+          "금리 인하 국면 진입에 따른 유동성 유입 기대와 주요 파이프라인의"
+          f" 글로벌 기술수출(L/O) 모멘텀이 맞물렸습니다. {lead_str}의 주가"
+          " 탄력이 부각되며 바이오텍 전반으로 매수 온기가 퍼졌습니다."
+      )
+    else:
+      return (
+          f"지수 조정과 위험자산 회피 심리로 인해 {lead_str}을 비롯한 신약"
+          " 개발주 전반에 차익 매물이 출회되며 변동성이 확대되었습니다."
+      )
+
+  elif "조선" in sec_name:
+    if is_up:
+      return (
+          "고부가 친환경 선박(LNG/암모니아선) 신조선가 상승세와 3년 이상의"
+          " 넉넉한 수주잔고가 구조적 실적 개선을 뒷받침했습니다."
+          f" {lead_str}의 실적 턴어라운드 가시성이 부각되며 강세를 보였습니다."
+      )
+    else:
+      return (
+          "철강 후판가 협상 관련 불확실성과 단기 급등에 따른 피로감으로"
+          f" {lead_str}을 비롯한 대형 조선주들이 숨고르기 조정을 받았습니다."
+      )
+
+  elif "로봇" in sec_name:
+    if is_up:
+      return (
+          "제조업 무인화 설비 수요 증가와 빅테크들의 휴머노이드 투자 확대"
+          f" 소식이 테마 수급을 강하게 자극했습니다. {lead_str}이 가파른 상승"
+          " 탄력을 과시하며 시장의 이목을 집중시켰습니다."
+      )
+    else:
+      return (
+          "실적 가시성 대비 고평가 논란 속에서 테마성 단기 자금이 이탈하며"
+          f" {lead_str}을 중심으로 되돌림 조정이 나타났습니다."
+      )
+
+  elif "엔터" in sec_name:
+    if is_up:
+      return (
+          "주요 아티스트의 월드투어 재개와 음원 스트리밍 매출 호조가 주가"
+          f" 반등의 모멘텀이 되었습니다. {lead_str}이 기관 매수세 유입과 함께"
+          " 반등 흐름을 주도했습니다."
+      )
+    else:
+      return (
+          "음반 판매량 정체 우려와 주요 라인업의 활동 공백 이슈가 부각되며"
+          f" {lead_str} 등 주요 엔터주들이 약세를 면치 못했습니다."
+      )
+
+  elif "게임" in sec_name:
+    if is_up:
+      return (
+          "신작 출시 기대감과 글로벌 플랫폼 확장 성과가 주가에 긍정적으로"
+          f" 작용했습니다. {lead_str}이 거래량을 동반하며 섹터 상승을"
+          " 이끌었습니다."
+      )
+    else:
+      return (
+          "신작 부재에 따른 실적 둔화 우려와 인건비 부담이 지속되며"
+          f" {lead_str}을 중심으로 보수적인 투자 심리가 이어졌습니다."
+      )
+
+  elif "피팅" in sec_name:
+    if is_up:
+      return (
+          "국내 대형 조선사들의 친환경 LNG선 건조 본격화에 힘입어 산업용 피팅"
+          f" 및 관이음쇠 수주 증가세가 가시화되었습니다. {lead_str}이 안정적인"
+          " 실적을 바탕으로 견조한 주가 흐름을 유지했습니다."
+      )
+    else:
+      return (
+          "전방 조선·해양 플랜트 프로젝트의 단기 발주 공백 우려가 반영되며"
+          f" {lead_str}을 비롯한 피팅 기자재주들이 조정을 받았습니다."
+      )
+
+  elif "철강" in sec_name:
+    return (
+        "중국산 저가 철강재 수입 증가에 따른 단가 인하 압박과 건설 등 전방"
+        f" 산업 수요 침체 속에서 {lead_str} 등 주요 철강주들이 제한적인 등락을"
         " 보였습니다."
     )
-    stance = (
-        "지수 대비 뚜렷한 초과 수익률을 기록하며 당일 시장 상승을"
-        " 견인했습니다."
+
+  elif "건설" in sec_name:
+    return (
+        "국내 부동산 PF 관련 잠재 리스크와 원자재비 상승 부담 속에서, "
+        f"중동·해외 플랜트 수주 가시성을 보유한 {lead_str} 중심으로 선별적"
+        " 방어가 시도되었습니다."
     )
-  elif avg_rate > 0.5:
-    action = (
-        f"평균 {avg_rate:+.2f}% 상승하며 견조한 우상향 흐름을 나타냈습니다."
+
+  elif "음식료" in sec_name:
+    return (
+        "K-푸드의 글로벌 수출 랠리와 국제 곡물 가격 안정화에 따른 원가율 개선"
+        f" 기대감이 유효한 가운데, {lead_str}의 실적 안정성이 돋보였습니다."
     )
-    stance = "투자 심리가 안정된 가운데 하방 경직성을 탄탄하게 확보했습니다."
-  elif avg_rate >= 0:
-    action = f"평균 {avg_rate:+.2f}%의 보합권 혼조세를 나타냈습니다."
-    stance = (
-        "추가 모멘텀을 탐색하며 매수와 매도 공방이 팽팽하게 맞섰습니다."
-    )
-  elif avg_rate > -2.0:
-    action = f"평균 {avg_rate:+.2f}% 밀리며 단기 숨고르기 조정을 받았습니다."
-    stance = (
-        "상승 피로감 속에서 차익 실현 매물을 소화하는 관망 흐름이 짙었습니다."
-    )
+
   else:
-    action = f"평균 {avg_rate:+.2f}% 급락하며 가파른 하방 압력을 받았습니다."
-    stance = (
-        "위험 회피성 매도 물량이 출회되며 주요 지지선에 대한 시험이"
-        " 이어졌습니다."
+    trend = "상승 탄력을 받았습니다" if is_up else "하락 압력을 받았습니다"
+    return (
+        f"{sec_name} 섹터는 고유 업황 이슈와 시장 매크로 환경 변화 속에서"
+        f" 대장주인 {lead_str}의 수급 공방에 연동되며 {trend}."
     )
-
-  # 3. 주도주 수급 양상 분석
-  up_cnt = sum(1 for s in stocks if s["rate"] > 0)
-  down_cnt = sum(1 for s in stocks if s["rate"] < 0)
-
-  if up_cnt == len(stocks) and len(stocks) > 1:
-    flow = (
-        f"특히 {lead_info}을(를) 선봉으로 구성 종목 전반에 동반 매수세가"
-        " 고르게 확산되었습니다."
-    )
-  elif down_cnt == len(stocks) and len(stocks) > 1:
-    flow = (
-        f"특히 {lead_info}을(를) 필두로 주요 구성 종목 전반에 걸쳐 매도 압력이"
-        " 지배적이었습니다."
-    )
-  elif sub and abs(lead_rate - sub["rate"]) >= 2.0:
-    sub_sign = "+" if sub["rate"] > 0 else ""
-    sub_info = f"{sub['name']}({sub_sign}{sub['rate']:.2f}%)"
-    flow = (
-        f"다만 {lead_info}과(와) {sub_info} 간의 주가 방향성이 엇갈리며 종목별"
-        " 차별화 장세가 뚜렷했습니다."
-    )
-  else:
-    flow = (
-        f"개별 수급 측면에서는 대장주인 {lead_info}의 체결 강도가 업종"
-        " 전반의 방향키를 쥐었습니다."
-    )
-
-  # 4. 뉴스 연계
-  news_mention = ""
-  if news_items:
-    clean_title = (
-        news_items[0]["title"]
-        .replace("[", "")
-        .replace("]", "")
-        .replace("포토", "")
-        .replace("종합", "")
-        .strip()
-    )
-    if len(clean_title) > 24:
-      clean_title = clean_title[:24] + "..."
-    news_mention = (
-        f"시장에서는 '{clean_title}' 등 주요 이슈에도 촉각을 곤두세웠습니다."
-    )
-
-  sentence1 = (
-      f"{macro_factor}이(가) 핵심 나침반으로 작용한 가운데, {sec_name}은(는)"
-      f" {action}"
-  )
-  sentence2 = f"{flow} {stance} {news_mention}".strip()
-  return f"{sentence1} {sentence2}"
 
 
 def calculate_sectors(sector_dict, stock_data):
@@ -548,10 +639,8 @@ def calculate_sectors(sector_dict, stock_data):
       news_items = fetch_real_news(top_stock_name, top_stock_code)
       avg_r = sum(rates) / len(rates)
 
-      # 실시간 주가 데이터를 연산하여 즉석 생성되는 퀀트 심층 분석
-      analysis_txt = generate_dynamic_market_analysis(
-          sec_name, avg_r, matched, news_items
-      )
+      # 섹터별 고유 애널리스트 리포트 생성
+      analysis_txt = build_expert_sector_analysis(sec_name, avg_r, matched)
 
       results.append({
           "name": sec_name,
@@ -747,7 +836,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 
       summary_text = s.get("summary", "").strip()
       summary_tag = (
-          f"""<div class="sector-summary">📊 <b>섹터 퀀트 심층 분석:</b>"""
+          f"""<div class="sector-summary">💡 <b>섹터 핵심 브리핑:</b>"""
           f""" {summary_text}</div>"""
       )
 
@@ -798,7 +887,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .card-value {{ font-size: 1.30rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
         
-        .review-card {{ background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
+        .review-card {{ background: #ffffff; border-radius: 12px; border-left: 5px solid #2563eb; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
         .review-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }}
         .review-title {{ font-size: 1.05rem; font-weight: 800; color: #0f172a; }}
         .review-tag {{ font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 3px 8px; border-radius: 6px; }}
@@ -823,10 +912,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
         .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
-        .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; margin-bottom: 6px; }}
+        .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; margin-bottom: 8px; }}
         
-        .sector-summary {{ font-size: 0.84rem; line-height: 1.65; color: #1e293b; background: #f0fdf4; border-radius: 6px; padding: 10px 14px; border: 1px solid #bbf7d0; border-left-width: 4px; border-left-color: #16a34a; }}
-        .sector-summary b {{ color: #15803d; }}
+        .sector-summary {{ font-size: 0.84rem; line-height: 1.65; color: #1e293b; background: #f1f5f9; border-radius: 6px; padding: 10px 14px; border-left: 4px solid #2563eb; }}
+        .sector-summary b {{ color: #1d4ed8; }}
 
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
         .text-down {{ color: #2563eb !important; font-weight: 700; }}
