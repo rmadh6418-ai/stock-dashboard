@@ -464,14 +464,39 @@ SECTOR_UNIQUE_INSIGHTS = {
 }
 
 
-def batch_analyze_sectors_with_gemini(all_target_sectors):
-  """노출 대상 전체 섹터를 1번의 Gemini AI 호출로 묶어서 심층 분석
+def find_supported_gemini_model(api_key):
+  """구글 API 서버에 직접 물어보아 현재 사용 가능한 최신 모델명을 자동으로 찾아냄"""
+  try:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    res = requests.get(url, timeout=6)
+    if res.status_code == 200:
+      data = res.json()
+      models = data.get("models", [])
+      valid_names = []
+      for m in models:
+        methods = m.get("supportedGenerationMethods", [])
+        if "generateContent" in methods:
+          clean_m = m.get("name", "").replace("models/", "")
+          valid_names.append(clean_m)
 
-  API 호출 1회로 끝내므로 무료 한도(15 RPM) 초과가 절대 발생하지 않음
-  """
+      # 1순위: 최신 플래시 모델 (flash 포함)
+      for v in valid_names:
+        if "flash" in v.lower():
+          return v
+      # 2순위: 텍스트 생성이 가능한 다른 모델
+      if valid_names:
+        return valid_names[0]
+  except Exception as e:
+    print(f"[Gemini AI] 모델 조회 예외 발생: {e}")
+
+  # 기본 fallback: AI 스튜디오 기본 모델
+  return "gemini-3-flash-preview"
+
+
+def batch_analyze_sectors_with_gemini(all_target_sectors):
+  """1회 배치 호출로 전체 섹터의 심층 분석을 동시 수행 (차단/한도초과 방지)"""
   api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-  # 1. 고유 펀더멘털 기반의 고품질 기본 분석 사전 채우기
   analysis_map = {}
   for s in all_target_sectors:
     sec_name = s["name"]
@@ -503,7 +528,9 @@ def batch_analyze_sectors_with_gemini(all_target_sectors):
     )
     return analysis_map
 
-  # 2. Gemini AI 프롬프트 구성 (각 섹터별 차별화 분석 강제)
+  target_model = find_supported_gemini_model(api_key)
+  print(f"[Gemini AI] 사용 가능한 최적 모델 자동 감지 완료: {target_model}")
+
   sector_bullets = []
   for s in all_target_sectors:
     sec_name = s["name"]
@@ -537,52 +564,50 @@ def batch_analyze_sectors_with_gemini(all_target_sectors):
 """
   )
 
-  models_to_try = [
-      "gemini-1.5-flash",
-      "gemini-2.5-flash",
-      "gemini-1.5-pro",
-      "gemini-2.0-flash",
-  ]
-  for model_name in models_to_try:
-    try:
-      url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-      payload = {"contents": [{"parts": [{"text": prompt}]}]}
-      res = requests.post(url, json=payload, timeout=15)
-      if res.status_code == 200:
-        res_data = res.json()
-        raw_text = (
-            res_data.get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "")
-            .strip()
+  url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+  payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+  try:
+    res = requests.post(url, json=payload, timeout=20)
+    if res.status_code == 200:
+      res_data = res.json()
+      raw_text = (
+          res_data.get("candidates", [{}])[0]
+          .get("content", {})
+          .get("parts", [{}])[0]
+          .get("text", "")
+          .strip()
+      )
+
+      clean_json_str = raw_text
+      if "```json" in clean_json_str:
+        clean_json_str = (
+            clean_json_str.split("```json")[1].split("```")[0].strip()
         )
+      elif "```" in clean_json_str:
+        clean_json_str = clean_json_str.split("```")[1].split("```")[0].strip()
+      elif "{" in clean_json_str and "}" in clean_json_str:
+        start = clean_json_str.find("{")
+        end = clean_json_str.rfind("}") + 1
+        clean_json_str = clean_json_str[start:end]
 
-        clean_json_str = raw_text
-        if "```json" in clean_json_str:
-          clean_json_str = (
-              clean_json_str.split("```json")[1].split("```")[0].strip()
-          )
-        elif "```" in clean_json_str:
-          clean_json_str = clean_json_str.split("```")[1].split("```")[0].strip()
-
-        parsed = json.loads(clean_json_str)
-        if isinstance(parsed, dict) and len(parsed) > 0:
-          for k, v in parsed.items():
-            clean_k = k.strip()
-            analysis_map[clean_k] = str(v).strip().replace("\n", " ")
-          print(
-              f"[Gemini AI] 성공! {model_name} 모델로 {len(parsed)}개 섹터"
-              " 심층 AI 분석 완료."
-          )
-          return analysis_map
-      else:
+      parsed = json.loads(clean_json_str)
+      if isinstance(parsed, dict) and len(parsed) > 0:
+        for k, v in parsed.items():
+          clean_k = k.strip()
+          analysis_map[clean_k] = str(v).strip().replace("\n", " ")
         print(
-            f"[Gemini AI] {model_name} 응답 코드 {res.status_code}:"
-            f" {res.text[:120]}"
+            f"[Gemini AI] 성공! {target_model} 모델로 {len(parsed)}개 섹터"
+            " 심층 AI 분석 완료."
         )
-    except Exception as e:
-      print(f"[Gemini AI] {model_name} 호출 오류: {e}")
+        return analysis_map
+    else:
+      print(
+          f"[Gemini AI] {target_model} 응답 오류 ({res.status_code}):"
+          f" {res.text[:120]}"
+      )
+  except Exception as e:
+    print(f"[Gemini AI] {target_model} 호출 실패: {e}")
 
   return analysis_map
 
@@ -1065,7 +1090,7 @@ if __name__ == "__main__":
   k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
   k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
-  # 화면에 노출될 12개 섹터만 취합하여 Gemini AI로 일괄 배치 분석 (1회 호출)
+  # 화면에 노출될 12개 섹터를 1번의 Gemini API 호출로 일괄 심층 분석
   all_display_sectors = k200_top + k200_bot + k150_top + k150_bot
   analysis_results = batch_analyze_sectors_with_gemini(all_display_sectors)
 
