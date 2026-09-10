@@ -213,7 +213,6 @@ def fetch_real_news(keyword, stock_code=""):
   return news_list
 
 
-# 따옴표 누락 오류 완전 수정된 관심 종목 딕셔너리
 KOSPI200_SECTORS = {
     "화학·에너지": [
         "LG화학",
@@ -468,9 +467,6 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
 
 
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
-  kst_now = datetime.now(timezone(timedelta(hours=9)))
-  now_str = kst_now.strftime("%Y년 %m월 %d일 15:30 정규장 마감 기준")
-
   index_cards = ""
   for idx in indices:
     if idx["is_up"]:
@@ -558,8 +554,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ background-color: #f4f6f9; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
         header {{ text-align: center; margin-bottom: 20px; }}
-        h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
-        .timestamp {{ font-size: 0.88rem; font-weight: 600; color: #475569; }}
+        h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
+        .timestamp {{ font-size: 0.88rem; font-weight: 600; color: #475569; background: #e2e8f0; display: inline-block; padding: 5px 14px; border-radius: 20px; }}
         
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 22px; }}
         .card {{ background: #fff; padding: 16px 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
@@ -604,7 +600,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 <body>
     <header>
         <h1>📊 국내 정규장 마감 대시보드</h1>
-        <div class="timestamp">{now_str}</div>
+        <div class="timestamp" id="visit-time">방문 시간 확인 중...</div>
     </header>
 
     <div class="grid-indices">
@@ -632,6 +628,26 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     <div class="sector-box">
         {build_sector_list(k150_bot, is_up=False)}
     </div>
+
+    <script>
+        function updateVisitTime() {{
+            const now = new Date();
+            const options = {{
+                timeZone: 'Asia/Seoul',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                weekday: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }};
+            const timeStr = new Intl.DateTimeFormat('ko-KR', options).format(now);
+            document.getElementById('visit-time').innerHTML = '🕒 방문 시간: <b>' + timeStr + '</b> (KST) | 15:30 정규장 마감 기준';
+        }}
+        updateVisitTime();
+    </script>
 </body>
 </html>
 """
