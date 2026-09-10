@@ -545,8 +545,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     index_cards += f"""
         <div class="card" data-index-target="{idx['code_key']}">
             <div class="card-title">{idx['name']}</div>
-            <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
-            <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">
+            <div class="card-value">{idx['value']}</div>
+            <div class="badge {badge_bg} {color_class}">
                 {rate_text}{diff_text}
             </div>
         </div>
@@ -613,6 +613,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
       indices, k200_top, k200_bot, k150_top, k150_bot
   )
 
+  # 한국 표준시(KST) 기준 생성 시각 기록
+  kst_now = datetime.now(timezone(timedelta(hours=9)))
+  build_time_str = kst_now.strftime("%Y년 %m월 %d일 %H:%M:%S")
+
   template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -627,19 +631,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 8px; }}
         
         .status-bar {{ display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin-top: 6px; }}
-        .timestamp {{ font-size: 0.86rem; font-weight: 600; color: #334155; background: #e2e8f0; padding: 4px 12px; border-radius: 20px; }}
-        .live-status {{ font-size: 0.80rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; }}
+        .timestamp {{ font-size: 0.86rem; font-weight: 600; color: #1e293b; background: #e2e8f0; padding: 5px 14px; border-radius: 20px; }}
+        .live-status {{ font-size: 0.80rem; font-weight: 700; padding: 5px 12px; border-radius: 20px; }}
         .status-live {{ background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }}
         .status-closed {{ background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }}
-        .timer-badge {{ font-size: 0.80rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 4px 10px; border-radius: 20px; }}
-        .last-sync {{ font-size: 0.76rem; color: #64748b; margin-left: 4px; }}
-        .btn-refresh {{ background: #2563eb; color: #fff; border: none; padding: 5px 12px; border-radius: 20px; font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }}
+        .btn-refresh {{ background: #2563eb; color: #fff; border: none; padding: 6px 14px; border-radius: 20px; font-size: 0.84rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }}
         .btn-refresh:hover {{ background: #1d4ed8; }}
         
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 22px; }}
         .card {{ background: #fff; padding: 16px 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
         .card-title {{ font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
-        .card-value {{ font-size: 1.30rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; transition: color 0.3s; }}
+        .card-value {{ font-size: 1.30rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
         
         .review-card {{ background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; border-left-width: 5px; border-left-color: #2563eb; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
@@ -676,23 +678,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .bg-up-light {{ background-color: #ffe4e6 !important; }}
         .bg-down-light {{ background-color: #dbeafe !important; }}
         .bg-gray-100 {{ background-color: #f1f5f9 !important; }}
-        
-        .flash-update {{ animation: flashAnim 0.8s ease; }}
-        @keyframes flashAnim {{
-            0% {{ background-color: #fef08a; }}
-            100% {{ background-color: transparent; }}
-        }}
     </style>
 </head>
 <body>
     <header>
-        <h1>📊 실시간 국내 증시 대시보드</h1>
+        <h1>📊 국내 증시 자동 갱신 대시보드</h1>
         <div class="status-bar">
-            <span class="timestamp" id="live-clock">🕒 시간 계산 중...</span>
-            <span class="live-status" id="market-status">동기화 확인 중</span>
-            <span class="timer-badge" id="countdown-badge">⏱️ 60초 후 갱신</span>
-            <button class="btn-refresh" id="btn-refresh" onclick="manualRefresh()">🔄 지금 새로고침</button>
-            <span class="last-sync" id="last-sync-badge">마지막 갱신: 대기 중</span>
+            <span class="timestamp">🕒 최신 데이터 수집 시각: <b>{build_time_str}</b> (KST)</span>
+            <span class="live-status" id="market-status">장 상태 확인 중</span>
+            <button class="btn-refresh" onclick="forceReload()">🔄 페이지 새로고침</button>
         </div>
     </header>
 
@@ -723,26 +717,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     </div>
 
     <script>
-        let countdownSeconds = 60;
-        let isFetching = false;
+        // 브라우저 캐시를 건너뛰고 방금 빌드된 최신 페이지만 즉시 가져오는 새로고침
+        function forceReload() {{
+            window.location.href = window.location.pathname + '?_t=' + Date.now();
+        }}
 
-        // 한국 표준시(KST) 시계 및 정규장 상태 판정
-        function updateLiveClock() {{
+        // 장중 여부 판정 (평일 09:00 ~ 15:30)
+        (function checkMarket() {{
             const now = new Date();
-            const kstFormatter = new Intl.DateTimeFormat('ko-KR', {{
-                timeZone: 'Asia/Seoul',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                weekday: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false
-            }});
-            const clockEl = document.getElementById('live-clock');
-            if (clockEl) clockEl.textContent = '🕒 ' + kstFormatter.format(now) + ' (KST)';
-
             const kstDate = new Date(now.toLocaleString("en-US", {{ timeZone: "Asia/Seoul" }}));
             const day = kstDate.getDay();
             const hour = kstDate.getHours();
@@ -755,197 +737,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             if (statusEl) {{
                 if (isMarketOpen) {{
                     statusEl.className = 'live-status status-live';
-                    statusEl.textContent = '🔴 실시간 장중 연동 중';
+                    statusEl.textContent = '🔴 장중 15분 주기 자동 갱신 중';
                 }} else {{
                     statusEl.className = 'live-status status-closed';
-                    statusEl.textContent = '🏁 15:30 정규장 마감 확정';
+                    statusEl.textContent = '🏁 15:30 정규장 마감 완료';
                 }}
             }}
-        }}
-        setInterval(updateLiveClock, 1000);
-        updateLiveClock();
-
-        // 1분(60초) 자동 카운트다운 타이머
-        setInterval(() => {{
-            countdownSeconds--;
-            const countEl = document.getElementById('countdown-badge');
-            if (countdownSeconds <= 0) {{
-                countdownSeconds = 60;
-                if (!isFetching) fetchLiveMarketData();
-            }}
-            if (countEl) {{
-                countEl.textContent = '⏱️ ' + countdownSeconds + '초 후 갱신';
-            }}
-        }}, 1000);
-
-        function manualRefresh() {{
-            countdownSeconds = 60;
-            const countEl = document.getElementById('countdown-badge');
-            if (countEl) countEl.textContent = '⏱️ 60초 후 갱신';
-            fetchLiveMarketData();
-        }}
-
-        // 캐시 무효화(Cache-Buster)를 적용한 다중 프록시 통신
-        async function fetchWithProxy(targetUrl) {{
-            const cacheParam = (targetUrl.includes('?') ? '&' : '?') + '_ts=' + Date.now();
-            const finalUrl = targetUrl + cacheParam;
-            const proxies = [
-                (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
-                (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
-                (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u)
-            ];
-            for (const getProxy of proxies) {{
-                try {{
-                    const res = await fetch(getProxy(finalUrl), {{ cache: 'no-store' }});
-                    if (res.ok) {{
-                        const data = await res.json();
-                        if (data) return data;
-                    }}
-                }} catch (e) {{}}
-            }}
-            throw new Error('프록시 호출 실패');
-        }}
-
-        // 실시간 시세 동기화 메인 함수
-        async function fetchLiveMarketData() {{
-            if (isFetching) return;
-            isFetching = true;
-
-            const btn = document.getElementById('btn-refresh');
-            if (btn) {{
-                btn.textContent = '⏳ 갱신 중...';
-                btn.disabled = true;
-            }}
-
-            // (1) 원·달러 환율 갱신 (두나무 공식 API - 브라우저 직접 호출 최우선)
-            try {{
-                const fxUrl = 'https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD&_t=' + Date.now();
-                let fxItem = null;
-                try {{
-                    const fxRes = await fetch(fxUrl, {{ cache: 'no-store' }});
-                    if (fxRes.ok) {{
-                        const arr = await fxRes.json();
-                        if (arr && arr.length > 0) fxItem = arr[0];
-                    }}
-                }} catch (err) {{
-                    const arr = await fetchWithProxy('https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD');
-                    if (arr && arr.length > 0) fxItem = arr[0];
-                }}
-
-                if (fxItem) {{
-                    const valEl = document.getElementById('val-FX_USDKRW');
-                    const badgeEl = document.getElementById('badge-FX_USDKRW');
-                    if (valEl && badgeEl) {{
-                        const price = Number(fxItem.basePrice).toLocaleString('ko-KR', {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }}) + '원';
-                        const diff = Number(fxItem.changePrice).toFixed(2);
-                        const rate = (Number(fxItem.changeRate) * 100).toFixed(2);
-
-                        const isUp = (fxItem.change === 'RISE');
-                        const isDown = (fxItem.change === 'FALL');
-
-                        const sign = isUp ? '▲ +' : (isDown ? '▼ -' : '― ');
-                        const colorClass = isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat');
-                        const badgeBg = isUp ? 'bg-up-light' : (isDown ? 'bg-down-light' : 'bg-gray-100');
-
-                        valEl.textContent = price;
-                        badgeEl.className = 'badge ' + badgeBg + ' ' + colorClass;
-                        badgeEl.textContent = sign + rate + '% (' + diff + ')';
-
-                        valEl.classList.remove('flash-update');
-                        void valEl.offsetWidth;
-                        valEl.classList.add('flash-update');
-                    }}
-                }}
-            }} catch (fxErr) {{}}
-
-            // (2) 3대 증시 지수 갱신 (코스피, 코스닥, 코스피200)
-            const indexTargets = [
-                {{ key: 'KOSPI', url: 'https://m.stock.naver.com/api/index/KOSPI/basic' }},
-                {{ key: 'KOSDAQ', url: 'https://m.stock.naver.com/api/index/KOSDAQ/basic' }},
-                {{ key: 'KPI200', url: 'https://m.stock.naver.com/api/index/KPI200/basic' }}
-            ];
-
-            await Promise.all(indexTargets.map(async (item) => {{
-                try {{
-                    const data = await fetchWithProxy(item.url);
-                    const valEl = document.getElementById('val-' + item.key);
-                    const badgeEl = document.getElementById('badge-' + item.key);
-                    if (!valEl || !badgeEl || !data) return;
-
-                    const price = data.closePrice;
-                    const diff = data.compareToPreviousClosePrice || '0';
-                    const rate = Math.abs(parseFloat(data.fluctuationsRatio || 0));
-
-                    const cd = String(data.compareToPreviousPrice?.code || '3');
-                    const isUp = (cd === '1' || cd === '2');
-                    const isDown = (cd === '4' || cd === '5');
-
-                    const sign = isUp ? '▲ +' : (isDown ? '▼ -' : '― ');
-                    const colorClass = isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat');
-                    const badgeBg = isUp ? 'bg-up-light' : (isDown ? 'bg-down-light' : 'bg-gray-100');
-
-                    valEl.textContent = price;
-                    badgeEl.className = 'badge ' + badgeBg + ' ' + colorClass;
-                    badgeEl.textContent = sign + rate.toFixed(2) + '% (' + diff + ')';
-                    
-                    valEl.classList.remove('flash-update');
-                    void valEl.offsetWidth;
-                    valEl.classList.add('flash-update');
-                }} catch (err) {{}}
-            }}));
-
-            // (3) 화면 내 종목들 순차 갱신 (프록시 차단 방지를 위해 3개씩 분할 호출)
-            const stockElements = Array.from(document.querySelectorAll('.stock-pill[data-stock-code]'));
-            for (let i = 0; i < stockElements.length; i += 3) {{
-                const chunk = stockElements.slice(i, i + 3);
-                await Promise.all(chunk.map(async (el) => {{
-                    const code = el.getAttribute('data-stock-code');
-                    if (!code) return;
-                    try {{
-                        const stockUrl = 'https://m.stock.naver.com/api/stock/' + code + '/basic';
-                        const sData = await fetchWithProxy(stockUrl);
-                        if (!sData) return;
-
-                        const price = sData.closePrice;
-                        const sRate = Math.abs(parseFloat(sData.fluctuationsRatio || 0));
-                        const cd = String(sData.compareToPreviousPrice?.code || '3');
-                        const isUp = (cd === '1' || cd === '2');
-                        const isDown = (cd === '4' || cd === '5');
-
-                        const rateEl = el.querySelector('.stock-rate');
-                        const priceEl = el.querySelector('.stock-price');
-
-                        if (rateEl) {{
-                            rateEl.className = 'stock-rate ' + (isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat'));
-                            const rateSign = isUp ? '+' : (isDown ? '-' : '');
-                            rateEl.textContent = rateSign + sRate.toFixed(2) + '%';
-                        }}
-                        if (priceEl) {{
-                            priceEl.textContent = '(' + price + '원)';
-                        }}
-                    }} catch (e) {{}}
-                }}));
-                await new Promise(r => setTimeout(r, 120));
-            }}
-
-            // 갱신 시각 완료 표시
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('ko-KR', {{ hour12: false }});
-            const lastSyncEl = document.getElementById('last-sync-badge');
-            if (lastSyncEl) {{
-                lastSyncEl.textContent = '마지막 갱신: ' + timeStr + ' ✅';
-            }}
-
-            if (btn) {{
-                btn.textContent = '🔄 지금 새로고침';
-                btn.disabled = false;
-            }}
-            isFetching = false;
-        }}
-
-        window.addEventListener('DOMContentLoaded', () => {{
-            fetchLiveMarketData();
-        }});
+        }})();
     </script>
 </body>
 </html>
@@ -956,7 +754,27 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 
 
 def send_kakao_alert(indices, k200_top, k150_top):
-  """GitHub Secrets 카카오 토큰을 활용한 정규장 마감 알림 발송"""
+  """카카오톡 알림 제어
+
+  - 수동 실행(workflow_dispatch): 테스트를 위해 무조건 즉시 발송
+  - 자동 실행(schedule): 오후 16:00 정규장 마감 시에만 1회 발송 (장중 15분 알림 폭탄 원천
+  차단)
+  """
+  github_event = os.environ.get("GITHUB_EVENT_NAME", "")
+  kst_now = datetime.now(timezone(timedelta(hours=9)))
+
+  is_manual = github_event == "workflow_dispatch"
+  is_market_close_time = (kst_now.hour == 16) or (
+      kst_now.hour == 15 and kst_now.minute >= 30
+  )
+
+  if not is_manual and not is_market_close_time:
+    print(
+        f"[INFO] 현재 시각 {kst_now.strftime('%H:%M')} KST - 장중 자동 갱신 완료"
+        " (카톡 알림은 16:00 마감 시에만 1회 발송됩니다)."
+    )
+    return
+
   rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
   refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
 
@@ -978,8 +796,11 @@ def send_kakao_alert(indices, k200_top, k150_top):
       print(f"[ERROR] 토큰 갱신 실패: {t_res}")
       return
 
-    kst_now = datetime.now(timezone(timedelta(hours=9)))
-    date_str = kst_now.strftime("%m/%d 15:30 마감")
+    date_str = (
+        kst_now.strftime("%m/%d 15:30 마감")
+        if is_market_close_time
+        else kst_now.strftime("%m/%d %H:%M 기준")
+    )
 
     kospi = next((x for x in indices if "코스피" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
@@ -1013,7 +834,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
         f"• 원·달러: {fx.get('value')}"
         f" ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)\n"
         f"• 상대강세: {k200_lead} / {k150_lead}\n\n"
-        f"언제든 접속 시 실시간 시세가 자동 동기화됩니다."
+        f"상세 업종 동향과 뉴스는 아래 버튼을 눌러 확인하세요."
     )
 
     send_url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
@@ -1026,7 +847,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
                 "web_url": DASHBOARD_URL,
                 "mobile_web_url": DASHBOARD_URL,
             },
-            "button_title": "📊 실시간 대시보드 바로가기",
+            "button_title": "📊 증시 대시보드 바로가기",
         })
     }
     s_res = requests.post(send_url, headers=headers, data=payload, timeout=5)
