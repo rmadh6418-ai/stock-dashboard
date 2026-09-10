@@ -1,258 +1,449 @@
+import json
 import os
 import re
 import urllib.parse
-import requests
+from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone, timedelta
+import requests
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Referer": "https://finance.naver.com/"
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.naver.com/",
 }
 
+DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
+
+
 def parse_change_text(text):
-    """문자열에서 등락폭, 등락률, 부호 추출"""
-    is_up = ("상승" in text) or ("+" in text) or ("▲" in text)
-    is_down = ("하락" in text) or ("-" in text) or ("▼" in text)
-    nums = re.findall(r'[\d\.,]+', text)
-    diff = nums[0] if len(nums) >= 1 else "0"
-    rate = 0.0
-    if len(nums) >= 2:
-        try:
-            rate = abs(float(nums[1].replace(',', '')))
-        except Exception:
-            rate = 0.0
-    return diff, rate, is_up, is_down
+  """문자열에서 등락폭, 등락률, 부호 추출"""
+  is_up = ("상승" in text) or ("+" in text) or ("▲" in text)
+  is_down = ("하락" in text) or ("-" in text) or ("▼" in text)
+  nums = re.findall(r"[\d\.,]+", text)
+  diff = nums[0] if len(nums) >= 1 else "0"
+  rate = 0.0
+  if len(nums) >= 2:
+    try:
+      rate = abs(float(nums[1].replace(",", "")))
+    except Exception:
+      rate = 0.0
+  return diff, rate, is_up, is_down
+
 
 def get_market_indices():
-    """상단 4대 주요 지수 (코스피, 코스닥, 코스피 200, 환율)"""
-    results = []
-    main_url = "https://finance.naver.com/sise/"
-    try:
-        res = requests.get(main_url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        targets = [
-            ("코스피 (KOSPI)", "KOSPI"),
-            ("코스닥 (KOSDAQ)", "KOSDAQ"),
-            ("코스피 200", "KPI200")
-        ]
-        for name, prefix in targets:
-            now_elem = soup.find(id=f"{prefix}_now")
-            change_elem = soup.find(id=f"{prefix}_change")
-            if now_elem:
-                price = now_elem.text.strip()
-                c_text = change_elem.text.strip() if change_elem else ""
-                diff, rate, is_up, is_down = parse_change_text(c_text)
-                results.append({
-                    "name": name, "value": price, "change_val": diff,
-                    "change_rate": rate, "is_up": is_up, "is_down": is_down
-                })
-            else:
-                results.append({"name": name, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
-    except Exception:
-        for name in ["코스피 (KOSPI)", "코스닥 (KOSDAQ)", "코스피 200"]:
-            results.append({"name": name, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
+  """상단 4대 주요 지수 (코스피, 코스닥, 코스피 200, 환율)"""
+  results = []
+  main_url = "https://finance.naver.com/sise/"
+  try:
+    res = requests.get(main_url, headers=HEADERS, timeout=10)
+    soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+    targets = [
+        ("코스피 (KOSPI)", "KOSPI"),
+        ("코스닥 (KOSDAQ)", "KOSDAQ"),
+        ("코스피 200", "KPI200"),
+    ]
+    for name, prefix in targets:
+      now_elem = soup.find(id=f"{prefix}_now")
+      change_elem = soup.find(id=f"{prefix}_change")
+      if now_elem:
+        price = now_elem.text.strip()
+        c_text = change_elem.text.strip() if change_elem else ""
+        diff, rate, is_up, is_down = parse_change_text(c_text)
+        results.append({
+            "name": name,
+            "value": price,
+            "change_val": diff,
+            "change_rate": rate,
+            "is_up": is_up,
+            "is_down": is_down,
+        })
+      else:
+        results.append({
+            "name": name,
+            "value": "-",
+            "change_val": "0",
+            "change_rate": 0.0,
+            "is_up": False,
+            "is_down": False,
+        })
+  except Exception:
+    for name in ["코스피 (KOSPI)", "코스닥 (KOSDAQ)", "코스피 200"]:
+      results.append({
+          "name": name,
+          "value": "-",
+          "change_val": "0",
+          "change_rate": 0.0,
+          "is_up": False,
+          "is_down": False,
+      })
 
-    # 원·달러 환율
-    fx_val, fx_diff, fx_rate, fx_up, fx_down = "-", "0", 0.0, False, False
-    try:
-        m_url = "https://finance.naver.com/marketindex/"
-        res = requests.get(m_url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        box = soup.find("div", class_="head_info")
-        if box:
-            fx_val = box.find("span", class_="value").text.strip() + "원"
-            fx_diff = box.find("span", class_="change").text.strip()
-            box_text = box.text
-            fx_up = ("상승" in box_text) or ("+" in box_text)
-            fx_down = ("하락" in box_text) or ("-" in box_text)
-    except Exception:
-        pass
-    results.append({
-        "name": "원·달러 환율", "value": fx_val, "change_val": fx_diff,
-        "change_rate": fx_rate, "is_up": fx_up, "is_down": fx_down
-    })
-    return results
+  # 원·달러 환율
+  fx_val, fx_diff, fx_rate, fx_up, fx_down = "-", "0", 0.0, False, False
+  try:
+    m_url = "https://finance.naver.com/marketindex/"
+    res = requests.get(m_url, headers=HEADERS, timeout=10)
+    soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+    box = soup.find("div", class_="head_info")
+    if box:
+      fx_val = box.find("span", class_="value").text.strip() + "원"
+      fx_diff = box.find("span", class_="change").text.strip()
+      box_text = box.text
+      fx_up = ("상승" in box_text) or ("+" in box_text)
+      fx_down = ("하락" in box_text) or ("-" in box_text)
+  except Exception:
+    pass
+  results.append({
+      "name": "원·달러 환율",
+      "value": fx_val,
+      "change_val": fx_diff,
+      "change_rate": fx_rate,
+      "is_up": fx_up,
+      "is_down": fx_down,
+  })
+  return results
+
 
 def get_market_stocks():
-    """시가총액 상위 종목 체결가, 등락률 및 종목코드 수집"""
-    stocks = {}
-    urls = [
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ")
-    ]
-    for u, market in urls:
-        try:
-            res = requests.get(u, headers=HEADERS, timeout=8)
-            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-            table = soup.find("table", class_="type_2")
-            if table:
-                for tr in table.find_all("tr"):
-                    tds = tr.find_all("td")
-                    if len(tds) >= 5:
-                        a_tag = tds[1].find("a")
-                        if a_tag:
-                            name = a_tag.text.strip()
-                            href = a_tag.get("href", "")
-                            code_match = re.search(r'code=(\d+)', href)
-                            code = code_match.group(1) if code_match else ""
-                            price = tds[2].text.strip()
-                            rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
-                            try:
-                                rate_val = float(rate_text)
-                                stocks[name] = {"price": price, "rate": rate_val, "code": code, "market": market}
-                            except Exception:
-                                pass
-        except Exception:
-            pass
-    return stocks
+  """시가총액 상위 종목 체결가, 등락률 및 종목코드 수집"""
+  stocks = {}
+  urls = [
+      (
+          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1",
+          "KOSPI",
+      ),
+      (
+          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2",
+          "KOSPI",
+      ),
+      (
+          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1",
+          "KOSDAQ",
+      ),
+      (
+          "https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2",
+          "KOSDAQ",
+      ),
+  ]
+  for u, market in urls:
+    try:
+      res = requests.get(u, headers=HEADERS, timeout=8)
+      soup = BeautifulSoup(
+          res.content.decode("euc-kr", "replace"), "html.parser"
+      )
+      table = soup.find("table", class_="type_2")
+      if table:
+        for tr in table.find_all("tr"):
+          tds = tr.find_all("td")
+          if len(tds) >= 5:
+            a_tag = tds[1].find("a")
+            if a_tag:
+              name = a_tag.text.strip()
+              href = a_tag.get("href", "")
+              code_match = re.search(r"code=(\d+)", href)
+              code = code_match.group(1) if code_match else ""
+              price = tds[2].text.strip()
+              rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
+              try:
+                rate_val = float(rate_text)
+                stocks[name] = {
+                    "price": price,
+                    "rate": rate_val,
+                    "code": code,
+                    "market": market,
+                }
+              except Exception:
+                pass
+    except Exception:
+      pass
+  return stocks
+
 
 def fetch_real_news(keyword, stock_code=""):
-    """네이버 금융 실시간 언론사 뉴스 헤드라인 크롤링"""
-    news_list = []
-    
-    # 1. 종목 코드가 있을 경우: 해당 종목의 네이버 금융 공식 뉴스 크롤링
-    if stock_code:
-        try:
-            url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
-            res = requests.get(url, headers=HEADERS, timeout=5)
-            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-            table = soup.find("table", class_="type5")
-            if table:
-                for tr in table.find_all("tr"):
-                    td_title = tr.find("td", class_="title")
-                    td_info = tr.find("td", class_="info")
-                    if td_title and td_title.find("a"):
-                        a_tag = td_title.find("a")
-                        title = a_tag.text.strip()
-                        link = "https://finance.naver.com" + a_tag["href"]
-                        press = td_info.text.strip() if td_info else "증권뉴스"
-                        news_list.append({"title": title, "press": press, "link": link})
-                        if len(news_list) >= 2:
-                            return news_list
-        except Exception:
-            pass
-
-    # 2. 키워드 기반 네이버 금융 통합 뉴스 크롤링
+  """네이버 금융 실시간 언론사 뉴스 헤드라인 크롤링"""
+  news_list = []
+  if stock_code:
     try:
-        enc_query = urllib.parse.quote(keyword, encoding='euc-kr')
-        url = f"https://finance.naver.com/news/news_search.naver?q={enc_query}"
-        res = requests.get(url, headers=HEADERS, timeout=5)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        dl_list = soup.find_all("dl", class_="articleList") or soup.find_all("dl")
-        for dl in dl_list:
-            dt = dl.find("dd", class_="articleSubject") or dl.find("dt")
-            if dt and dt.find("a"):
-                a_tag = dt.find("a")
-                title = a_tag.text.strip()
-                link = "https://finance.naver.com" + a_tag["href"]
-                summary = dl.find("dd", class_="articleSummary")
-                press = summary.find("span", class_="press").text.strip() if summary and summary.find("span", class_="press") else "네이버뉴스"
-                news_list.append({"title": title, "press": press, "link": link})
-                if len(news_list) >= 2:
-                    return news_list
+      url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
+      res = requests.get(url, headers=HEADERS, timeout=5)
+      soup = BeautifulSoup(
+          res.content.decode("euc-kr", "replace"), "html.parser"
+      )
+      table = soup.find("table", class_="type5")
+      if table:
+        for tr in table.find_all("tr"):
+          td_title = tr.find("td", class_="title")
+          td_info = tr.find("td", class_="info")
+          if td_title and td_title.find("a"):
+            a_tag = td_title.find("a")
+            title = a_tag.text.strip()
+            link = "https://finance.naver.com" + a_tag["href"]
+            press = td_info.text.strip() if td_info else "증권뉴스"
+            news_list.append({"title": title, "press": press, "link": link})
+            if len(news_list) >= 2:
+              return news_list
     except Exception:
-        pass
+      pass
 
-    return news_list
+  try:
+    enc_query = urllib.parse.quote(keyword, encoding="euc-kr")
+    url = f"https://finance.naver.com/news/news_search.naver?q={enc_query}"
+    res = requests.get(url, headers=HEADERS, timeout=5)
+    soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+    dl_list = soup.find_all("dl", class_="articleList") or soup.find_all("dl")
+    for dl in dl_list:
+      dt = dl.find("dd", class_="articleSubject") or dl.find("dt")
+      if dt and dt.find("a"):
+        a_tag = dt.find("a")
+        title = a_tag.text.strip()
+        link = "https://finance.naver.com" + a_tag["href"]
+        summary = dl.find("dd", class_="articleSummary")
+        press = (
+            summary.find("span", class_="press").text.strip()
+            if summary and summary.find("span", class_="press")
+            else "네이버뉴스"
+        )
+        news_list.append({"title": title, "press": press, "link": link})
+        if len(news_list) >= 2:
+          return news_list
+  except Exception:
+    pass
 
+  return news_list
+
+
+# 따옴표 누락 오류 완전 수정된 관심 종목 딕셔너리
 KOSPI200_SECTORS = {
-    "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사"],
-    "이차전지·배터리": ["LG에너지솔루션", "POSCO홀딩스", "포스코퓨처엠", "삼성SDI", "엘앤에프", "에코프로머티],
-    "조선·중공업": ["HD현대중공업", "한화오션", "삼성중공업", "HD한국조선해양", "한화엔진", "HD현대", "HD현대마린엔진", "HD현대마린솔루션"],
-    "전기·전자 (반도체/IT)": ["삼성전자", "SK하이닉스", "삼성전기", "LG이노텍", "한미반도체", ],
+    "화학·에너지": [
+        "LG화학",
+        "S-Oil",
+        "SK이노베이션",
+        "롯데케미칼",
+        "SK가스",
+        "GS",
+        "한국가스공사",
+    ],
+    "이차전지·배터리": [
+        "LG에너지솔루션",
+        "POSCO홀딩스",
+        "포스코퓨처엠",
+        "삼성SDI",
+        "엘앤에프",
+        "에코프로머티",
+    ],
+    "조선·중공업": [
+        "HD현대중공업",
+        "한화오션",
+        "삼성중공업",
+        "HD한국조선해양",
+        "한화엔진",
+        "HD현대",
+        "HD현대마린엔진",
+        "HD현대마린솔루션",
+    ],
+    "전기·전자 (반도체/IT)": [
+        "삼성전자",
+        "SK하이닉스",
+        "삼성전기",
+        "LG이노텍",
+        "한미반도체",
+    ],
     "자동차·운송장비": ["현대차", "기아", "현대모비스"],
-    "원전·전력인프라": ["한국전력", "두산에너빌리티", "한전기술", "한전KPS", "효성중공업", "산일전기", "대한전선", "일진전기", "LS ELECTRIC", "HD현대일텍트릭"],
-    "방위산업·우주항공": ["한화에어로스페이스", "현대로템", "한국항공우주", "한화시스템", "LIG디펜스앤에어로스페이스"],
-    "제약·바이오": ["삼성바이오로직스", "셀트리온", "유한양행", "한미약품", "SK바이오팜"],
-    "금융·지주": ["KB금융", "신한지주", "하나금융지주", "메리츠금융지주", "기업은행", "미래에셋증권", "삼성증권", "우리금융지주"],
+    "원전·전력인프라": [
+        "한국전력",
+        "두산에너빌리티",
+        "한전기술",
+        "한전KPS",
+        "효성중공업",
+        "산일전기",
+        "대한전선",
+        "일진전기",
+        "LS ELECTRIC",
+        "HD현대일렉트릭",
+    ],
+    "방위산업·우주항공": [
+        "한화에어로스페이스",
+        "현대로템",
+        "한국항공우주",
+        "한화시스템",
+        "LIG넥스원",
+    ],
+    "제약·바이오": [
+        "삼성바이오로직스",
+        "셀트리온",
+        "유한양행",
+        "한미약품",
+        "SK바이오팜",
+    ],
+    "금융·지주": [
+        "KB금융",
+        "신한지주",
+        "하나금융지주",
+        "메리츠금융지주",
+        "기업은행",
+        "미래에셋증권",
+        "삼성증권",
+        "우리금융지주",
+    ],
     "인터넷·플랫폼": ["NAVER", "카카오", "크래프톤"],
     "건설·시공": ["현대건설", "대우건설", "GS건설", "DL이앤씨"],
     "철강·금속": ["고려아연", "현대제철", "동국제강"],
-    "음식료·유통": ["삼양식품", "CJ제일제당", "오리온", "농심"]
+    "음식료·유통": ["삼양식품", "CJ제일제당", "오리온", "농심"],
 }
 
 KOSDAQ150_SECTORS = {
-    "제약·바이오": ["알테오젠", "HLB", "삼천당제약", "리가켐바이오", "휴젤", "에스티팜", "HK이노엔", "동국제약", "삼천당제약", "지투지바이오", "디엔디파마텍", "올릭스"],
-    "이차전지·소재": ["에코프로비엠", "에코프로", "엔켐", "대주전자재료", "서진시스템", "나노신소재", "피엔티", "],
-    "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "DB하이텍", "테크윙", "파크시스템스"],
+    "제약·바이오": [
+        "알테오젠",
+        "HLB",
+        "삼천당제약",
+        "리가켐바이오",
+        "휴젤",
+        "에스티팜",
+        "HK이노엔",
+        "동국제약",
+        "지투지바이오",
+        "디엔디파마텍",
+        "올릭스",
+    ],
+    "이차전지·소재": [
+        "에코프로비엠",
+        "에코프로",
+        "엔켐",
+        "대주전자재료",
+        "서진시스템",
+        "나노신소재",
+        "피엔티",
+    ],
+    "반도체 소부장": [
+        "HPSP",
+        "리노공업",
+        "주성엔지니어링",
+        "이오테크닉스",
+        "솔브레인",
+        "동진쎄미켐",
+        "티씨케이",
+        "ISC",
+        "하나머티리얼즈",
+        "대덕전자",
+        "유진테크",
+        "심텍",
+        "원익IPS",
+        "DB하이텍",
+        "테크윙",
+        "파크시스템스",
+    ],
     "엔터·미디어": ["JYP Ent.", "에스엠", "스튜디오드래곤", "CJ ENM"],
     "게임·소프트웨어": ["펄어비스", "카카오게임즈", "위메이드"],
-    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현"],
-    "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"]
+    "로봇·자동화": [
+        "레인보우로보틱스",
+        "로보티즈",
+        "에스에프에이",
+        "휴림로봇",
+        "로보스타",
+        "에스피지",
+        "하이젠알앤엠",
+        "삼현",
+    ],
+    "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
+
 def calculate_sectors(sector_dict, stock_data):
-    results = []
-    for sec_name, stock_names in sector_dict.items():
-        matched = []
-        rates = []
-        top_stock_code = ""
-        for sname in stock_names:
-            if sname in stock_data:
-                item = stock_data[sname]
-                matched.append({"name": sname, "rate": item["rate"], "price": item["price"], "code": item.get("code", "")})
-                rates.append(item["rate"])
-        if matched:
-            matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
-            top_stock_name = matched[0]["name"]
-            top_stock_code = matched[0].get("code", "")
-            
-            # 실시간 실제 언론사 뉴스 수집
-            news_items = fetch_real_news(top_stock_name, top_stock_code)
-            avg_r = sum(rates) / len(rates)
-            results.append({
-                "name": sec_name,
-                "rate": round(avg_r, 2),
-                "stocks": matched[:3],
-                "lead_stock": top_stock_name,
-                "news": news_items
-            })
-    results.sort(key=lambda x: x["rate"], reverse=True)
-    top = results[:3]
-    bot = results[-3:]
-    bot.reverse()
-    return top, bot
+  results = []
+  for sec_name, stock_names in sector_dict.items():
+    matched = []
+    rates = []
+    for sname in stock_names:
+      if sname in stock_data:
+        item = stock_data[sname]
+        matched.append({
+            "name": sname,
+            "rate": item["rate"],
+            "price": item["price"],
+            "code": item.get("code", ""),
+        })
+        rates.append(item["rate"])
+    if matched:
+      matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
+      top_stock_name = matched[0]["name"]
+      top_stock_code = matched[0].get("code", "")
+      news_items = fetch_real_news(top_stock_name, top_stock_code)
+      avg_r = sum(rates) / len(rates)
+      results.append({
+          "name": sec_name,
+          "rate": round(avg_r, 2),
+          "stocks": matched[:3],
+          "lead_stock": top_stock_name,
+          "news": news_items,
+      })
+  results.sort(key=lambda x: x["rate"], reverse=True)
+  top = results[:3]
+  bot = results[-3:]
+  bot.reverse()
+  return top, bot
+
 
 def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """실시간 뉴스 헤드라인 기반 마감 요약 리뷰 생성"""
-    kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
-    kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
-    fx = next((x for x in indices if "환율" in x["name"]), {})
+  kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
+  kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
+  fx = next((x for x in indices if "환율" in x["name"]), {})
 
-    k_dir = "상승" if kospi.get("is_up") else ("하락" if kospi.get("is_down") else "보합")
-    kq_dir = "상승" if kosdaq.get("is_up") else ("하락" if kosdaq.get("is_down") else "보합")
+  k_dir = (
+      "상승"
+      if kospi.get("is_up")
+      else ("하락" if kospi.get("is_down") else "보합")
+  )
+  kq_dir = (
+      "상승"
+      if kosdaq.get("is_up")
+      else ("하락" if kosdaq.get("is_down") else "보합")
+  )
 
-    fx_text = ""
-    if fx.get("is_down"):
-        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 외국인 수급 여건을 지지했습니다."
-    elif fx.get("is_up"):
-        fx_text = f"원·달러 환율이 <b>{fx.get('value')}</b>로 상승세를 보이며 대형 수출주에 영향을 미쳤습니다."
+  fx_text = ""
+  if fx.get("is_down"):
+    fx_text = (
+        f"원·달러 환율이 <b>{fx.get('value')}</b>로 하향 안정화되며 외국인"
+        " 수급 여건을 지지했습니다."
+    )
+  elif fx.get("is_up"):
+    fx_text = (
+        f"원·달러 환율이 <b>{fx.get('value')}</b>로 상승세를 보이며 대형"
+        " 수출주에 영향을 미쳤습니다."
+    )
+  else:
+    fx_text = (
+        f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 보합권 흐름을"
+        " 나타냈습니다."
+    )
+
+  news_bullets = ""
+  target_sectors = [
+      (k200_top[0], "🔴", "코스피 상승 주도"),
+      (k150_top[0], "🔴", "코스닥 상승 주도"),
+  ]
+  if k200_bot:
+    target_sectors.append((k200_bot[0], "🔵", "코스피 하락 섹터"))
+
+  for s, icon, label in target_sectors:
+    n_text = ""
+    if s.get("news"):
+      first_n = s["news"][0]
+      n_text = (
+          f'<a href="{first_n["link"]}" target="_blank"'
+          f' class="news-link">"{first_n["title"]}"</a> <span'
+          f' class="press-badge">{first_n["press"]}</span>'
+      )
     else:
-        fx_text = f"원·달러 환율은 <b>{fx.get('value')}</b> 선에서 보합권 흐름을 나타냈습니다."
-
-    news_bullets = ""
-    target_sectors = [(k200_top[0], "🔴", "코스피 상승 주도"), (k150_top[0], "🔴", "코스닥 상승 주도")]
-    if k200_bot:
-        target_sectors.append((k200_bot[0], "🔵", "코스피 하락 섹터"))
-    
-    for s, icon, label in target_sectors:
-        n_text = ""
-        if s.get("news"):
-            first_n = s["news"][0]
-            n_text = f'<a href="{first_n["link"]}" target="_blank" class="news-link">"{first_n["title"]}"</a> <span class="press-badge">{first_n["press"]}</span>'
-        else:
-            n_text = f"{s['lead_stock']} 등 주력 종목 중심의 수급 공방 지속"
-        news_bullets += f"""
+      n_text = f"{s['lead_stock']} 등 주력 종목 중심의 수급 공방 지속"
+    news_bullets += f"""
         <div class="review-item">
             <span class="bullet">{icon}</span>
-            <div><b>[{label}: {s['name']} | {s['rate']:+}%]</b> {news_bullets_title_clean(n_text)}</div>
+            <div><b>[{label}: {s['name']} | {s['rate']:+}%]</b> {n_text.replace("포토", "").replace("종합", "").strip()}</div>
         </div>
         """
 
-    review_html = f"""
+  review_html = f"""
     <div class="review-card">
         <div class="review-header">
             <span class="review-title">📝 정규장 마감 핵심 요약 & 실시간 언론사 뉴스 헤드라인</span>
@@ -273,42 +464,40 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
         </div>
     </div>
     """
-    return review_html
+  return review_html
 
-def news_bullets_title_clean(text):
-    return text.replace("포토", "").replace("종합", "").strip()
 
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
-    kst_now = datetime.now(timezone(timedelta(hours=9)))
-    now_str = kst_now.strftime("%Y년 %m월 %d일 15:30 정규장 마감 기준")
-    
-    index_cards = ""
-    for idx in indices:
-        if idx["is_up"]:
-            sign = "▲ +"
-            color_class = "text-up"
-            badge_bg = "bg-up-light"
-        elif idx["is_down"]:
-            sign = "▼ -"
-            color_class = "text-down"
-            badge_bg = "bg-down-light"
-        else:
-            sign = "― "
-            color_class = "text-flat"
-            badge_bg = "bg-gray-100"
+  kst_now = datetime.now(timezone(timedelta(hours=9)))
+  now_str = kst_now.strftime("%Y년 %m월 %d일 15:30 정규장 마감 기준")
 
-        if idx["change_rate"] > 0:
-            rate_text = f"{sign}{idx['change_rate']:.2f}%"
-        elif idx["is_up"]:
-            rate_text = "▲ 상승"
-        elif idx["is_down"]:
-            rate_text = "▼ 하락"
-        else:
-            rate_text = "― 보합"
+  index_cards = ""
+  for idx in indices:
+    if idx["is_up"]:
+      sign = "▲ +"
+      color_class = "text-up"
+      badge_bg = "bg-up-light"
+    elif idx["is_down"]:
+      sign = "▼ -"
+      color_class = "text-down"
+      badge_bg = "bg-down-light"
+    else:
+      sign = "― "
+      color_class = "text-flat"
+      badge_bg = "bg-gray-100"
 
-        diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
+    if idx["change_rate"] > 0:
+      rate_text = f"{sign}{idx['change_rate']:.2f}%"
+    elif idx["is_up"]:
+      rate_text = "▲ 상승"
+    elif idx["is_down"]:
+      rate_text = "▼ 하락"
+    else:
+      rate_text = "― 보합"
 
-        index_cards += f"""
+    diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
+
+    index_cards += f"""
         <div class="card">
             <div class="card-title">{idx['name']}</div>
             <div class="card-value">{idx['value']}</div>
@@ -318,29 +507,32 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         </div>
         """
 
-    def build_sector_list(sectors, is_up=True):
-        html = ""
-        sign = "▲ +" if is_up else "▼ "
-        color_class = "text-up" if is_up else "text-down"
-        if not sectors:
-            return '<div class="sector-item">데이터를 집계 중입니다.</div>'
-            
-        for s in sectors:
-            stock_tags = ""
-            for st in s.get("stocks", []):
-                st_color = "text-up" if st["rate"] > 0 else ("text-down" if st["rate"] < 0 else "text-flat")
-                st_sign = "+" if st["rate"] > 0 else ""
-                stock_tags += f'<span class="stock-pill">{st["name"]} <b class="{st_color}">{st_sign}{st["rate"]}%</b></span>'
-            
-            # 실시간 뉴스 헤드라인 태그 생성
-            news_tags = ""
-            if s.get("news"):
-                for n in s["news"][:1]:
-                    news_tags += f"""<div class="sector-news">📰 <a href="{n['link']}" target="_blank" class="news-link">{n['title']}</a> <span class="press-badge">{n['press']}</span></div>"""
-            else:
-                news_tags = f"""<div class="sector-news" style="color: #94a3b8;">당일 집계된 관련 특징주 뉴스가 없습니다.</div>"""
+  def build_sector_list(sectors, is_up=True):
+    html = ""
+    sign = "▲ +" if is_up else "▼ "
+    color_class = "text-up" if is_up else "text-down"
+    if not sectors:
+      return '<div class="sector-item">데이터를 집계 중입니다.</div>'
 
-            html += f"""
+    for s in sectors:
+      stock_tags = ""
+      for st in s.get("stocks", []):
+        st_color = (
+            "text-up"
+            if st["rate"] > 0
+            else ("text-down" if st["rate"] < 0 else "text-flat")
+        )
+        st_sign = "+" if st["rate"] > 0 else ""
+        stock_tags += f'<span class="stock-pill">{st["name"]} <b class="{st_color}">{st_sign}{st["rate"]}%</b></span>'
+
+      news_tags = ""
+      if s.get("news"):
+        for n in s["news"][:1]:
+          news_tags += f"""<div class="sector-news">📰 <a href="{n['link']}" target="_blank" class="news-link">{n['title']}</a> <span class="press-badge">{n['press']}</span></div>"""
+      else:
+        news_tags = """<div class="sector-news" style="color: #94a3b8;">당일 집계된 관련 특징주 뉴스가 없습니다.</div>"""
+
+      html += f"""
             <div class="sector-item">
                 <div class="sector-header">
                     <span class="sector-name">{s['name']}</span>
@@ -350,11 +542,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 {news_tags}
             </div>
             """
-        return html
+    return html
 
-    review_section = generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot)
+  review_section = generate_market_review(
+      indices, k200_top, k200_bot, k150_top, k150_bot
+  )
 
-    template = f"""<!DOCTYPE html>
+  template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -373,7 +567,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .card-value {{ font-size: 1.28rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
         
-        /* 마감 리뷰 브리핑 박스 */
         .review-card {{ background: #ffffff; border-radius: 12px; border-left: 5px solid #2563eb; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
         .review-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }}
         .review-title {{ font-size: 1.08rem; font-weight: 800; color: #0f172a; }}
@@ -442,13 +635,84 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 </body>
 </html>
 """
-    os.makedirs("public", exist_ok=True)
-    with open("public/index.html", "w", encoding="utf-8") as f:
-        f.write(template)
+  os.makedirs("public", exist_ok=True)
+  with open("public/index.html", "w", encoding="utf-8") as f:
+    f.write(template)
+
+
+def send_kakao_alert(indices, k200_top, k150_top):
+  """GitHub Secrets에 등록된 카카오 토큰을 활용해 나에게 링크 및 요약 전송"""
+  rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
+  refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
+
+  if not rest_api_key or not refresh_token:
+    print("[INFO] 카카오톡 환경변수(Secrets)가 설정되지 않아 발송을 건너뜁니다.")
+    return
+
+  try:
+    token_url = "https://kauth.kakao.com/oauth/token"
+    token_data = {
+        "grant_type": "refresh_token",
+        "client_id": rest_api_key,
+        "refresh_token": refresh_token,
+    }
+    t_res = requests.post(token_url, data=token_data, timeout=5).json()
+    access_token = t_res.get("access_token")
+
+    if not access_token:
+      print(f"[ERROR] 토큰 갱신 실패: {t_res}")
+      return
+
+    kst_now = datetime.now(timezone(timedelta(hours=9)))
+    date_str = kst_now.strftime("%m/%d 15:30 마감")
+
+    kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
+    kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
+    fx = next((x for x in indices if "환율" in x["name"]), {})
+
+    k_sign = "+" if kospi.get("is_up") else ""
+    kq_sign = "+" if kosdaq.get("is_up") else ""
+
+    k200_lead = k200_top[0]["name"] if k200_top else "집계중"
+    k150_lead = k150_top[0]["name"] if k150_top else "집계중"
+
+    msg_text = (
+        f"📊 [정규장 마감 리포트] {date_str}\n\n"
+        f"• 코스피: {kospi.get('value')} ({k_sign}{kospi.get('change_rate')}%, {kospi.get('change_val')})\n"
+        f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{kosdaq.get('change_rate')}%, {kosdaq.get('change_val')})\n"
+        f"• 원·달러: {fx.get('value')}\n"
+        f"• 주도섹터: {k200_lead} / {k150_lead}\n\n"
+        f"상세 업종 동향과 뉴스는 아래 버튼을 눌러 확인하세요."
+    )
+
+    send_url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    payload = {
+        "template_object": json.dumps({
+            "object_type": "text",
+            "text": msg_text,
+            "link": {
+                "web_url": DASHBOARD_URL,
+                "mobile_web_url": DASHBOARD_URL,
+            },
+            "button_title": "📊 증시 대시보드 바로가기",
+        })
+    }
+    s_res = requests.post(send_url, headers=headers, data=payload, timeout=5)
+    if s_res.status_code == 200:
+      print("[SUCCESS] 카카오톡 대시보드 링크 발송 완료")
+    else:
+      print(f"[ERROR] 카카오톡 발송 실패: {s_res.text}")
+
+  except Exception as e:
+    print(f"[ERROR] 카카오톡 전송 중 오류 발생: {e}")
+
 
 if __name__ == "__main__":
-    indices = get_market_indices()
-    stock_data = get_market_stocks()
-    k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
-    k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot)
+  indices = get_market_indices()
+  stock_data = get_market_stocks()
+  k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
+  k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
+
+  render_html(indices, k200_top, k200_bot, k150_top, k150_bot)
+  send_kakao_alert(indices, k200_top, k150_top)
