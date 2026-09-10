@@ -2,7 +2,9 @@ name: Deploy Market Dashboard
 
 on:
   schedule:
-    # UTC 07:00 = 한국 시간 평일 16:00
+    # 1) 평일(월~금) 장중 30분마다 자동 갱신 (한국 시간 09:00 ~ 15:30)
+    - cron: '*/30 0-6 * * 1-5'
+    # 2) 한국 시간 16:00 정규장 마감 최종 확정 및 카톡 발송
     - cron: '0 7 * * 1-5'
   workflow_dispatch:
 
