@@ -35,21 +35,21 @@ BUSINESS_NEWS_KEYWORDS = [
 ]
 
 
-def generate_dynamic_sector_analysis(sec_name, rate, matched_stocks, news_items):
-  """Gemini API 또는 당일 실시간 데이터를 조합하여 매번 새롭게 동적 생성하는 심층 분석기"""
+def generate_ai_sector_analysis(sec_name, rate, matched_stocks, news_items):
+  """Gemini API 또는 실시간 데이터 기반의 지능형 동적 심층 분석 생성"""
   api_key = os.environ.get("GEMINI_API_KEY")
   stock_summary_text = ", ".join([f"{s['name']}({'+' if s['rate']>0 else ''}{s['rate']:.2f}%)" for s in matched_stocks[:3]])
-  news_title = news_items[0]["title"] if news_items else "관련 핵심 특징주 뉴스 집계 중"
+  news_title = news_items[0]["title"] if news_items else "관련 주요 특징주 뉴스 집계 중"
 
-  # 1. Gemini AI API 연동 시도
   if api_key:
     prompt = f"""
-    당신은 전문 금융 애널리스트입니다. 아래의 당일 마감 데이터를 바탕으로 해당 섹터의 주가 흐름과 시장 의미를 통찰력 있게 1~2문장으로 분석해 주세요. 고정된 문장 틀을 사용하지 말고 당일 데이터를 입체적으로 해석해 주세요. 마크다운이나 불필요한 서식 없이 순수 텍스트만 출력하세요.
+    당신은 수석 금융 애널리스트입니다. 아래 데이터를 바탕으로 해당 섹터의 당일 마감 동향을 전문적이고 통찰력 있게 1~2문장으로 심층 분석해 주세요. 
+    마크다운이나 불필요한 서식 없이 순수 텍스트 문장만 출력해 주세요.
     
     - 섹터명: {sec_name}
     - 평균 등락률: {rate:+.2f}%
-    - 주요 구성 종목: {stock_summary_text}
-    - 당일 핵심 뉴스 헤드라인: {news_title}
+    - 주요 구성 종목 시세: {stock_summary_text}
+    - 관련 핵심 뉴스: {news_title}
     """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
@@ -66,22 +66,18 @@ def generate_dynamic_sector_analysis(sec_name, rate, matched_stocks, news_items)
     except Exception:
       pass
 
-  # 2. API가 없을 경우: 실시간 데이터를 조합하여 매번 다르게 생성하는 동적 조합 분석기
-  top_stock = matched_stocks[0] if matched_stocks else {"name": sec_name, "rate": rate}
-  other_stocks = ", ".join([s['name'] for s in matched_stocks[1:3]]) if len(matched_stocks) > 1 else "동종 업계"
-  
-  if rate >= 2.0:
-    return f"당일 {top_stock['name']}({top_stock['rate']:+.2f}%)을 필두로 {other_stocks} 등이 가파른 매수세를 유입시키며 섹터 전반의 급등(+{rate:.2f}%)을 주도했습니다. 특히 '{news_title[:32]}...' 관련 보도가 투자 심리를 강하게 자극했습니다."
-  elif rate >= 0.5:
-    return f"{top_stock['name']}이(+{top_stock['rate']:.2f}%) 양호한 흐름을 보인 가운데, {other_stocks} 등 주요 종목들이 동반 상승하며 섹터가 +{rate:.2f}% 우상향 곡선을 그렸습니다."
+  # 동적 백업 분석기 (실제 데이터를 조합하여 매번 다르게 생성)
+  dir_str = "강세" if rate > 0 else ("약세" if rate < 0 else "보합세")
+  if rate >= 1.0:
+    return f"{stock_summary_text} 등 주력 종목 전반에 매수세가 강하게 유입되며 {rate:+.2f}% 급등세를 기록했습니다. '{news_title}' 등의 핵심 이슈가 모멘텀을 뒷받침했습니다."
   elif rate > 0.0:
-    return f"보합권에서 출발한 후 {top_stock['name']} 등 일부 종목의 선별적 반등에 힘입어 +{rate:.2f}% 강보합 마감했습니다. 수급 유입 강도는 다소 제한적인 모습입니다."
+    return f"{stock_summary_text} 등이 고른 흐름을 나타내며 {rate:+.2f}% 견조한 {dir_str}를 유지했습니다."
   elif rate == 0.0:
-    return f"구성 종목 간 매수와 매도 공방이 팽팽하게 맞서며 {sec_name} 지수는 보합(0.00%) 상태로 정규장을 마쳤습니다."
+    return f"{stock_summary_text} 등 주요 종목 간 매수·매도 공방이 팽팽하게 맞서며 보합(0.00%)으로 마감했습니다."
   elif rate > -1.0:
-    return f"{top_stock['name']}({top_stock['rate']:+.2f}%) 등 일부 종목이 방어력을 보였으나, {other_stocks} 등에서 단기 차익 실현 물량이 출회되어 {rate:.2f}% 소폭 조정을 받았습니다."
+    return f"{stock_summary_text} 등에서 단기 차익 매물이 소폭 출회되며 {rate:.2f}% 약보합 흐름을 보였습니다."
   else:
-    return f"기관 및 외국인의 매물이 집중된 가운데 {top_stock['name']}({top_stock['rate']:+.2f}%)을 비롯한 핵심 종목들이 약세를 면치 못하며 섹터가 {rate:.2f}% 하락했습니다. '{news_title[:32]}...' 등 관련 업황 경계감이 부담으로 작용했습니다."
+    return f"{stock_summary_text} 등 핵심 종목을 중심으로 매도 압력이 가중되며 {rate:.2f}% 하락했습니다. 수급 이탈 및 업황 경계감이 작용했습니다."
 
 
 def get_news_score(title, stock_name):
@@ -297,10 +293,9 @@ def calculate_sectors(sector_dict, stock_data):
     if matched:
       matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
       top_stock_name = matched[0]["name"]
-      top_stock_code = matched[0].get("code", "")
-      news_items = fetch_real_news(top_stock_name, top_stock_code)
+      news_items = fetch_real_news(top_stock_name, matched[0].get("code", ""))
       avg_r = sum(rates) / len(rates)
-      summary_text = generate_dynamic_sector_analysis(sec_name, avg_r, matched, news_items)
+      summary_text = generate_ai_sector_analysis(sec_name, avg_r, matched, news_items)
       results.append({
           "name": sec_name,
           "rate": round(avg_r, 2),
@@ -338,8 +333,8 @@ def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
   return f"""
     <div class="review-card">
         <div class="review-header">
-            <span class="review-title">📝 정규장 마감 핵심 요약 & 동적 분석</span>
-            <span class="review-tag">실시간 데이터 연동</span>
+            <span class="review-title">📝 정규장 마감 핵심 요약 & AI 시장 진단</span>
+            <span class="review-tag">Gemini 실시간 연동</span>
         </div>
         <div class="review-body">
             <div class="review-item">
@@ -396,7 +391,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             </span>"""
 
       summary_text = s.get("summary", "")
-      summary_html = f'<div class="sector-summary"><div class="summary-header"><span class="summary-badge">🔍 동적 심층 분석</span></div><div class="summary-body">{summary_text}</div></div>' if summary_text else ""
+      summary_html = f'<div class="sector-summary"><div class="summary-header"><span class="summary-badge">🤖 AI 실시간 심층 분석</span></div><div class="summary-body">{summary_text}</div></div>' if summary_text else ""
       news_tags = f'<div class="sector-news">📰 <a href="{s["news"][0]["link"]}" target="_blank" class="news-link">{s["news"][0]["title"]}</a> <span class="press-badge">{s["news"][0]["press"]}</span></div>' if s.get("news") else ""
 
       html += f"""
@@ -419,7 +414,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실시간 증시 대시보드</title>
+    <title>실시간 AI 증시 대시보드</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
@@ -474,7 +469,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 </head>
 <body>
     <header>
-        <h1>📊 실시간 증시 대시보드</h1>
+        <h1>📊 실시간 AI 증시 대시보드</h1>
         <div class="status-bar">
             <span class="timestamp" id="live-clock">🕒 시간 계산 중...</span>
             <span class="live-status" id="market-status">동기화 확인 중</span>
@@ -564,10 +559,10 @@ def send_kakao_alert(indices, k200_top, k150_top):
     kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
     fx = next((x for x in indices if "환율" in x["name"]), {})
     
-    msg_text = f"📊 [마감 리포트]\n\n• 코스피: {kospi.get('value')}\n• 코스닥: {kosdaq.get('value')}\n• 원·달러: {fx.get('value')}\n\n대시보드에서 동적 심층 분석을 확인하세요."
+    msg_text = f"📊 [AI 마감 리포트]\n\n• 코스피: {kospi.get('value')}\n• 코스닥: {kosdaq.get('value')}\n• 원·달러: {fx.get('value')}\n\n대시보드에서 실시간 AI 심층 분석을 확인하세요."
     send_url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
     headers = {"Authorization": f"Bearer {access_token}"}
-    payload = {"template_object": json.dumps({"object_type": "text", "text": msg_text, "link": {"web_url": DASHBOARD_URL, "mobile_web_url": DASHBOARD_URL}, "button_title": "📊 대시보드 바로가기"})}
+    payload = {"template_object": json.dumps({"object_type": "text", "text": msg_text, "link": {"web_url": DASHBOARD_URL, "mobile_web_url": DASHBOARD_URL}, "button_title": "📊 AI 대시보드 바로가기"})}
     requests.post(send_url, headers=headers, data=payload, timeout=5)
   except Exception:
     pass
