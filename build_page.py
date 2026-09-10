@@ -121,26 +121,23 @@ def generate_sector_summary(sec_name, rate, matched_stocks, news_items):
   down_stocks = [s for s in matched_stocks if s["rate"] < 0]
   total_cnt = len(matched_stocks)
 
-  # 1. 수급 구조 판정
   if len(up_stocks) == total_cnt and total_cnt > 0:
-    breadth_desc = "주요 구성 종목 전체에 고른 매수세가 강하게 유입되는 동반 강세 흐름"
+    breadth_desc = "주요 구성 종목 전체에 고른 매수세가 유입되는 동반 강세 흐름"
   elif len(down_stocks) == total_cnt and total_cnt > 0:
     breadth_desc = "섹터 내 전 종목에 걸쳐 동반 매도세가 출회되는 전방위 하방 압력"
   elif up_stocks and (len(up_stocks) > len(down_stocks)):
-    breadth_desc = "일부 조정 종목이 혼재되었으나 대형 주도주 중심의 매수세가 섹터 상승을 견인"
+    breadth_desc = "대형 주도주 중심의 선별적 매수세가 유입되며 섹터 방어"
   elif down_stocks and (len(down_stocks) > len(up_stocks)):
-    breadth_desc = "선별적 방어 종목에도 불구하고 핵심 대형주의 낙폭이 커지며 섹터 전반을 압박"
+    breadth_desc = "핵심 대형주의 낙폭이 커지며 섹터 전반에 하방 압력 가중"
   else:
-    breadth_desc = "종목별 개별 호재와 수급이 엇갈리며 뚜렷한 방향성 탐색을 이어가는 흐름"
+    breadth_desc = "종목별 개별 호재와 수급이 엇갈리는 혼조세 흐름"
 
-  # 2. 뉴스 핵심 키워드 추출
   news_issue_point = ""
   if news_items:
     n_title = news_items[0]["title"]
     clean_title = re.sub(r"\[.*?\]|\(.*?\)", "", n_title).strip()
-    news_issue_point = f"특히 당일 <b>'{clean_title[:38]}...'</b> 등 주요 이슈가 부각되며 시장의 이목을 집중시켰습니다."
+    news_issue_point = f"특히 당일 <b>'{clean_title[:38]}...'</b> 등 주요 보도가 전해지며 시장의 주목을 받았습니다."
 
-  # 3. 등락률에 따른 심층 진단 합성
   parts = []
   for s in matched_stocks[:2]:
     sign = "+" if s["rate"] > 0 else ""
@@ -150,19 +147,19 @@ def generate_sector_summary(sec_name, rate, matched_stocks, news_items):
   if rate >= 1.0:
     verdict = (
         f"{stock_str} 등이 강한 탄력을 나타냈습니다. "
-        f"{driver_info['theme']} 속에서 {driver_info['up_driver']} 요인이 강한 모멘텀으로 작용했으며, "
-        f"{breadth_desc}을 나타냈습니다. {news_issue_point}"
+        f"{driver_info['theme']} 속에서 {driver_info['up_driver']} 요인이 모멘텀으로 작용했으며, "
+        f"{breadth_desc}을 보였습니다. {news_issue_point}"
     )
   elif rate > 0.0:
     verdict = (
         f"{stock_str} 등이 견조한 흐름을 이어갔습니다. "
         f"{driver_info['theme']}에 대한 긍정적 시각이 유지되는 가운데, "
-        f"{breadth_desc}을 보이며 마감했습니다. {news_issue_point}"
+        f"{breadth_desc}을 나타냈습니다. {news_issue_point}"
     )
   elif rate == 0.0:
     verdict = (
-        f"{stock_str} 등락이 팽팽히 맞서며 보합권으로 마무리되었습니다. "
-        f"{driver_info['theme']}을 둘러싼 관망 심리가 짙은 상황입니다."
+        f"{stock_str} 등락이 맞서며 보합권으로 마감했습니다. "
+        f"{driver_info['theme']}을 둘러싼 뚜렷한 방향성 탐색이 이어지고 있습니다."
     )
   elif rate > -1.0:
     verdict = (
@@ -171,8 +168,8 @@ def generate_sector_summary(sec_name, rate, matched_stocks, news_items):
     )
   else:
     verdict = (
-        f"{stock_str} 등을 중심으로 가파른 매도세가 집중되었습니다. "
-        f"{driver_info['theme']} 부담과 함께 {driver_info['down_driver']} 요인이 복합 작용하여, "
+        f"{stock_str} 등을 중심으로 매도세가 집중되었습니다. "
+        f"{driver_info['theme']} 부담과 함께 {driver_info['down_driver']} 요인이 작용하여, "
         f"{breadth_desc}을 기록했습니다. {news_issue_point}"
     )
 
@@ -638,14 +635,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 <span class="stock-price">({st['price']}원)</span>
             </span>"""
 
-      summary_html = (
-          f'<div class="sector-summary"><div class="summary-header"><span'
-          ' class="summary-badge">🔍 섹터 심층'
-          f' 분석</span></div><div class="summary-body">{s.get("summary",'
-          ' "")}</div></div>'
-          if s.get("summary")
-          else ""
-      )
+      summary_content = s.get("summary", "")
+      if summary_content:
+        summary_html = f'<div class="sector-summary"><div class="summary-header"><span class="summary-badge">🔍 섹터 심층 분석</span></div><div class="summary-body">{summary_content}</div></div>'
+      else:
+        summary_html = ""
 
       news_tags = ""
       if s.get("news"):
@@ -724,7 +718,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
         .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
         
-        /* 심층 분석 카드 전용 스타일 */
         .sector-summary {{ font-size: 0.88rem; line-height: 1.65; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 11px 14px; margin-bottom: 8px; border-left: 4px solid #3b82f6; }}
         .summary-header {{ margin-bottom: 4px; }}
         .summary-badge {{ font-weight: 800; font-size: 0.82rem; color: #1d4ed8; background: #dbeafe; padding: 2px 7px; border-radius: 4px; display: inline-block; }}
@@ -733,7 +726,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 
         .sector-news {{ font-size: 0.84rem; color: #475569; background: #ffffff; border: 1px dashed #cbd5e1; padding: 7px 10px; border-radius: 6px; }}
         
-        /* 한국 증시 표준 색상: 상승=빨간색, 하락=파란색 */
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
         .text-down {{ color: #2563eb !important; font-weight: 700; }}
         .text-flat {{ color: #64748b !important; font-weight: 700; }}
@@ -785,7 +777,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     </div>
 
     <script>
-        // 한국 표준시(KST) 시계 및 정규장 상태 판정
         function updateLiveClock() {{
             const now = new Date();
             const kstFormatter = new Intl.DateTimeFormat('ko-KR', {{
@@ -824,7 +815,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         setInterval(updateLiveClock, 1000);
         updateLiveClock();
 
-        // CORS 우회 프록시 통신 함수
         async function fetchWithProxy(targetUrl) {{
             const proxies = [
                 (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
@@ -842,7 +832,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
             throw new Error('프록시 호출 실패');
         }}
 
-        // 실시간 시세 동기화 (지수 3종 + 환율 1종 + 개별 종목)
         async function fetchLiveMarketData() {{
             const btn = document.getElementById('btn-refresh');
             if (btn) {{
@@ -850,7 +839,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 btn.disabled = true;
             }}
 
-            // (1) 주요 증시 지수 3종 (코스피, 코스닥, 코스피200)
             const indexTargets = [
                 {{ key: 'KOSPI', url: 'https://m.stock.naver.com/api/index/KOSPI/basic' }},
                 {{ key: 'KOSDAQ', url: 'https://m.stock.naver.com/api/index/KOSDAQ/basic' }},
@@ -886,7 +874,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 }} catch (err) {{}}
             }});
 
-            // (2) 원·달러 환율 전용 실시간 갱신 (두나무 공식 환율 API)
             try {{
                 let fxItem = null;
                 try {{
@@ -926,7 +913,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 }}
             }} catch (fxErr) {{}}
 
-            // (3) 종목 실시간 시세 갱신
             const stockElements = document.querySelectorAll('.stock-pill[data-stock-code]');
             stockElements.forEach(async (el) => {{
                 const code = el.getAttribute('data-stock-code');
