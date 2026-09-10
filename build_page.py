@@ -385,6 +385,78 @@ KOSDAQ150_SECTORS = {
 }
 
 
+def generate_sector_summary(sec_name, avg_rate, stocks, news_items):
+  """섹터별 등락 현황, 수급 주도주, 언론 이슈를 종합한 맞춤 요약 생성"""
+  if avg_rate >= 1.5:
+    trend_txt = (
+        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 급등하며 장중 강한 탄력을"
+        " 나타냈습니다."
+    )
+  elif avg_rate > 0:
+    trend_txt = (
+        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 상승하며 견조한 우상향 흐름을"
+        " 보였습니다."
+    )
+  elif avg_rate <= -1.5:
+    trend_txt = (
+        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 하락하며 매도 물량 출회에"
+        " 따른 조정을 받았습니다."
+    )
+  elif avg_rate < 0:
+    trend_txt = (
+        f"{sec_name} 섹터는 평균 {avg_rate:+.2f}% 소폭 밀리며 숨고르기 장세를"
+        " 기록했습니다."
+    )
+  else:
+    trend_txt = f"{sec_name} 섹터는 뚜렷한 방향성 없이 보합세를 유지했습니다."
+
+  up_stocks = [s for s in stocks if s["rate"] > 0]
+  down_stocks = [s for s in stocks if s["rate"] < 0]
+  lead = stocks[0] if stocks else None
+
+  if lead:
+    lead_sign = "+" if lead["rate"] > 0 else ""
+    lead_info = f"{lead['name']}({lead_sign}{lead['rate']:.2f}%)"
+    if len(stocks) > 1 and len(up_stocks) == len(stocks):
+      breadth_txt = (
+          f"{lead_info}을(를) 중심으로 편입 종목 전반에 동반 매수세가"
+          " 확산되었습니다."
+      )
+    elif len(stocks) > 1 and len(down_stocks) == len(stocks):
+      breadth_txt = (
+          f"{lead_info} 등 주요 종목 전반에 걸쳐 동반 매도세가 우위를"
+          " 보였습니다."
+      )
+    else:
+      breadth_txt = (
+          f"대장주인 {lead_info}의 변동성을 축으로 개별 종목별 수급 차별화가"
+          " 전개되었습니다."
+      )
+  else:
+    breadth_txt = "구성 종목 전반의 수급 공방이 팽팽하게 이어졌습니다."
+
+  if news_items:
+    first_news = news_items[0]
+    clean_title = (
+        first_news["title"]
+        .replace("[", "")
+        .replace("]", "")
+        .replace("포토", "")
+        .strip()
+    )
+    news_txt = (
+        f"주요 이슈로는 '{clean_title}'({first_news['press']}) 등이"
+        " 부각되었습니다."
+    )
+  else:
+    news_txt = (
+        "개별 이슈보다는 시장 거시 매크로 환경 및 수급 흐름에"
+        " 연동되었습니다."
+    )
+
+  return f"{trend_txt} {breadth_txt} {news_txt}"
+
+
 def calculate_sectors(sector_dict, stock_data):
   results = []
   for sec_name, stock_names in sector_dict.items():
@@ -406,12 +478,16 @@ def calculate_sectors(sector_dict, stock_data):
       top_stock_code = matched[0].get("code", "")
       news_items = fetch_real_news(top_stock_name, top_stock_code)
       avg_r = sum(rates) / len(rates)
+      summary_text = generate_sector_summary(
+          sec_name, avg_r, matched, news_items
+      )
       results.append({
           "name": sec_name,
           "rate": round(avg_r, 2),
           "stocks": matched[:3],
           "lead_stock": top_stock_name,
           "news": news_items,
+          "summary": summary_text,
       })
   results.sort(key=lambda x: x["rate"], reverse=True)
   top = results[:3]
@@ -597,6 +673,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
       else:
         news_tags = """<div class="sector-news" style="color: #94a3b8;">당일 집계된 관련 특징주 뉴스가 없습니다.</div>"""
 
+      summary_tag = (
+          f"""<div class="sector-summary">💡 <b>섹터 종합 요약:</b>"""
+          f""" {s.get('summary', '')}</div>"""
+      )
+
       html += f"""
             <div class="sector-item">
                 <div class="sector-header">
@@ -605,6 +686,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                 </div>
                 <div class="stock-container">{stock_tags}</div>
                 {news_tags}
+                {summary_tag}
             </div>
             """
     return html
@@ -613,7 +695,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
       indices, k200_top, k200_bot, k150_top, k150_bot
   )
 
-  # 한국 표준시(KST) 기준 생성 시각 기록
   kst_now = datetime.now(timezone(timedelta(hours=9)))
   build_time_str = kst_now.strftime("%Y년 %m월 %d일 %H:%M:%S")
 
@@ -660,17 +741,20 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; color: #0f172a; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        .sector-item {{ padding: 12px 0; border-bottom: 1px solid #f1f5f9; }}
+        .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; }}
         .sector-item:last-child {{ border-bottom: none; }}
-        .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }}
+        .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
         .sector-name {{ font-weight: 700; font-size: 0.98rem; }}
         .sector-rate {{ font-weight: 800; font-size: 0.98rem; }}
         
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
         .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
-        .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; }}
+        .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; margin-bottom: 6px; }}
         
+        .sector-summary {{ font-size: 0.83rem; line-height: 1.6; color: #334155; background: #f1f5f9; border-radius: 6px; padding: 8px 12px; border-left: 3px solid #64748b; }}
+        .sector-summary b {{ color: #0f172a; }}
+
         /* 한국 증시 표준 색상: 상승=빨간색, 하락=파란색 */
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
         .text-down {{ color: #2563eb !important; font-weight: 700; }}
@@ -717,12 +801,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     </div>
 
     <script>
-        // 브라우저 캐시를 건너뛰고 방금 빌드된 최신 페이지만 즉시 가져오는 새로고침
         function forceReload() {{
             window.location.href = window.location.pathname + '?_t=' + Date.now();
         }}
 
-        // 장중 여부 판정 (평일 09:00 ~ 15:30)
         (function checkMarket() {{
             const now = new Date();
             const kstDate = new Date(now.toLocaleString("en-US", {{ timeZone: "Asia/Seoul" }}));
