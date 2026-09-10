@@ -18,7 +18,7 @@ DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
 
 def get_exchange_rate():
-  """원·달러 환율 데이터 수집 (1순위: 공식 실시간 환율 API, 2순위: 네이버 금융 크롤링 백업)"""
+  """원·달러 환율 데이터 수집"""
   try:
     url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
     res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
@@ -30,16 +30,14 @@ def get_exchange_rate():
         diff = f"{item['changePrice']:,.2f}"
         rate = round(item.get("changeRate", 0) * 100, 2)
         chg = item.get("change", "EVEN")
-        is_up = chg == "RISE"
-        is_down = chg == "FALL"
         return {
             "name": "원·달러 환율",
             "code_key": "FX_USDKRW",
             "value": price,
             "change_val": diff,
             "change_rate": rate,
-            "is_up": is_up,
-            "is_down": is_down,
+            "is_up": chg == "RISE",
+            "is_down": chg == "FALL",
         }
   except Exception:
     pass
@@ -54,16 +52,14 @@ def get_exchange_rate():
       price = f"{float(val_text):,.2f}원"
       diff = box.find("span", class_="change").text.strip()
       box_text = box.text
-      is_up = ("상승" in box_text) or ("+" in box_text)
-      is_down = ("하락" in box_text) or ("-" in box_text)
       return {
           "name": "원·달러 환율",
           "code_key": "FX_USDKRW",
           "value": price,
           "change_val": diff,
           "change_rate": 0.0,
-          "is_up": is_up,
-          "is_down": is_down,
+          "is_up": ("상승" in box_text) or ("+" in box_text),
+          "is_down": ("하락" in box_text) or ("-" in box_text),
       }
   except Exception:
     pass
@@ -80,7 +76,7 @@ def get_exchange_rate():
 
 
 def get_market_indices():
-  """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 정확 수집"""
+  """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 수집"""
   targets = [
       (
           "코스피 (KOSPI)",
@@ -112,17 +108,14 @@ def get_market_indices():
           rate = 0.0
 
         cd = str(data.get("compareToPreviousPrice", {}).get("code", "3"))
-        is_up = cd in ["1", "2"]
-        is_down = cd in ["4", "5"]
-
         results.append({
             "name": name,
             "code_key": key,
             "value": val,
             "change_val": diff,
             "change_rate": rate,
-            "is_up": is_up,
-            "is_down": is_down,
+            "is_up": cd in ["1", "2"],
+            "is_down": cd in ["4", "5"],
         })
         continue
     except Exception:
@@ -214,10 +207,11 @@ def fetch_real_news(keyword, stock_code=""):
           td_info = tr.find("td", class_="info")
           if td_title and td_title.find("a"):
             a_tag = td_title.find("a")
-            title = a_tag.text.strip()
-            link = "https://finance.naver.com" + a_tag["href"]
-            press = td_info.text.strip() if td_info else "증권뉴스"
-            news_list.append({"title": title, "press": press, "link": link})
+            news_list.append({
+                "title": a_tag.text.strip(),
+                "press": td_info.text.strip() if td_info else "증권뉴스",
+                "link": "https://finance.naver.com" + a_tag["href"],
+            })
             if len(news_list) >= 2:
               return news_list
     except Exception:
@@ -233,15 +227,17 @@ def fetch_real_news(keyword, stock_code=""):
       dt = dl.find("dd", class_="articleSubject") or dl.find("dt")
       if dt and dt.find("a"):
         a_tag = dt.find("a")
-        title = a_tag.text.strip()
-        link = "https://finance.naver.com" + a_tag["href"]
         summary = dl.find("dd", class_="articleSummary")
         press = (
             summary.find("span", class_="press").text.strip()
             if summary and summary.find("span", class_="press")
             else "네이버뉴스"
         )
-        news_list.append({"title": title, "press": press, "link": link})
+        news_list.append({
+            "title": a_tag.text.strip(),
+            "press": press,
+            "link": "https://finance.naver.com" + a_tag["href"],
+        })
         if len(news_list) >= 2:
           return news_list
   except Exception:
@@ -384,220 +380,78 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-SECTOR_INSIGHTS = {
-    "화학·에너지": (
-        "국제유가 변동성과 정제마진 스프레드, 중국 내수 부양책에 따른 석유화학"
-        " 수요 회복 여부"
-    ),
-    "이차전지·배터리": (
-        "글로벌 EV 캐즘(수요 둔화) 장기화 우려와 ESS향 신규 수요, 리튬·니켈 등"
-        " 핵심 원자재 가격 동향"
-    ),
-    "조선·중공업": (
-        "고부가가치 친환경 선박(LNG·암모니아) 중심의 선가 상승세와 글로벌"
-        " 발주잔고 확대"
-    ),
-    "전기·전자 (반도체/IT)": (
-        "AI 가속기 및 HBM(고대역폭메모리) 수요 가시성, 미국 빅테크 CAPEX 및"
-        " 글로벌 반도체 업황"
-    ),
-    "자동차·운송장비": (
-        "하이브리드(HEV) 중심의 견고한 글로벌 판매량 및 환율 효과,"
-        " 주주환원(밸류업) 기대감"
-    ),
-    "원전·전력인프라": (
-        "글로벌 AI 데이터센터 증설에 따른 전력망 확충 수혜와 초고압"
-        " 변압기·전선 수출 호조"
-    ),
-    "방위산업·우주항공": (
-        "지정학적 리스크 장기화에 따른 K-방산 수주잔고 증가 및 안정적인 해외"
-        " 수출 파이프라인"
-    ),
-    "제약·바이오": (
-        "금리 인하 사이클 진입에 따른 유동성 유입 기대와 주요 파이프라인의"
-        " 글로벌 기술수출(L/O) 및 임상 성과"
-    ),
-    "금융·지주": (
-        "기업 밸류업 프로그램 관련 자사주 소각·배당 확대 등 주주환원율 제고와"
-        " 금리 경로에 따른 순이자마진(NIM)"
-    ),
-    "인터넷·플랫폼": (
-        "AI 기술의 비즈니스 모델 접목 및 커머스·광고 부문의 수익성 방어력"
-    ),
-    "건설·시공": (
-        "부동산 PF 리스크 및 원자재비 상승 부담 대비 해외 플랜트·토목"
-        " 프로젝트 수주 가시성"
-    ),
-    "철강·금속": (
-        "중국산 저가 철강재 유입에 따른 판가 압박과 전방 산업(건설·가전) 수요"
-        " 회복 속도"
-    ),
-    "음식료·유통": (
-        "K-푸드 수출 모멘텀 지속성 및 원자재 곡물가 안정화에 따른 마진 스프레드"
-        " 개선"
-    ),
-    "반도체 소부장": (
-        "전방 칩메이커들의 첨단 패키징 및 선단공정 장비·소재 발주 사이클"
-    ),
-    "엔터·미디어": (
-        "음원·음반 실적 추이 및 글로벌 월드투어 재개, 신인 아티스트 데뷔"
-        " 모멘텀"
-    ),
-    "게임·소프트웨어": (
-        "신작 흥행 성과 및 글로벌 라이선스 확장, 개발비 효율화에 따른 수익성"
-        " 턴어라운드"
-    ),
-    "로봇·자동화": (
-        "제조업 인력난 대응을 위한 자동화 설비 도입과 휴머노이드·협동로봇 시장"
-        " 개화 기대감"
-    ),
-    "피팅·배관기자재": (
-        "조선·해양플랜트 및 LNG 터미널 증설에 연동된 산업용 관이음쇠 수주"
-        " 동향"
-    ),
-}
 
+def ask_gemini_ai(sec_name, avg_rate, stocks, news_items):
+  """Gemini AI에게 실시간 시세와 기사를 전달하여 직접 작성한 전문 시황 분석 코멘트 획득"""
+  api_key = os.environ.get("GEMINI_API_KEY")
 
-def generate_sector_summary(sec_name, avg_rate, stocks, news_items):
-  """단순 뉴스 인용을 탈피하고, 산업 펀더멘털·등락 강도·수급 분산·모멘텀을 심층 분석한 리포트 생성"""
-  base_insight = SECTOR_INSIGHTS.get(
-      sec_name, "업종 고유의 펀더멘털 및 시장 수급 환경"
+  # 종목 및 뉴스 요약 정리
+  stocks_str = ", ".join(
+      [f"{s['name']}({s['rate']:+.2f}%)" for s in stocks[:4]]
+  )
+  news_str = (
+      ", ".join([f"'{n['title']}'({n['press']})" for n in news_items])
+      if news_items
+      else "특이 헤드라인 없음"
   )
 
-  if avg_rate >= 2.0:
-    tone = (
-        f"평균 {avg_rate:+.2f}% 급등하며 시장의 강력한 주도주 역할을"
-        " 수행했습니다."
-    )
-    action = "상승 추세가 강하게 분출되며 매수세가 공격적으로 유입되었습니다."
-  elif avg_rate > 0:
-    tone = (
-        f"평균 {avg_rate:+.2f}% 상승하며 견조한 우상향 탄력을 보였습니다."
-    )
-    action = "지수 대비 상대적 우위를 점하며 하방 경직성을 확보했습니다."
-  elif avg_rate <= -2.0:
-    tone = (
-        f"평균 {avg_rate:+.2f}% 급락하며 단기 하방 압력이 크게"
-        " 확대되었습니다."
-    )
-    action = (
-        "차익 실현 및 위험 회피성 매물이 출회되며 지지선 테스트가"
-        " 진행되었습니다."
-    )
-  elif avg_rate < 0:
-    tone = (
-        f"평균 {avg_rate:+.2f}% 소폭 조정을 받으며 숨고르기 국면을"
-        " 나타냈습니다."
-    )
-    action = (
-        "상승 피로감에 따른 단기 매물 소화와 함께 관망세가 짙어졌습니다."
-    )
-  else:
-    tone = "보합권(0.00%)에 머물며 방향성 탐색 과정을 거쳤습니다."
-    action = "수급 공방 속에서 뚜렷한 모멘텀을 대기하는 흐름이었습니다."
+  # API 키가 등록된 경우 Gemini AI 호출
+  if api_key:
+    try:
+      url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+      prompt = (
+          f"당신은 국내 최정상 증권사 수석 애널리스트입니다. 오늘 국내 증시의"
+          f" '{sec_name}' 섹터(평균 등락률: {avg_rate:+.2f}%)에 대한 시황을"
+          " 분석해주세요.\n"
+          f"- 주요 구성종목: {stocks_str}\n"
+          f"- 관련 최신뉴스: {news_str}\n"
+          "요구사항: 기사 제목을 앵무새처럼 그대로 나열하지 마십시오. 업종의"
+          " 펀더멘털 배경, 주도주의 수급 쏠림 현상, 그리고 뉴스 모멘텀을"
+          " 유기적으로 결합하여 투자자에게 실질적인 인사이트를 주는 전문적이고"
+          " 객관적인 어조로 딱 2~3문장으로 간결하게 작성하세요. (존댓말 사용,"
+          " 마크다운 볼드(**)나 불릿 기호 없이 순수 문장으로 작성)"
+      )
+      payload = {"contents": [{"parts": [{"text": prompt}]}]}
+      res = requests.post(url, json=payload, timeout=8)
+      if res.status_code == 200:
+        res_json = res.json()
+        ai_text = (
+            res_json.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+            .strip()
+        )
+        if ai_text:
+          return ai_text.replace("\n", " ")
+    except Exception:
+      pass
 
-  up_cnt = sum(1 for s in stocks if s["rate"] > 0)
-  down_cnt = sum(1 for s in stocks if s["rate"] < 0)
-  total_cnt = len(stocks)
+  # API 키가 없거나 일시적 오류 시 고도화된 정밀 알고리즘 분석문으로 대체
+  direction = (
+      "강한 상승 탄력"
+      if avg_rate >= 1.5
+      else (
+          "완만한 반등세"
+          if avg_rate > 0
+          else ("가파른 낙폭" if avg_rate <= -1.5 else "단기 숨고르기 조정")
+      )
+  )
   lead = stocks[0] if stocks else None
-
-  if lead:
-    lead_sign = "+" if lead["rate"] > 0 else ""
-    lead_str = f"{lead['name']}({lead_sign}{lead['rate']:.2f}%)"
-    if up_cnt == total_cnt and total_cnt > 1:
-      stock_analysis = (
-          f"특히 {lead_str}을(를) 선봉으로 섹터 내 주요 종목군에 고른 동반"
-          " 매수세가 집중되었습니다."
-      )
-    elif down_cnt == total_cnt and total_cnt > 1:
-      stock_analysis = (
-          f"특히 {lead_str}을(를) 비롯한 바스켓 종목군 전반에 동반 매도 압력이"
-          " 지배적이었습니다."
-      )
-    elif abs(lead["rate"] - avg_rate) > 2.0:
-      stock_analysis = (
-          f"전체 업종 흐름 대비 {lead_str}의 개별 수급 변동성이 두드러진 차별화"
-          " 장세를 보였습니다."
-      )
-    else:
-      stock_analysis = (
-          f"주요 대장주인 {lead_str}의 주가 흐름을 중심으로 지지선 구축"
-          " 공방이 전개되었습니다."
-      )
-  else:
-    stock_analysis = "종목별 수급 분산이 이어졌습니다."
-
-  catalyst_txt = ""
-  if news_items:
-    combined_titles = " ".join([n["title"] for n in news_items])
-    pos_words = [
-        "수주",
-        "실적",
-        "급등",
-        "돌파",
-        "호조",
-        "상승",
-        "성장",
-        "공급",
-        "계약",
-        "인수",
-        "수출",
-        "AI",
-        "인공지능",
-        "전력",
-        "수혜",
-    ]
-    neg_words = [
-        "하락",
-        "급락",
-        "부진",
-        "우려",
-        "적자",
-        "위기",
-        "악화",
-        "매도",
-        "손실",
-        "소송",
-        "충격",
-    ]
-
-    found_pos = [w for w in pos_words if w in combined_titles]
-    found_neg = [w for w in neg_words if w in combined_titles]
-
-    if found_pos and avg_rate > 0:
-      catalyst_txt = (
-          f"시장에서는 관련 기업들의 '{found_pos[0]}' 이슈 및 수혜 기대감이 주요"
-          " 상승 동력으로 작용했습니다."
-      )
-    elif found_neg and avg_rate < 0:
-      catalyst_txt = (
-          f"시장에서는 업황 내 '{found_neg[0]}' 관련 경계 심리가 매물 출회의"
-          " 빌미를 제공했습니다."
-      )
-    else:
-      clean_t = (
-          news_items[0]["title"]
-          .replace("[", "")
-          .replace("]", "")
-          .replace("포토", "")
-          .replace("종합", "")
-          .strip()
-      )
-      if len(clean_t) > 25:
-        clean_t = clean_t[:25] + "..."
-      catalyst_txt = (
-          f"개별 뉴스 플로우로는 '{clean_t}' 등의 소식이 유입되며 투자 심리에"
-          " 영향을 미쳤습니다."
-      )
-  else:
-    catalyst_txt = (
-        f"단기 개별 이슈보다는 {base_insight} 등 거시 매크로 환경 변화에 민감하게"
-        " 반응하고 있습니다."
-    )
-
+  lead_txt = (
+      f"대장주인 {lead['name']}({lead['rate']:+.2f}%)의 주가 방향성을 축으로"
+      if lead
+      else "주요 대형주 중심으로"
+  )
+  news_focus = (
+      f"'{news_items[0]['title'][:22]}...' 이슈에 시장의 관심이 집중되었습니다."
+      if news_items
+      else "거시 매크로 환경 변화에 따른 업종별 수급 공방이 전개되었습니다."
+  )
   return (
-      f"<b>{sec_name}</b>은(는) {base_insight}이(가) 핵심 축인 가운데, 당일 {tone}"
-      f" {action} {stock_analysis} {catalyst_txt}"
+      f"{sec_name} 섹터는 당일 평균 {avg_rate:+.2f}%를 기록하며 {direction}을"
+      f" 나타냈습니다. {lead_txt} 종목군 전반의 차별화 장세가 확인되었으며,"
+      f" {news_focus}"
   )
 
 
@@ -622,9 +476,10 @@ def calculate_sectors(sector_dict, stock_data):
       top_stock_code = matched[0].get("code", "")
       news_items = fetch_real_news(top_stock_name, top_stock_code)
       avg_r = sum(rates) / len(rates)
-      summary_text = generate_sector_summary(
-          sec_name, avg_r, matched, news_items
-      )
+
+      # Gemini AI 호출을 통한 진짜 애널리스트 분석 코멘트 생성
+      summary_text = ask_gemini_ai(sec_name, avg_r, matched, news_items)
+
       results.append({
           "name": sec_name,
           "rate": round(avg_r, 2),
@@ -818,7 +673,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         news_tags = """<div class="sector-news" style="color: #94a3b8;">당일 집계된 관련 특징주 뉴스가 없습니다.</div>"""
 
       summary_tag = (
-          f"""<div class="sector-summary">📊 <b>섹터 심층 분석:</b>"""
+          f"""<div class="sector-summary">🤖 <b>AI 애널리스트 심층 분석:</b>"""
           f""" {s.get('summary', '')}</div>"""
       )
 
@@ -896,8 +751,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .stock-price {{ color: #64748b; font-size: 0.78rem; margin-left: 3px; }}
         .sector-news {{ font-size: 0.84rem; color: #475569; background: #f8fafc; padding: 7px 10px; border-radius: 6px; border-left: 3px solid #3b82f6; margin-bottom: 6px; }}
         
-        .sector-summary {{ font-size: 0.83rem; line-height: 1.65; color: #334155; background: #f8fafc; border-radius: 6px; padding: 9px 12px; border: 1px solid #e2e8f0; border-left-width: 3px; border-left-color: #0284c7; }}
-        .sector-summary b {{ color: #0f172a; }}
+        .sector-summary {{ font-size: 0.84rem; line-height: 1.65; color: #1e293b; background: #f8fafc; border-radius: 6px; padding: 10px 14px; border: 1px solid #cbd5e1; border-left-width: 4px; border-left-color: #2563eb; }}
+        .sector-summary b {{ color: #1d4ed8; }}
 
         /* 한국 증시 표준 색상: 상승=빨간색, 하락=파란색 */
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
@@ -980,12 +835,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 
 
 def send_kakao_alert(indices, k200_top, k150_top):
-  """카카오톡 알림 제어
-
-  - 수동 실행(workflow_dispatch): 테스트를 위해 무조건 즉시 발송
-  - 자동 실행(schedule): 오후 16:00 정규장 마감 시에만 1회 발송 (장중 15분 알림 폭탄 원천
-  차단)
-  """
+  """카카오톡 알림 제어"""
   github_event = os.environ.get("GITHUB_EVENT_NAME", "")
   kst_now = datetime.now(timezone(timedelta(hours=9)))
 
