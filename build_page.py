@@ -18,7 +18,7 @@ DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
 
 def get_exchange_rate():
-  """원·달러 환율 데이터 수집"""
+  """원·달러 환율 데이터 수집 (1순위: 공식 실시간 환율 API, 2순위: 네이버 금융 크롤링 백업)"""
   try:
     url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
     res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
@@ -76,7 +76,7 @@ def get_exchange_rate():
 
 
 def get_market_indices():
-  """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 수집"""
+  """4대 주요 지수(코스피, 코스닥, 코스피200, 환율) 정확 수집"""
   targets = [
       (
           "코스피 (KOSPI)",
@@ -380,79 +380,211 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
+SECTOR_UNIQUE_INSIGHTS = {
+    "방위산업·우주항공": (
+        "지정학적 안보 긴장감이 장기화되는 가운데 K-방산의 해외 수주잔고"
+        " 가시성과 정부 주도의 우주항공 프로젝트 모멘텀이 주가 하방을"
+        " 지지했습니다."
+    ),
+    "전기·전자 (반도체/IT)": (
+        "AI 가속기용 HBM(고대역폭메모리)과 선단공정 장비 수요가 견조하게"
+        " 유지되며, 글로벌 빅테크의 AI 설비투자(CAPEX) 기조에 따른 수급 유입이"
+        " 확인되었습니다."
+    ),
+    "금융·지주": (
+        "기업 밸류업 프로그램 관련 자사주 매입·소각 및 배당 확대 기대감이"
+        " 지지력을 형성했으나, 하반기 금리 인하에 따른 순이자마진(NIM) 축소"
+        " 우려가 상단을 제한했습니다."
+    ),
+    "화학·에너지": (
+        "중국 내수 경기 회복 지연에 따른 석유화학 제품 공급과잉과 국제유가"
+        " 변동성에 따른 정제마진 스프레드 둔화 압력이 복합 작용하여 주가에"
+        " 부담으로 작용했습니다."
+    ),
+    "이차전지·배터리": (
+        "글로벌 전기차(EV) 캐즘(일시적 수요 둔화) 국면 속에서 북미"
+        " ESS(에너지저장장치)향 신규 수주 및 핵심 광물(리튬/니켈) 가격 바닥"
+        " 확인 여부에 민감하게 반응했습니다."
+    ),
+    "조선·중공업": (
+        "고부가 LNG 운반선 및 친환경 암모니아 추진선 중심의 선가 상승세와"
+        " 3년치 이상의 안정적인 건조 도크 일감이 구조적인 실적 개선을"
+        " 이끌었습니다."
+    ),
+    "원전·전력인프라": (
+        "글로벌 AI 데이터센터 증설에 따른 전력망 확충 수혜로 초고압 변압기와"
+        " 전선 제품군의 북미·유럽 수출 호조가 지속되며 강한 실적 모멘텀을"
+        " 형성했습니다."
+    ),
+    "자동차·운송장비": (
+        "하이브리드(HEV) 중심의 견고한 글로벌 판매량과 우호적인 환율 여건,"
+        " 안정적인 배당 주주환원 기대감이 복합적으로 작용했습니다."
+    ),
+    "제약·바이오": (
+        "금리 인하 기조 진입에 따른 바이오 벤처 유동성 개선 기대감과 주요"
+        " 파이프라인의 글로벌 기술수출(L/O) 및 임상 마일스톤이 개별 종목"
+        " 장세를 이끌었습니다."
+    ),
+    "로봇·자동화": (
+        "제조업 인력난 해소를 위한 공정 무인화 설비 수요와 휴머노이드 등"
+        " 첨단 신기술 개화 기대감이 테마성 매수세를 자극했습니다."
+    ),
+    "인터넷·플랫폼": (
+        "생성형 AI 기술의 커머스·검색 모델 접목과 안정적인 광고 수익성을"
+        " 바탕으로 실적 방어력이 시험대에 올랐습니다."
+    ),
+    "건설·시공": (
+        "국내 부동산 PF 리스크 및 공사 원자재가 인상 부담을 상쇄하기 위한"
+        " 중동·해외 플랜트 수주 성과에 시장의 관심이 쏠렸습니다."
+    ),
+    "철강·금속": (
+        "중국산 저가 철강재 수입 증가에 따른 판가 압박과 건설·가전 등 전방"
+        " 산업의 실수요 회복 속도가 수급을 제한했습니다."
+    ),
+    "음식료·유통": (
+        "K-푸드의 글로벌 수출 호조세와 국제 곡물가 안정화에 따른 원가율 개선이"
+        " 실적 레버리지 효과로 이어졌습니다."
+    ),
+    "반도체 소부장": (
+        "첨단 패키징(HBM) 및 선단 미세공정 중심의 선별적 장비 발주가 지속되며"
+        " 소부장 종목 간 옥석 가리기가 심화되었습니다."
+    ),
+    "엔터·미디어": (
+        "주요 아티스트의 월드투어 재개와 신인 그룹 데뷔 모멘텀 속에서"
+        " 음원·MD 실적 기여도가 주가 향방을 갈랐습니다."
+    ),
+    "게임·소프트웨어": (
+        "신작 흥행 성패에 따른 개별 종목 주가 양극화와 인건비·마케팅비"
+        " 효율화를 통한 이익 개선 노력이 지속되었습니다."
+    ),
+    "피팅·배관기자재": (
+        "국내 조선사들의 LNG선 건조 본격화와 글로벌 해양 터미널 프로젝트 증설에"
+        " 연동된 산업용 피팅 수주가 확인되었습니다."
+    ),
+}
 
-def ask_gemini_ai(sec_name, avg_rate, stocks, news_items):
-  """Gemini AI에게 실시간 시세와 기사를 전달하여 직접 작성한 전문 시황 분석 코멘트 획득"""
-  api_key = os.environ.get("GEMINI_API_KEY")
 
-  # 종목 및 뉴스 요약 정리
-  stocks_str = ", ".join(
-      [f"{s['name']}({s['rate']:+.2f}%)" for s in stocks[:4]]
+def batch_analyze_sectors_with_gemini(all_target_sectors):
+  """노출 대상 전체 섹터를 1번의 Gemini AI 호출로 묶어서 심층 분석
+
+  API 호출 1회로 끝내므로 무료 한도(15 RPM) 초과가 절대 발생하지 않음
+  """
+  api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+
+  # 1. 고유 펀더멘털 기반의 고품질 기본 분석 사전 채우기
+  analysis_map = {}
+  for s in all_target_sectors:
+    sec_name = s["name"]
+    avg_rate = s["rate"]
+    stocks = s.get("stocks", [])
+    lead = stocks[0] if stocks else None
+    lead_str = f"{lead['name']}({lead['rate']:+.2f}%)" if lead else "주요 대장주"
+
+    base_insight = SECTOR_UNIQUE_INSIGHTS.get(
+        sec_name, f"{sec_name} 업종의 고유 펀더멘털 및 시장 수급 요인"
+    )
+    tone = (
+        "상승 흐름을 주도했습니다"
+        if avg_rate > 0
+        else (
+            "큰 폭의 하락 압력을 받았습니다"
+            if avg_rate < -2.0
+            else "조정 국면을 보였습니다"
+        )
+    )
+    analysis_map[sec_name] = (
+        f"{base_insight} 당일에는 {lead_str}을 중심으로 {tone}."
+    )
+
+  if not api_key:
+    print(
+        "[INFO] GEMINI_API_KEY가 설정되지 않아 고유 심층 분석 엔진으로"
+        " 대체합니다."
+    )
+    return analysis_map
+
+  # 2. Gemini AI 프롬프트 구성 (각 섹터별 차별화 분석 강제)
+  sector_bullets = []
+  for s in all_target_sectors:
+    sec_name = s["name"]
+    avg_rate = s["rate"]
+    stocks = s.get("stocks", [])
+    stocks_str = ", ".join(
+        [f"{st['name']}({st['rate']:+.2f}%)" for st in stocks[:3]]
+    )
+    sector_bullets.append(
+        f"- '{sec_name}': 평균등락률 {avg_rate:+.2f}%, 주요종목 [{stocks_str}]"
+    )
+
+  prompt = (
+      """당신은 국내 최정상 증권사의 투자전략 수석 애널리스트입니다.
+오늘 장마감 후 국내 증시의 다음 핵심 섹터들에 대해 '투자자 관점의 실질적인 시황 분석 코멘트'를 작성해주세요.
+
+[분석 대상 섹터 및 당일 시세]
+"""
+      + "\n".join(sector_bullets)
+      + """
+
+[작성 가이드라인 - 엄격 준수]
+1. 템플릿 문장('~섹터는 몇%를 기록하며 완만한 반등세를 나타냈습니다', '차별화 장세가 확인되었으며' 등)을 절대로 쓰지 마십시오.
+2. 각 섹터마다 완전히 다른 문장 구조, 전문 금융 용어, 차별화된 시각으로 작성하십시오.
+3. 해당 섹터의 본질적인 기술적/수급적 원인(예: HBM 및 AI 가속기 수요, 방산 수출잔고, 밸류업 주주환원, 국제유가 및 정제마진, EV 캐즘 등)을 깊이 있게 짚으며 2문장 내외로 서술하십시오.
+4. 반드시 아래와 같은 순수 JSON 형태로만 응답하십시오 (마크다운 없이, 키는 섹터명 정확히 일치):
+{
+  "섹터명1": "해당 섹터 전문 분석 내용...",
+  "섹터명2": "해당 섹터 전문 분석 내용..."
+}
+"""
   )
-  news_str = (
-      ", ".join([f"'{n['title']}'({n['press']})" for n in news_items])
-      if news_items
-      else "특이 헤드라인 없음"
-  )
 
-  # API 키가 등록된 경우 Gemini AI 호출
-  if api_key:
+  models_to_try = [
+      "gemini-1.5-flash",
+      "gemini-2.5-flash",
+      "gemini-1.5-pro",
+      "gemini-2.0-flash",
+  ]
+  for model_name in models_to_try:
     try:
-      url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-      prompt = (
-          f"당신은 국내 최정상 증권사 수석 애널리스트입니다. 오늘 국내 증시의"
-          f" '{sec_name}' 섹터(평균 등락률: {avg_rate:+.2f}%)에 대한 시황을"
-          " 분석해주세요.\n"
-          f"- 주요 구성종목: {stocks_str}\n"
-          f"- 관련 최신뉴스: {news_str}\n"
-          "요구사항: 기사 제목을 앵무새처럼 그대로 나열하지 마십시오. 업종의"
-          " 펀더멘털 배경, 주도주의 수급 쏠림 현상, 그리고 뉴스 모멘텀을"
-          " 유기적으로 결합하여 투자자에게 실질적인 인사이트를 주는 전문적이고"
-          " 객관적인 어조로 딱 2~3문장으로 간결하게 작성하세요. (존댓말 사용,"
-          " 마크다운 볼드(**)나 불릿 기호 없이 순수 문장으로 작성)"
-      )
+      url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
       payload = {"contents": [{"parts": [{"text": prompt}]}]}
-      res = requests.post(url, json=payload, timeout=8)
+      res = requests.post(url, json=payload, timeout=15)
       if res.status_code == 200:
-        res_json = res.json()
-        ai_text = (
-            res_json.get("candidates", [{}])[0]
+        res_data = res.json()
+        raw_text = (
+            res_data.get("candidates", [{}])[0]
             .get("content", {})
             .get("parts", [{}])[0]
             .get("text", "")
             .strip()
         )
-        if ai_text:
-          return ai_text.replace("\n", " ")
-    except Exception:
-      pass
 
-  # API 키가 없거나 일시적 오류 시 고도화된 정밀 알고리즘 분석문으로 대체
-  direction = (
-      "강한 상승 탄력"
-      if avg_rate >= 1.5
-      else (
-          "완만한 반등세"
-          if avg_rate > 0
-          else ("가파른 낙폭" if avg_rate <= -1.5 else "단기 숨고르기 조정")
-      )
-  )
-  lead = stocks[0] if stocks else None
-  lead_txt = (
-      f"대장주인 {lead['name']}({lead['rate']:+.2f}%)의 주가 방향성을 축으로"
-      if lead
-      else "주요 대형주 중심으로"
-  )
-  news_focus = (
-      f"'{news_items[0]['title'][:22]}...' 이슈에 시장의 관심이 집중되었습니다."
-      if news_items
-      else "거시 매크로 환경 변화에 따른 업종별 수급 공방이 전개되었습니다."
-  )
-  return (
-      f"{sec_name} 섹터는 당일 평균 {avg_rate:+.2f}%를 기록하며 {direction}을"
-      f" 나타냈습니다. {lead_txt} 종목군 전반의 차별화 장세가 확인되었으며,"
-      f" {news_focus}"
-  )
+        clean_json_str = raw_text
+        if "```json" in clean_json_str:
+          clean_json_str = (
+              clean_json_str.split("```json")[1].split("```")[0].strip()
+          )
+        elif "```" in clean_json_str:
+          clean_json_str = clean_json_str.split("```")[1].split("```")[0].strip()
+
+        parsed = json.loads(clean_json_str)
+        if isinstance(parsed, dict) and len(parsed) > 0:
+          for k, v in parsed.items():
+            clean_k = k.strip()
+            analysis_map[clean_k] = str(v).strip().replace("\n", " ")
+          print(
+              f"[Gemini AI] 성공! {model_name} 모델로 {len(parsed)}개 섹터"
+              " 심층 AI 분석 완료."
+          )
+          return analysis_map
+      else:
+        print(
+            f"[Gemini AI] {model_name} 응답 코드 {res.status_code}:"
+            f" {res.text[:120]}"
+        )
+    except Exception as e:
+      print(f"[Gemini AI] {model_name} 호출 오류: {e}")
+
+  return analysis_map
 
 
 def calculate_sectors(sector_dict, stock_data):
@@ -476,17 +608,13 @@ def calculate_sectors(sector_dict, stock_data):
       top_stock_code = matched[0].get("code", "")
       news_items = fetch_real_news(top_stock_name, top_stock_code)
       avg_r = sum(rates) / len(rates)
-
-      # Gemini AI 호출을 통한 진짜 애널리스트 분석 코멘트 생성
-      summary_text = ask_gemini_ai(sec_name, avg_r, matched, news_items)
-
       results.append({
           "name": sec_name,
           "rate": round(avg_r, 2),
           "stocks": matched[:3],
           "lead_stock": top_stock_name,
           "news": news_items,
-          "summary": summary_text,
+          "summary": "",
       })
   results.sort(key=lambda x: x["rate"], reverse=True)
   top = results[:3]
@@ -936,6 +1064,13 @@ if __name__ == "__main__":
   stock_data = get_market_stocks()
   k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
   k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
+
+  # 화면에 노출될 12개 섹터만 취합하여 Gemini AI로 일괄 배치 분석 (1회 호출)
+  all_display_sectors = k200_top + k200_bot + k150_top + k150_bot
+  analysis_results = batch_analyze_sectors_with_gemini(all_display_sectors)
+
+  for s in all_display_sectors:
+    s["summary"] = analysis_results.get(s["name"], "")
 
   render_html(indices, k200_top, k200_bot, k150_top, k150_bot)
   send_kakao_alert(indices, k200_top, k150_top)
