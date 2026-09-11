@@ -57,17 +57,17 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
-    """Gemini 모델 다중 호환성 적용 (404 오류 방지 및 자동 폴백)"""
+    """라이브러리 구버전 호환성을 위해 모델 자동 폴백(Fallback) 방어 로직 강화"""
     if not API_KEY:
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
         return f"{stock_str} 등 주요 종목을 중심으로 섹터가 변동했습니다. (API 키 미설정)"
     
-    # 사용 가능한 모델 이름을 순차적으로 시도하여 404 에러 원천 차단
-    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+    # 구버전 라이브러리에서도 무조건 작동하는 모델(gemini-pro)을 후순위로 배치
+    models_to_try = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.0-pro']
     
     for model_name in models_to_try:
         try:
-            time.sleep(1) 
+            time.sleep(1.5)  # API 한도 초과(429) 방지 대기시간
             model = genai.GenerativeModel(model_name)
             stock_info = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:3]])
             news_info = ", ".join([n['title'] for n in news_items]) if news_items else "특이 뉴스 없음"
@@ -85,11 +85,11 @@ def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
             if response and response.text:
                 return response.text.strip().replace('\n', ' ')
         except Exception:
-            continue
+            continue # 에러 발생 시 화면에 띄우지 않고 조용히 다음 모델로 넘어감
             
-    # 모든 모델 호출 실패 시 자연스러운 분석 문구로 대체
+    # 모든 모델 호출이 차단/실패될 경우, 자연스러운 기본 문구로 안전하게 대체 (절대 404 에러 노출 안 됨)
     stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-    return f"{stock_str} 등 핵심 종목이 주도하며 섹터 전반이 {rate:+.2f}% 등락률을 기록했습니다."
+    return f"{stock_str} 등 핵심 종목이 주도하며 섹터 전반이 {rate:+.2f}% 변동을 기록했습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -190,25 +190,39 @@ def get_us_30y_yield():
         return {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_gold_price():
+    """국제 금시세를 가져와 1돈(3.75g)당 한국 원화(KRW)로 정밀 변환"""
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        meta = res.json()['chart']['result'][0]['meta']
-        price = meta['regularMarketPrice']
-        prev = meta['previousClose']
-        diff = price - prev
-        rate = (diff / prev) * 100
+        # 1. 국제 금시세 (온스당 달러)
+        url_gold = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
+        res_gold = requests.get(url_gold, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta_gold = res_gold.json()['chart']['result'][0]['meta']
+        gold_price_usd = meta_gold['regularMarketPrice']
+        gold_prev_usd = meta_gold['previousClose']
+
+        # 2. 원/달러 환율 가져오기
+        url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
+        res_krw = requests.get(url_krw, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta_krw = res_krw.json()['chart']['result'][0]['meta']
+        krw_rate = meta_krw['regularMarketPrice']
+        krw_prev = meta_krw['previousClose']
+
+        # 3. 온스를 1돈(3.75g) 가격으로 변환 (1 Troy Ounce = 31.1034768g)
+        price_krw_per_don = (gold_price_usd / 31.1034768) * 3.75 * krw_rate
+        prev_krw_per_don = (gold_prev_usd / 31.1034768) * 3.75 * krw_prev
+
+        diff = price_krw_per_don - prev_krw_per_don
+        rate = (diff / prev_krw_per_don) * 100
+
         return {
-            "name": "금시세 (온스당)", "code_key": "GOLD",
-            "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
+            "name": "금시세 (1돈)", "code_key": "GOLD_DON",
+            "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
             "change_rate": abs(rate),
             "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "금시세 (온스당)", "code_key": "GOLD", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+        return {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_oil_price():
-    """국제유가 WTI (Yahoo Finance CL=F) 추가"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -245,10 +259,12 @@ def get_jpy_krw_rate():
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_market_indices():
+    """지수 목록에 브이코스피(VKOSPI)를 추가했습니다."""
     targets = [
         ("코스피 (KOSPI)", "KOSPI", "https://m.stock.naver.com/api/index/KOSPI/basic"),
         ("코스닥 (KOSDAQ)", "KOSDAQ", "https://m.stock.naver.com/api/index/KOSDAQ/basic"),
         ("코스피 200", "KPI200", "https://m.stock.naver.com/api/index/KPI200/basic"),
+        ("브이코스피", "VKOSPI", "https://m.stock.naver.com/api/index/VKOSPI/basic"), # 브이코스피 추가
     ]
     results = []
     
@@ -525,6 +541,4 @@ if __name__ == "__main__":
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot)
-    
-    # 카카오톡 정규장 마감 알림 발송 함수 호출
     send_kakao_alert(indices, k200_top, k150_top)
