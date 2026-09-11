@@ -2,6 +2,7 @@ import json
 import os
 import re
 import urllib.parse
+import time
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -56,30 +57,33 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """주식시장 전체 동향을 통합하여 1번만 AI 분석을 수행합니다."""
+    """주식시장 전체 동향 통합 AI 분석 (프롬프트 엔지니어링 대폭 강화)"""
     if not API_KEY:
         return "API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (환경변수 GEMINI_API_KEY를 등록해주세요.)"
     
-    # 분석용 지수 추출
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
     
-    # 주도 섹터명만 추출
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
     
     prompt = f"""
-    오늘의 한국 주식시장(코스피, 코스닥) 마감/실시간 시황을 분석하라.
+    당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
+    오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
+
+    [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
-    - 코스피 강세 섹터: {k200_strong}
-    - 코스닥 강세 섹터: {k150_strong}
+    - 코스피 상승 주도 섹터: {k200_strong}
+    - 코스닥 상승 주도 섹터: {k150_strong}
     
-    위 데이터를 바탕으로 오늘 한국 증시의 전체적인 흐름, 지수 등락의 원인, 주도 섹터의 특징을 전문 펀드매니저 시각에서 3~4문장으로 종합 분석하라.
-    마크다운이나 특수문자를 제외하고 단답형 평문으로만 작성하라.
+    [작성 지침 - 엄격하게 준수할 것]
+    1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 분석할 것.
+    2. 코스피와 코스닥에서 강세를 보인 주도 섹터(예: {k200_strong})가 상승한 이유와 향후 트렌드를 결합하여 설명할 것.
+    3. 전체 분량은 5~7문장 분량으로 깊이 있고 풍부하게 작성할 것.
+    4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
     
-    # 가장 안정적인 모델부터 순차 적용
     models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-pro']
     
     for model_name in models_to_try:
@@ -87,11 +91,13 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             if response and response.text:
+                # 줄바꿈 문자를 띄어쓰기로 치환하여 완벽한 평문 구성
                 return response.text.strip().replace('\n', ' ')
         except Exception:
             continue
             
-    return f"코스피 {kospi.get('value')} 및 코스닥 {kosdaq.get('value')} 등 전반적인 시장 데이터를 성공적으로 수집했습니다. (AI 서버 지연으로 상세 분석을 생략합니다.)"
+    # 완벽하게 모든 모델이 실패했을 경우에만 나오는 자연스러운 백업 텍스트
+    return f"코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다. (현재 AI 서버 응답 지연으로 상세 분석 대신 핵심 데이터 요약만 제공합니다. 잠시 후 새로고침 해보세요.)"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -256,28 +262,54 @@ def get_jpy_krw_rate():
     except:
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
-def get_market_indices():
-    # 브이코스피 삭제 후 코스닥 150 지수 추가 적용
-    targets = [
-        ("코스피 (KOSPI)", "KOSPI", "https://m.stock.naver.com/api/index/KOSPI/basic"),
-        ("코스닥 (KOSDAQ)", "KOSDAQ", "https://m.stock.naver.com/api/index/KOSDAQ/basic"),
-        ("코스피 200", "KPI200", "https://m.stock.naver.com/api/index/KPI200/basic"),
-        ("코스닥 150", "KOSDAQ150", "https://m.stock.naver.com/api/index/KOSDAQ150/basic"),
-    ]
-    results = []
-    
-    for name, key, url in targets:
-        try:
-            res = requests.get(url, headers=get_headers(), timeout=4).json()
-            cd = str(res.get("compareToPreviousPrice", {}).get("code", "3"))
-            results.append({
-                "name": name, "code_key": key, "value": res.get("closePrice", "-"),
-                "change_val": res.get("compareToPreviousClosePrice", "0"),
-                "change_rate": abs(float(res.get("fluctuationsRatio", 0))),
+def get_index_data_robust(name, key, mobile_code, pc_code):
+    """모바일 API 실패 시 PC 크롤링으로 이중 백업하여 누락 방지"""
+    # 1. 네이버 모바일 API 시도
+    try:
+        url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
+        res = requests.get(url, headers=get_headers(), timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            cd = str(data.get("compareToPreviousPrice", {}).get("code", "3"))
+            return {
+                "name": name, "code_key": key, "value": data.get("closePrice", "-"),
+                "change_val": data.get("compareToPreviousClosePrice", "0"),
+                "change_rate": abs(float(data.get("fluctuationsRatio", 0))),
                 "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
-            })
-        except: 
-            results.append({"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
+            }
+    except: pass
+    
+    # 2. 실패 시 네이버 PC 금융에서 직접 스크래핑 (코스닥 150용 특효약)
+    try:
+        url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
+        res = requests.get(url, headers=get_headers(), timeout=4)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+        val = soup.find("span", id="now_value").text.strip()
+        change_stat = soup.find("span", id="change_value_and_rate").text.strip()
+        
+        is_up = "+" in change_stat or soup.find("span", class_="tah p11 red01") is not None
+        is_down = "-" in change_stat or soup.find("span", class_="tah p11 nv01") is not None
+        
+        parts = change_stat.split()
+        c_val = parts[0].replace("+","").replace("-","")
+        c_rate = parts[1].replace("%","").replace("+","").replace("-","")
+        
+        return {
+            "name": name, "code_key": key, "value": val,
+            "change_val": c_val,
+            "change_rate": abs(float(c_rate)),
+            "is_up": is_up, "is_down": is_down
+        }
+    except: pass
+    
+    return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+
+def get_market_indices():
+    results = []
+    results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
+    results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
+    results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
+    results.append(get_index_data_robust("코스닥 150", "KOSDAQ150", "KOSDAQ150", "KOSDAQ150"))
     
     results.append(get_exchange_rate())
     results.append(get_us_10y_yield())
@@ -355,7 +387,7 @@ def calculate_sectors(sector_dict, stock_data):
             top_stock = matched[0]
             news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
             
-            # 여기서 섹터별 AI 분석을 호출하지 않음
+            # 여기서 섹터별 AI 분석은 완전히 생략합니다. (전체 시장 통합 분석으로 이관)
             avg_r = sum(s["rate"] for s in matched) / len(matched)
             
             results.append({
@@ -493,8 +525,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }}
-        .market-ai-content {{ font-size: 0.95rem; line-height: 1.6; color: #1e293b; font-weight: 500; }}
+        .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }}
+        .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; }}
 
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
@@ -548,7 +580,7 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
-    # 1. AI 주식시장 전체 시황 분석 실행 (단일 호출로 최적화)
+    # 1. AI 주식시장 전체 시황 분석 실행 (강력한 프롬프트 적용)
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
     # 2. 결과 렌더링
