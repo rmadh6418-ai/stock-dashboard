@@ -56,69 +56,44 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [최종 해결본] JSON API 직접 호출 + 날짜 정규식(Regex) 안전장치 적용
+# [최종 해결본] 네이버를 완전히 배제하고 '다음(Daum) 금융 실시간 API' 직접 호출
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
-    
-    # 1. API 통신 (HTML 태그 변경에 영향 받지 않는 가장 확실한 방법)
     try:
         daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
         url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        
+        # 다음 API는 이 특수한 헤더(Referer, X-Requested-With)들이 없으면 차단합니다.
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Referer": "https://finance.daum.net/domestic/investors"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://finance.daum.net/domestic/investors",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest"
         }
+        
         res = requests.get(url, headers=headers, timeout=5)
+        
         if res.status_code == 200:
             data = res.json()
             items = data.get("data", [])
+            
             if items:
-                item = items[0]
-                ind = item.get("individualStraightPurchasePrice", 0)
-                forgn = item.get("foreignStraightPurchasePrice", 0)
-                inst = item.get("institutionStraightPurchasePrice", 0)
+                item = items[0] # 가장 최신 영업일 데이터 파싱
                 
-                if ind != 0 or forgn != 0:
-                    # 원 단위를 억 단위로 변환 (100,000,000 나눔)
-                    trend_data["개인"] = f"{int(ind / 100000000)}억"
-                    trend_data["외국인"] = f"{int(forgn / 100000000)}억"
-                    trend_data["기관"] = f"{int(inst / 100000000)}억"
-                    return trend_data
-    except:
-        pass
-
-    # 2. 강력한 백업 (표 안의 빈칸 함정을 정규식으로 회피)
-    try:
-        sosok = "0" if market_code == "KOSPI" else "1"
-        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
-        table = soup.find("table", class_="type_1")
-        if table:
-            for row in table.find_all("tr"):
-                tds = row.find_all("td")
-                if len(tds) >= 4:
-                    date_text = tds[0].text.strip()
-                    # 오직 'YYYY.MM.DD' 형태의 진짜 날짜 행만 골라서 읽음
-                    if re.match(r"^\d{2,4}\.\d{2}\.\d{2}$", date_text):
-                        def parse_val(t):
-                            try: return int(t.replace(",", "").strip())
-                            except: return 0
-                            
-                        ind = parse_val(tds[1].text)
-                        forgn = parse_val(tds[2].text)
-                        inst = parse_val(tds[3].text)
-                        
-                        # 백만원 단위를 억 단위로 변환 (100 나눔)
-                        trend_data["개인"] = f"{int(ind / 100)}억"
-                        trend_data["외국인"] = f"{int(forgn / 100)}억"
-                        trend_data["기관"] = f"{int(inst / 100)}억"
-                        break
+                # 다음 API는 순매수 금액을 '원' 단위로 주므로 1억(100,000,000)으로 나눠서 억 단위로 맞춥니다.
+                # 데이터가 None일 경우를 대비해 (or 0) 처리로 완벽한 안전장치 추가
+                ind = (item.get("individualStraightPurchasePrice") or 0) / 100000000
+                forgn = (item.get("foreignStraightPurchasePrice") or 0) / 100000000
+                inst = (item.get("institutionStraightPurchasePrice") or 0) / 100000000
+                
+                trend_data["개인"] = f"{int(ind)}억"
+                trend_data["외국인"] = f"{int(forgn)}억"
+                trend_data["기관"] = f"{int(inst)}억"
+                
+        return trend_data
     except Exception as e:
-        print(f"[{market_code} 수급 백업 파싱 에러] {e}")
-        
-    return trend_data
+        print(f"[{market_code} 다음 수급 API 에러] {e}")
+        return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
     if not API_KEY:
