@@ -2,7 +2,6 @@ import json
 import os
 import re
 import urllib.parse
-import time
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -56,40 +55,43 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
-    """라이브러리 구버전 호환성을 위해 모델 자동 폴백(Fallback) 방어 로직 강화"""
+def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
+    """주식시장 전체 동향을 통합하여 1번만 AI 분석을 수행합니다."""
     if not API_KEY:
-        stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-        return f"{stock_str} 등 주요 종목을 중심으로 섹터가 변동했습니다. (API 키 미설정)"
+        return "API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (환경변수 GEMINI_API_KEY를 등록해주세요.)"
     
-    # 구버전 라이브러리에서도 무조건 작동하는 모델(gemini-pro)을 후순위로 배치
-    models_to_try = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.0-pro']
+    # 분석용 지수 추출
+    kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
+    kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
+    
+    # 주도 섹터명만 추출
+    k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
+    k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
+    
+    prompt = f"""
+    오늘의 한국 주식시장(코스피, 코스닥) 마감/실시간 시황을 분석하라.
+    - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
+    - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
+    - 코스피 강세 섹터: {k200_strong}
+    - 코스닥 강세 섹터: {k150_strong}
+    
+    위 데이터를 바탕으로 오늘 한국 증시의 전체적인 흐름, 지수 등락의 원인, 주도 섹터의 특징을 전문 펀드매니저 시각에서 3~4문장으로 종합 분석하라.
+    마크다운이나 특수문자를 제외하고 단답형 평문으로만 작성하라.
+    """
+    
+    # 가장 안정적인 모델부터 순차 적용
+    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-pro']
     
     for model_name in models_to_try:
         try:
-            time.sleep(1.5)  # API 한도 초과(429) 방지 대기시간
             model = genai.GenerativeModel(model_name)
-            stock_info = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:3]])
-            news_info = ", ".join([n['title'] for n in news_items]) if news_items else "특이 뉴스 없음"
-            
-            prompt = f"""
-            한국 증시 '{sec_name}' 섹터 마감/실시간 데이터를 분석하라.
-            - 전체 섹터 평균 등락률: {rate:+.2f}%
-            - 섹터 내 주요 변동 종목: {stock_info}
-            - 관련 주요 언론 보도: {news_info}
-            
-            위 데이터를 바탕으로 해당 섹터의 당일 주가 움직임 원인과 핵심 모멘텀을 전문 펀드매니저 시각에서 2~3문장으로 분석하라.
-            마크다운이나 특수문자를 제외하고 단답형 평문으로만 작성하라.
-            """
             response = model.generate_content(prompt)
             if response and response.text:
                 return response.text.strip().replace('\n', ' ')
         except Exception:
-            continue # 에러 발생 시 화면에 띄우지 않고 조용히 다음 모델로 넘어감
+            continue
             
-    # 모든 모델 호출이 차단/실패될 경우, 자연스러운 기본 문구로 안전하게 대체 (절대 404 에러 노출 안 됨)
-    stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-    return f"{stock_str} 등 핵심 종목이 주도하며 섹터 전반이 {rate:+.2f}% 변동을 기록했습니다."
+    return f"코스피 {kospi.get('value')} 및 코스닥 {kosdaq.get('value')} 등 전반적인 시장 데이터를 성공적으로 수집했습니다. (AI 서버 지연으로 상세 분석을 생략합니다.)"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -190,23 +192,19 @@ def get_us_30y_yield():
         return {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_gold_price():
-    """국제 금시세를 가져와 1돈(3.75g)당 한국 원화(KRW)로 정밀 변환"""
     try:
-        # 1. 국제 금시세 (온스당 달러)
         url_gold = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
         res_gold = requests.get(url_gold, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
         meta_gold = res_gold.json()['chart']['result'][0]['meta']
         gold_price_usd = meta_gold['regularMarketPrice']
         gold_prev_usd = meta_gold['previousClose']
 
-        # 2. 원/달러 환율 가져오기
         url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
         res_krw = requests.get(url_krw, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
         meta_krw = res_krw.json()['chart']['result'][0]['meta']
         krw_rate = meta_krw['regularMarketPrice']
         krw_prev = meta_krw['previousClose']
 
-        # 3. 온스를 1돈(3.75g) 가격으로 변환 (1 Troy Ounce = 31.1034768g)
         price_krw_per_don = (gold_price_usd / 31.1034768) * 3.75 * krw_rate
         prev_krw_per_don = (gold_prev_usd / 31.1034768) * 3.75 * krw_prev
 
@@ -259,12 +257,12 @@ def get_jpy_krw_rate():
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_market_indices():
-    """지수 목록에 브이코스피(VKOSPI)를 추가했습니다."""
+    # 브이코스피 삭제 후 코스닥 150 지수 추가 적용
     targets = [
         ("코스피 (KOSPI)", "KOSPI", "https://m.stock.naver.com/api/index/KOSPI/basic"),
         ("코스닥 (KOSDAQ)", "KOSDAQ", "https://m.stock.naver.com/api/index/KOSDAQ/basic"),
         ("코스피 200", "KPI200", "https://m.stock.naver.com/api/index/KPI200/basic"),
-        ("브이코스피", "VKOSPI", "https://m.stock.naver.com/api/index/VKOSPI/basic"), # 브이코스피 추가
+        ("코스닥 150", "KOSDAQ150", "https://m.stock.naver.com/api/index/KOSDAQ150/basic"),
     ]
     results = []
     
@@ -355,13 +353,14 @@ def calculate_sectors(sector_dict, stock_data):
             
             matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
             top_stock = matched[0]
-            avg_r = sum(s["rate"] for s in matched) / len(matched)
             news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
-            summary_text = generate_ai_sector_summary(sec_name, avg_r, matched, news_items)
+            
+            # 여기서 섹터별 AI 분석을 호출하지 않음
+            avg_r = sum(s["rate"] for s in matched) / len(matched)
             
             results.append({
                 "name": sec_name, "rate": round(avg_r, 2), "stocks": matched[:3],
-                "lead_stock": top_stock["name"], "summary": summary_text, "news": news_items,
+                "lead_stock": top_stock["name"], "news": news_items,
             })
         except Exception:
             pass
@@ -438,7 +437,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
+def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary):
     index_cards = ""
     for idx in indices:
         sign = "▲ +" if idx["is_up"] else ("▼ -" if idx["is_down"] else "― ")
@@ -471,7 +470,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
                     <span class="sector-rate {color_class}">{r:+.2f}%</span>
                 </div>
                 <div class="stock-container">{stock_tags}</div>
-                <div class="sector-summary"><span class="summary-badge">🤖 AI 분석</span> {s.get("summary", "")}</div>
                 {news_tags}
             </div>
             """
@@ -494,6 +492,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
 
+        .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+        .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }}
+        .market-ai-content {{ font-size: 0.95rem; line-height: 1.6; color: #1e293b; font-weight: 500; }}
+
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }}
@@ -504,8 +506,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
         
-        .sector-summary {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; border-left: 3px solid #3b82f6; font-weight: 500; }}
-        .summary-badge {{ font-weight: 800; color: #1d4ed8; display: inline-block; margin-right: 4px; }}
+        .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; border-left: 3px solid #3b82f6; font-weight: 500; }}
+        .news-link {{ color: #1d4ed8; text-decoration: none; }}
+        .news-link:hover {{ text-decoration: underline; }}
         
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
         .text-down {{ color: #2563eb !important; font-weight: 700; }}
@@ -518,6 +521,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
 <body>
     <header><h1>📊 실시간 국내 증시 대시보드</h1></header>
     <div class="grid-indices">{index_cards}</div>
+    
+    <div class="market-ai-box">
+        <div class="market-ai-header">🤖 주식시장 전체 AI 시황 분석</div>
+        <div class="market-ai-content">{ai_market_summary}</div>
+    </div>
     
     <div class="group-title">🏢 코스피 200 업종 동향</div>
     <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
@@ -539,6 +547,12 @@ if __name__ == "__main__":
 
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
+    
+    # 1. AI 주식시장 전체 시황 분석 실행 (단일 호출로 최적화)
+    ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot)
+    # 2. 결과 렌더링
+    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
+    
+    # 3. 카카오톡 알림 발송
     send_kakao_alert(indices, k200_top, k150_top)
