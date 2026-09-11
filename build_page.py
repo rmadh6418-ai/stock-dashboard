@@ -127,27 +127,27 @@ def fetch_real_news(keyword, stock_code=""):
                         score = get_news_score(raw_title, keyword)
                         if score > 0:
                             href = a_tag["href"]
-                            # [모바일 완벽 대응] 팝업 오류를 피하기 위해 네이버 모바일 전용 뉴스 링크로 파싱
+                            # [핵심] 모바일/PC 모두 완벽하게 열리는 네이버 뉴스 통합 공식 URL(n.news.naver.com)로 변경
                             article_id_match = re.search(r'article_id=([^&]+)', href)
                             office_id_match = re.search(r'office_id=([^&]+)', href)
                             if article_id_match and office_id_match:
                                 aid = article_id_match.group(1)
                                 oid = office_id_match.group(1)
-                                mobile_link = f"https://m.stock.naver.com/domestic/stock/{stock_code}/news/view/{oid}/{aid}"
+                                final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
                             else:
-                                mobile_link = "https://finance.naver.com" + href
+                                final_link = "https://finance.naver.com" + href
                             
                             candidates.append({
                                 "title": raw_title,
                                 "press": td_info.text.strip() if td_info else "증권뉴스",
-                                "link": mobile_link,
+                                "link": final_link,
                                 "score": score,
                             })
         except: pass
     
     candidates.sort(key=lambda x: x["score"], reverse=True)
     
-    # 중복 뉴스 완벽 필터링 (괄호, 특수문자 제거 후 순수 텍스트 비교)
+    # 중복 뉴스 필터링
     unique_news = []
     seen_titles = set()
     for item in candidates:
@@ -158,7 +158,7 @@ def fetch_real_news(keyword, stock_code=""):
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            if len(unique_news) == 3: # 겹치지 않는 뉴스 3개 확보 시 종료
+            if len(unique_news) == 3:
                 break
                 
     return unique_news
@@ -247,7 +247,6 @@ def get_gold_price():
         return {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_silver_price():
-    """[추가] 국제 은시세를 가져와 1돈(3.75g)당 한국 원화(KRW)로 정밀 변환"""
     try:
         url_silver = "https://query1.finance.yahoo.com/v8/finance/chart/SI=F"
         res_silver = requests.get(url_silver, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -358,19 +357,20 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
 
 def get_market_indices():
     results = []
-    # 코스피200선물 함수를 삭제하고 해당 라인 제거
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
     
-    results.append(get_exchange_rate())
-    results.append(get_us_10y_yield())
-    results.append(get_us_30y_yield())
-    results.append(get_gold_price())
-    # [추가] 은시세 함수 호출
-    results.append(get_silver_price())
-    results.append(get_oil_price())
-    results.append(get_jpy_krw_rate())
+    # [수정] 레이아웃 순서 변경: 엔/원 환율을 미국채 10년물 자리로, 미국채 10년물을 30년물 왼쪽으로 이동
+    results.append(get_exchange_rate())         # 4번째 자리
+    results.append(get_jpy_krw_rate())          # 5번째 자리 (기존 미국채 10년물 자리)
+    
+    results.append(get_us_10y_yield())          # 6번째 자리 (미국채 30년물 왼쪽)
+    results.append(get_us_30y_yield())          # 7번째 자리
+    results.append(get_gold_price())            # 8번째 자리
+    results.append(get_silver_price())          # 9번째 자리
+    results.append(get_oil_price())             # 10번째 자리
+
     return results
 
 def get_market_stocks():
@@ -547,8 +547,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
             
-            # [수정] 모바일 팝업 차단 회피용 타겟 제거 적용
-            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])])
+            # [수정] 모바일에서 링크가 새 창으로 열릴 수 있도록 target="_blank" 복구
+            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" rel="noopener noreferrer" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])])
             
             html += f"""
             <div class="sector-item">
