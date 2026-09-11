@@ -126,30 +126,39 @@ def fetch_real_news(keyword, stock_code=""):
                         raw_title = a_tag.text.strip()
                         score = get_news_score(raw_title, keyword)
                         if score > 0:
+                            href = a_tag["href"]
+                            # [모바일 완벽 대응] 팝업 오류를 피하기 위해 네이버 모바일 전용 뉴스 링크로 파싱
+                            article_id_match = re.search(r'article_id=([^&]+)', href)
+                            office_id_match = re.search(r'office_id=([^&]+)', href)
+                            if article_id_match and office_id_match:
+                                aid = article_id_match.group(1)
+                                oid = office_id_match.group(1)
+                                mobile_link = f"https://m.stock.naver.com/domestic/stock/{stock_code}/news/view/{oid}/{aid}"
+                            else:
+                                mobile_link = "https://finance.naver.com" + href
+                            
                             candidates.append({
                                 "title": raw_title,
                                 "press": td_info.text.strip() if td_info else "증권뉴스",
-                                "link": "https://finance.naver.com" + a_tag["href"],
+                                "link": mobile_link,
                                 "score": score,
                             })
         except: pass
     
     candidates.sort(key=lambda x: x["score"], reverse=True)
     
-    # [수정] 중복 뉴스 완벽 필터링 (괄호, 특수문자 제거 후 순수 텍스트 비교)
+    # 중복 뉴스 완벽 필터링 (괄호, 특수문자 제거 후 순수 텍스트 비교)
     unique_news = []
     seen_titles = set()
     for item in candidates:
-        # [핫종목], (종합) 등 괄호 안의 내용 모두 제거
         clean_title = re.sub(r'\[.*?\]', '', item['title'])
         clean_title = re.sub(r'\(.*?\)', '', clean_title)
-        # 띄어쓰기 및 특수문자 제거 (오로지 글자만 남김)
         clean_title = re.sub(r'\W+', '', clean_title)
         
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            if len(unique_news) == 3: # 겹치지 않는 뉴스 최대 3개까지 수집
+            if len(unique_news) == 3: # 겹치지 않는 뉴스 3개 확보 시 종료
                 break
                 
     return unique_news
@@ -237,6 +246,36 @@ def get_gold_price():
     except:
         return {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
+def get_silver_price():
+    """[추가] 국제 은시세를 가져와 1돈(3.75g)당 한국 원화(KRW)로 정밀 변환"""
+    try:
+        url_silver = "https://query1.finance.yahoo.com/v8/finance/chart/SI=F"
+        res_silver = requests.get(url_silver, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta_silver = res_silver.json()['chart']['result'][0]['meta']
+        silver_price_usd = meta_silver['regularMarketPrice']
+        silver_prev_usd = meta_silver['previousClose']
+
+        url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
+        res_krw = requests.get(url_krw, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta_krw = res_krw.json()['chart']['result'][0]['meta']
+        krw_rate = meta_krw['regularMarketPrice']
+        krw_prev = meta_krw['previousClose']
+
+        price_krw_per_don = (silver_price_usd / 31.1034768) * 3.75 * krw_rate
+        prev_krw_per_don = (silver_prev_usd / 31.1034768) * 3.75 * krw_prev
+
+        diff = price_krw_per_don - prev_krw_per_don
+        rate = (diff / prev_krw_per_don) * 100
+
+        return {
+            "name": "은시세 (1돈)", "code_key": "SILVER_DON",
+            "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
+            "change_rate": abs(rate),
+            "is_up": diff > 0, "is_down": diff < 0
+        }
+    except:
+        return {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+
 def get_oil_price():
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F"
@@ -317,48 +356,19 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
     
     return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
-def get_kospi200_futures():
-    """[수정] 코스피 200 선물 전용 스크래핑 (네이버 검색 활용)"""
-    try:
-        url = f"https://search.naver.com/search.naver?query={urllib.parse.quote('코스피200선물')}"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        soup = BeautifulSoup(res.text, "html.parser")
-        
-        box = soup.find("div", class_=lambda x: x and "spt_con" in x)
-        if box:
-            val_text = box.find("strong", class_="t_num").text
-            val = re.search(r'[\d\,\.]+', val_text).group()
-            
-            ch_span = box.find("span", class_="n_ch")
-            r_span = box.find("span", class_="n_r")
-            
-            c_val = re.search(r'[\d\.]+', ch_span.text).group() if ch_span else "0"
-            c_rate = re.search(r'[\d\.]+', r_span.text).group() if r_span else "0"
-            
-            is_up = "up" in box.get("class", []) or (ch_span and "+" in ch_span.text)
-            is_down = "down" in box.get("class", []) or (ch_span and "-" in ch_span.text)
-            
-            return {
-                "name": "코스피200선물", "code_key": "KPI200F", "value": val,
-                "change_val": c_val,
-                "change_rate": abs(float(c_rate)),
-                "is_up": is_up, "is_down": is_down
-            }
-    except: pass
-    return {"name": "코스피200선물", "code_key": "KPI200F", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
-
 def get_market_indices():
     results = []
+    # 코스피200선물 함수를 삭제하고 해당 라인 제거
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
-    # [수정] 코스피 200 선물은 가장 확실한 전용 함수로 대체합니다.
-    results.append(get_kospi200_futures())
     
     results.append(get_exchange_rate())
     results.append(get_us_10y_yield())
     results.append(get_us_30y_yield())
     results.append(get_gold_price())
+    # [추가] 은시세 함수 호출
+    results.append(get_silver_price())
     results.append(get_oil_price())
     results.append(get_jpy_krw_rate())
     return results
@@ -537,8 +547,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
             
-            # [수정] 필터링된 고유 뉴스를 모두 출력
-            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])])
+            # [수정] 모바일 팝업 차단 회피용 타겟 제거 적용
+            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])])
             
             html += f"""
             <div class="sector-item">
