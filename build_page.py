@@ -63,64 +63,75 @@ KOSDAQ150_SECTORS = {
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
     
-    # 1. 1차 시도: 매매동향 전용 표에서 "날짜"가 기록된 찐 데이터 행만 추적
+    # 1. 완벽 방어형: sise_trans_style 직접 파싱 (클래스 무시, 날짜 기반 위치 탐색)
     try:
         sosok = "0" if market_code == "KOSPI" else "1"
         url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
         res = requests.get(url, headers=get_headers(), timeout=5)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        # 'date' 클래스를 가진 요소를 전부 뒤짐 (투명한 빈칸 행을 원천 차단)
-        date_tds = soup.find_all("td", class_="date")
-        for td in date_tds:
-            date_str = td.get_text(strip=True)
-            # 글자가 '2026.09.11' 처럼 완벽한 날짜 형식인지 검사
-            if re.search(r"\d{4}\.\d{2}\.\d{2}", date_str):
-                # 진짜 데이터 행을 찾았으므로 해당 행 안의 숫자들을 뽑음
-                tr = td.find_parent("tr")
-                num_tds = tr.find_all("td", class_="number")
-                if len(num_tds) >= 3:
-                    def parse_val(el):
-                        try: 
-                            # 단위가 '백만원'이므로 100을 나누면 '억원' 단위가 됨
-                            return int(el.get_text(strip=True).replace(",", "")) // 100
-                        except: 
-                            return 0
-                    
-                    ind = parse_val(num_tds[0])   # 개인
-                    forgn = parse_val(num_tds[1]) # 외국인
-                    inst = parse_val(num_tds[2])  # 기관계
-                    
-                    if ind != 0 or forgn != 0 or inst != 0:
-                        trend_data["개인"] = f"{ind}억"
-                        trend_data["외국인"] = f"{forgn}억"
-                        trend_data["기관"] = f"{inst}억"
-                        return trend_data
-    except Exception as e:
-        print(f"[{market_code} 수급 크롤링 1차 실패] {e}")
-
-    # 2. 2차 시도 (백업용): 개별 지수 페이지에서 단어 직접 탐색
-    try:
-        url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
-        # 특정 div 구조에 얽매이지 않고, 화면에 적힌 '개인', '외국인' 텍스트를 바로 찾음
-        for dt in soup.find_all("dt"):
-            text = dt.get_text(strip=True)
-            if text in ["개인", "외국인", "기관"]:
-                dd = dt.find_next_sibling("dd")
-                if dd:
-                    val = dd.get_text(strip=True)
-                    # "1조 2,345억" 같은 예외 상황도 안전하게 숫자로 변환
-                    clean_val = val.replace("조", "").replace("억", "").replace(",", "").replace(" ", "").strip()
+        for tr in soup.find_all("tr"):
+            tds = tr.find_all("td")
+            if len(tds) >= 4:
+                date_str = tds[0].text.strip()
+                # 빈칸 행을 무시하고, 날짜 형식(예: 2026.09.11)이 맞는 진짜 데이터 행만 추적
+                if re.match(r"^\d{2,4}[\./-]\d{2}[\./-]\d{2}$", date_str):
                     try:
-                        num_val = int(clean_val)
-                        trend_data[text] = f"{num_val}억"
+                        ind_str = tds[1].text.strip().replace(",", "")
+                        forgn_str = tds[2].text.strip().replace(",", "")
+                        inst_str = tds[3].text.strip().replace(",", "")
+                        
+                        ind = int(ind_str) // 100 if ind_str else 0
+                        forgn = int(forgn_str) // 100 if forgn_str else 0
+                        inst = int(inst_str) // 100 if inst_str else 0
+                        
+                        if ind != 0 or forgn != 0 or inst != 0:
+                            trend_data["개인"] = f"{ind}억"
+                            trend_data["외국인"] = f"{forgn}억"
+                            trend_data["기관"] = f"{inst}억"
+                            return trend_data
                     except:
                         pass
     except Exception as e:
-        print(f"[{market_code} 수급 크롤링 2차 실패] {e}")
+        print(f"[{market_code} 1차 수급 크롤링 실패] {e}")
+
+    # 2. 강력 우회형 (백업): 네이버 증권 메인 페이지 텍스트 직접 긁기
+    try:
+        url = "https://finance.naver.com/"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+        
+        area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
+        area = soup.find("div", class_=area_class)
+        if area:
+            for dt in area.find_all("dt"):
+                t = dt.text.strip()
+                if "개인" in t or "외국인" in t or "기관" in t:
+                    dd = dt.find_next_sibling("dd")
+                    if dd:
+                        val_str = dd.text.strip().replace(",", "").replace("억", "").replace("+", "")
+                        try:
+                            v = 0
+                            if "조" in val_str:
+                                parts = val_str.replace(" ", "").split("조")
+                                is_minus = parts[0].startswith("-")
+                                jo = int(parts[0].replace("-", "")) if parts[0] not in ["", "-"] else 0
+                                uk = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+                                v = (jo * 10000 + uk) * (-1 if is_minus else 1)
+                            else:
+                                v = int(val_str)
+                                
+                            if "개인" in t: trend_data["개인"] = f"{v}억"
+                            elif "외국인" in t: trend_data["외국인"] = f"{v}억"
+                            elif "기관" in t: trend_data["기관"] = f"{v}억"
+                        except:
+                            pass
+            
+            # 값이 하나라도 들어왔으면 성공으로 간주하고 리턴
+            if trend_data["개인"] != "0억" or trend_data["외국인"] != "0억":
+                return trend_data
+    except Exception as e:
+        print(f"[{market_code} 2차 수급 크롤링 실패] {e}")
 
     return trend_data
 
