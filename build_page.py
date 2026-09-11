@@ -18,8 +18,7 @@ HEADERS = {
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
-# 환경 변수에 GEMINI_API_KEY가 등록되어 있어야 작동합니다.
+# Gemini API 초기화 (환경 변수에 GEMINI_API_KEY 등록 필요)
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -54,9 +53,10 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
-    """Gemini API를 활용한 섹터 심층 분석 (API Key 누락 시 Rule-based 백업 처리)"""
+    """Gemini API를 활용한 섹터 심층 분석"""
     if not API_KEY:
-        stock_str = ", ".join([f"{s['name']}({s['rate']}%)" for s[:2] in matched_stocks])
+        # 구문 오류 수정됨: `for s in matched_stocks[:2]`
+        stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
         return f"{stock_str} 등 주요 종목을 중심으로 섹터 전반이 {rate:+.2f}% 변동했습니다. (AI 분석기 비활성화)"
     
     try:
@@ -123,24 +123,28 @@ def fetch_real_news(keyword, stock_code=""):
     return candidates[:2]
 
 def get_exchange_rate():
+    """야후 파이낸스를 이용한 원/달러 환율 수집 (스크래핑 차단 우회)"""
     try:
-        url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
-        data = res.json()[0]
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta = res.json()['chart']['result'][0]['meta']
+        price = meta['regularMarketPrice']
+        prev = meta['previousClose']
+        diff = price - prev
+        rate = (diff / prev) * 100
         return {
             "name": "원·달러 환율", "code_key": "FX_USDKRW",
-            "value": f"{data['basePrice']:,.2f}원", "change_val": f"{data['changePrice']:,.2f}",
-            "change_rate": round(data.get("changeRate", 0) * 100, 2),
-            "is_up": data.get("change") == "RISE", "is_down": data.get("change") == "FALL"
+            "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
+            "change_rate": abs(rate),
+            "is_up": diff > 0, "is_down": diff < 0
         }
-    except:
+    except Exception:
         return {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_us_10y_yield():
-    """Yahoo Finance API를 통한 미국채 10년물 실시간 수집 (가장 빠름)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
         meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
         prev = meta['previousClose']
@@ -156,8 +160,8 @@ def get_us_10y_yield():
         return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_investor_trend():
-    """네이버 금융 메인 파싱을 통한 실시간 매매동향(외국인/기관/개인) 추출"""
-    trends = {"KOSPI": "", "KOSDAQ": ""}
+    """수급 데이터 예외 처리 강화"""
+    trends = {"KOSPI": "집계 지연 (일시적 오류)", "KOSDAQ": "집계 지연 (일시적 오류)"}
     try:
         res = requests.get("https://finance.naver.com/", headers=HEADERS, timeout=4)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
@@ -201,57 +205,62 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
+    """BeautifulSoup 대신 네이버 모바일 공식 JSON API 사용 (안정성 및 속도 극대화)"""
     stocks = {}
-    urls = [
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
+    targets = [
+        ("KOSPI", "https://m.stock.naver.com/api/stocks/marketValue/KOSPI?page=1&pageSize=200"),
+        ("KOSDAQ", "https://m.stock.naver.com/api/stocks/marketValue/KOSDAQ?page=1&pageSize=200")
     ]
     
-    def fetch_page(url_info):
-        u, market = url_info
+    def fetch_api(target):
+        market, url = target
         local_stocks = {}
         try:
-            res = requests.get(u, headers=HEADERS, timeout=4)
-            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-            for tr in soup.find("table", class_="type_2").find_all("tr"):
-                tds = tr.find_all("td")
-                if len(tds) >= 5 and tds[1].find("a"):
-                    a_tag = tds[1].find("a")
-                    code = re.search(r"code=(\d+)", a_tag.get("href", "")).group(1)
-                    rate_val = float(tds[4].text.strip().replace("%", "").replace(",", ""))
-                    local_stocks[a_tag.text.strip()] = {"price": tds[2].text.strip(), "rate": rate_val, "code": code, "market": market}
-        except: pass
+            res = requests.get(url, headers=HEADERS, timeout=5)
+            for item in res.json().get("stocks", []):
+                name = item.get("stockName")
+                code = item.get("itemCode")
+                price = item.get("closePrice", "0")
+                rate_val = float(item.get("fluctuationsRatio", 0))
+                local_stocks[name] = {"price": price, "rate": rate_val, "code": code, "market": market}
+        except Exception as e:
+            print(f"[WARN] {market} 시총 데이터 수집 실패: {e}")
         return local_stocks
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for res in executor.map(fetch_page, urls):
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        for res in executor.map(fetch_api, targets):
             stocks.update(res)
     return stocks
 
 def calculate_sectors(sector_dict, stock_data):
     def process_sector(sec_name, stock_names):
-        matched = []
-        for sname in stock_names:
-            if sname in stock_data:
-                matched.append({"name": sname, **stock_data[sname]})
-        
-        if not matched: return None
-        
-        matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
-        top_stock = matched[0]
-        avg_r = sum(s["rate"] for s in matched) / len(matched)
-        news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
-        summary_text = generate_ai_sector_summary(sec_name, avg_r, matched, news_items)
-        
-        return {
-            "name": sec_name, "rate": round(avg_r, 2), "stocks": matched[:3],
-            "lead_stock": top_stock["name"], "summary": summary_text, "news": news_items,
-        }
+        try:
+            matched = []
+            for sname in stock_names:
+                if sname in stock_data:
+                    matched.append({"name": sname, **stock_data[sname]})
+            
+            if not matched: 
+                return None
+            
+            matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
+            top_stock = matched[0]
+            avg_r = sum(s["rate"] for s in matched) / len(matched)
+            news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
+            summary_text = generate_ai_sector_summary(sec_name, avg_r, matched, news_items)
+            
+            return {
+                "name": sec_name, "rate": round(avg_r, 2), "stocks": matched[:3],
+                "lead_stock": top_stock["name"], "summary": summary_text, "news": news_items,
+            }
+        except Exception as e:
+            # 개별 섹터 크래시 방어 로직 추가
+            return {
+                "name": sec_name, "rate": 0.0, "stocks": [],
+                "lead_stock": "", "summary": f"섹터 데이터 분석 중 오류 발생: {e}", "news": []
+            }
 
     results = []
-    # Gemini API 병목을 방지하고 속도를 올리기 위한 멀티스레딩 처리
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(process_sector, k, v) for k, v in sector_dict.items()]
         for future in as_completed(futures):
@@ -370,7 +379,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
         f.write(template)
 
 if __name__ == "__main__":
-    # 데이터 취합 병렬 처리 (가장 무거운 프로세스)
     with ThreadPoolExecutor(max_workers=3) as executor:
         f_indices = executor.submit(get_market_indices)
         f_stocks = executor.submit(get_market_stocks)
