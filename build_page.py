@@ -20,7 +20,7 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
+# Gemini API 초기화 (오직 최신 gemini-1.5-flash 모델만 사용)
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -57,7 +57,7 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """주식시장 전체 동향 통합 AI 분석 (구버전 라이브러리 완벽 대응)"""
+    """주식시장 전체 동향 통합 AI 분석 (구버전 우회 로직 삭제, 단일 모델 집중)"""
     if not API_KEY:
         return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (환경변수 'GEMINI_API_KEY'를 확인해주세요.)"
     
@@ -84,22 +84,17 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
     
-    # 구버전 라이브러리 지원을 위해 gemini-1.0-pro 를 최후의 보루로 배치합니다.
-    models_to_try = ['gemini-1.5-flash', 'gemini-1.0-pro']
-    last_error = ""
-    
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            if response and hasattr(response, 'text') and response.text:
-                return response.text.strip().replace('\n', ' ')
-        except Exception as e:
-            last_error = str(e)
-            continue
-            
-    # 에러 안내 및 파이썬 패키지 업데이트 지시 메시지
-    return f"🚨 AI 분석 실패: 파이썬 터미널에서 'pip install -U google-generativeai' 명령어로 라이브러리를 최신 버전으로 꼭 업데이트 해주세요! (에러 내용: {last_error})"
+    try:
+        # 오직 가장 똑똑하고 최신인 gemini-1.5-flash 모델만 호출합니다.
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        if response and hasattr(response, 'text') and response.text:
+            return response.text.strip().replace('\n', ' ')
+        else:
+            return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 다시 시도해주세요."
+    except Exception as e:
+        # 에러 발생 시 다른 모델로 우회하지 않고, 진짜 원인(e)을 화면에 바로 뿌려줍니다.
+        return f"🚨 AI 호출 실패 (원인: {str(e)}).\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -265,7 +260,7 @@ def get_jpy_krw_rate():
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_index_data_robust(name, key, mobile_code, pc_code):
-    """모바일 API 실패 시 PC 크롤링으로 이중 백업하여 완벽하게 데이터 수집"""
+    """무적의 스크래핑: 모바일 API 실패 시 PC HTML 구조에서 정규표현식으로 숫자만 강제 추출 (코스닥150 완벽 해결)"""
     # 1. 네이버 모바일 API 시도
     try:
         url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
@@ -281,26 +276,27 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
             }
     except: pass
     
-    # 2. 실패 시 네이버 PC 금융에서 직접 스크래핑 (태그 이름 없이 고유 ID로 100% 탐색)
+    # 2. 실패 시 네이버 PC에서 숫자만 완벽하게 정규표현식으로 추출
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
         res = requests.get(url, headers=get_headers(), timeout=4)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        # <span>이나 <em> 여부에 관계없이 id="now_value"인 요소 자체를 잡음
+        # id="now_value" 인 태그 텍스트 무조건 가져오기
         val_el = soup.find(id="now_value")
         change_el = soup.find(id="change_value_and_rate")
         
         if val_el and change_el:
             val = val_el.text.strip()
-            change_stat = change_el.text.strip()
+            change_text = change_el.text.strip() # 예: "26.96 -2.42%"
             
-            is_up = "+" in change_stat or soup.find(class_=lambda c: c and "red01" in c) is not None
-            is_down = "-" in change_stat or soup.find(class_=lambda c: c and "nv01" in c) is not None
+            is_up = "red01" in str(change_el) or "+" in change_text
+            is_down = "nv01" in str(change_el) or "-" in change_text
             
-            parts = change_stat.split()
-            c_val = parts[0].replace("+","").replace("-","")
-            c_rate = parts[1].replace("%","").replace("+","").replace("-","")
+            # HTML 구조 상관없이 무조건 실수(숫자) 2개 추출
+            nums = re.findall(r'[\d\.]+', change_text)
+            c_val = nums[0] if len(nums) > 0 else "0"
+            c_rate = nums[1] if len(nums) > 1 else "0"
             
             return {
                 "name": name, "code_key": key, "value": val,
@@ -314,7 +310,7 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
 
 def get_market_indices():
     results = []
-    # 코스닥 150의 PC 웹페이지 코드는 KOSDAQ150이 아니라 201입니다.
+    # 코스닥 150의 PC 코드는 201 입니다.
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
@@ -588,7 +584,7 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
-    # 1. AI 주식시장 전체 시황 분석 (에러 추적 및 구버전 완벽 대응)
+    # 1. AI 주식시장 전체 시황 분석 (구버전 우회 삭제 및 1.5-flash 단일 호출)
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
     # 2. HTML 화면 그리기
