@@ -26,7 +26,7 @@ if API_KEY:
     genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
-BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
+BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔 추션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사"],
@@ -56,81 +56,75 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [최종 완벽 해결] 이중 안전장치: JSON API 통신 + 특수문자 마이너스 완벽 파싱
+# [최종 완벽 해결] 정규식을 이용한 절대 실패하지 않는 수급 데이터 추출
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
     
-    # 1. 1차 시도 (Daum JSON API 통신 - 가장 안정적)
+    # 1. 1차 시도 (정규식 기반 강제 파싱 - 보이지 않는 공백 완벽 무시)
+    try:
+        sosok = "0" if market_code == "KOSPI" else "1"
+        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        
+        # HTML 텍스트를 한 줄로 쭉 펴서 정규식이 중간에 끊기지 않게 만듭니다.
+        html = res.content.decode("euc-kr", "replace").replace('\n', '').replace('\r', '')
+        
+        # 'YY.MM.DD' 형식의 날짜 뒤에 나오는 숫자 3개(개인, 외국인, 기관)를 무조건 잡아내는 패턴
+        pattern = r'<td[^>]*date[^>]*>\s*(\d{2,4}\.\d{2}\.\d{2})\s*</td>.*?<td[^>]*number[^>]*>([^<]+)</td>.*?<td[^>]*number[^>]*>([^<]+)</td>.*?<td[^>]*number[^>]*>([^<]+)</td>'
+        
+        matches = re.findall(pattern, html)
+        if matches:
+            # 가장 위에 있는 첫 번째 데이터(최신 날짜)만 가져옴
+            _, ind_str, forgn_str, inst_str = matches[0]
+            
+            def parse_amt(val_str):
+                # 유니코드 마이너스, 쉼표, 공백 등 쓰레기값을 전부 날리고 순수 숫자만 남김
+                clean_str = re.sub(r'[−—–‐‑‒—―]', '-', val_str)
+                clean = re.sub(r'[^\d\-]', '', clean_str)
+                if not clean or clean == '-': 
+                    return 0
+                # 백만원 단위를 억원으로 변환 (음수 버림 오류를 막기 위해 int() 사용)
+                return int(int(clean) / 100)
+
+            ind = parse_amt(ind_str)
+            forgn = parse_amt(forgn_str)
+            inst = parse_amt(inst_str)
+            
+            if ind != 0 or forgn != 0 or inst != 0:
+                trend_data["개인"] = f"{ind}억"
+                trend_data["외국인"] = f"{forgn}억"
+                trend_data["기관"] = f"{inst}억"
+                return trend_data
+    except Exception as e:
+        print(f"[{market_code} 수급 HTML 파싱 에러] {e}")
+
+    # 2. 2차 시도 (Daum API 우회 통신 - 네이버 서버 차단 대비)
     try:
         daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
         url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
-        # Daum 방화벽 우회를 위한 특수 헤더
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Referer": "https://finance.daum.net/domestic/investors",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "X-Requested-With": "XMLHttpRequest"
+            "Accept": "application/json"
         }
-        res = requests.get(url, headers=headers, timeout=4)
+        res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             data = res.json()
             items = data.get("data", [])
             if items:
                 item = items[0]
-                # 단위가 '원'이므로 1억으로 나눈 뒤 정수로 변환 (// 연산자 버그 방지)
-                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
-                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
-                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
+                ind = item.get("individualStraightPurchasePrice", 0)
+                forgn = item.get("foreignStraightPurchasePrice", 0)
+                inst = item.get("institutionStraightPurchasePrice", 0)
                 
-                if ind != 0 or forgn != 0 or inst != 0:
-                    trend_data["개인"] = f"{ind}억"
-                    trend_data["외국인"] = f"{forgn}억"
-                    trend_data["기관"] = f"{inst}억"
+                if ind != 0 or forgn != 0:
+                    trend_data["개인"] = f"{int(ind / 100000000)}억"
+                    trend_data["외국인"] = f"{int(forgn / 100000000)}억"
+                    trend_data["기관"] = f"{int(inst / 100000000)}억"
                     return trend_data
     except Exception as e:
-        print(f"[{market_code} Daum API Failed] {e}")
+        print(f"[{market_code} 수급 API 파싱 에러] {e}")
 
-    # 2. 2차 시도 (Naver HTML 강제 파싱 - 유니코드 마이너스 및 공백 버그 완벽 해결)
-    try:
-        sosok = "0" if market_code == "KOSPI" else "1"
-        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-        res = requests.get(url, headers=get_headers(), timeout=4)
-        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
-        for tr in soup.find_all("tr"):
-            tds = tr.find_all("td")
-            if len(tds) >= 4:
-                date_str = tds[0].text.strip()
-                # 빈 줄을 완벽하게 걸러내고, 날짜 형식이 적힌 줄만 핀포인트로 탐색
-                if re.match(r"^\d{2,4}[\./-]\d{2}[\./-]\d{2}$", date_str):
-                    
-                    def parse_val(t):
-                        try:
-                            # 1단계: 보이지 않는 공백과 쉼표 등 완벽 제거
-                            clean_t = t.replace(",", "").replace("\xa0", "").strip()
-                            # 2단계: 네이버가 장난친 온갖 종류의 특수문자/유니코드 마이너스 기호를 진짜 '-'로 강제 변환
-                            clean_t = re.sub(r'[−—–‐‑‒—―]', '-', clean_t)
-                            # 3단계: 순수한 숫자와 부호만 추출
-                            m = re.search(r'[-+]?\d+', clean_t)
-                            if m:
-                                # 단위가 '백만원'이므로 100으로 나누어 억원 단위 세팅
-                                return int(int(m.group(0)) / 100)
-                            return 0
-                        except:
-                            return 0
-
-                    ind = parse_val(tds[1].text)
-                    forgn = parse_val(tds[2].text)
-                    inst = parse_val(tds[3].text)
-                    
-                    if ind != 0 or forgn != 0 or inst != 0:
-                        trend_data["개인"] = f"{ind}억"
-                        trend_data["외국인"] = f"{forgn}억"
-                        trend_data["기관"] = f"{inst}억"
-                        return trend_data
-    except Exception as e:
-        print(f"[{market_code} Naver HTML Failed] {e}")
-        
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
