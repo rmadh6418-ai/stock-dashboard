@@ -7,16 +7,13 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-# 💡 핵심 무기 1: 네이버가 절대 차단하지 않는 "구글 검색엔진 봇" 위장 헤더
-GOOGLEBOT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-    "Referer": "https://finance.naver.com/"
-}
-
-# 💡 핵심 무기 2: 모바일 앱으로 위장하는 헤더
-MOBILE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-    "Referer": "https://m.stock.naver.com/"
+# 이전 잘 작동하던 기본 헤더로 원복
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.naver.com/",
 }
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
@@ -28,9 +25,7 @@ if GEMINI_API_KEY:
     gemini_model = genai.GenerativeModel('gemini-1.5-pro')
 else:
     gemini_model = None
-    print("[WARNING] GEMINI_API_KEY가 설정되지 않아 기본 텍스트 생성 모드로 작동합니다.")
 
-# 뉴스 필터링 키워드
 EXCLUDE_NEWS_KEYWORDS = [
     "콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", 
     "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", 
@@ -98,8 +93,7 @@ def generate_gemini_summary(sec_name, rate, matched_stocks):
     try:
         response = gemini_model.generate_content(prompt)
         return response.text.strip()
-    except Exception as e:
-        print(f"[ERROR] Gemini API Error: {e}")
+    except Exception:
         return f"{sec_name} 섹터는 {stock_str} 등을 중심으로 {rate:+.2f}%의 변동성을 보였습니다."
 
 
@@ -131,10 +125,9 @@ def get_news_score(title, stock_name):
 def fetch_real_news(keyword, stock_code=""):
     candidates = []
     if stock_code:
-        url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
         try:
-            # Googlebot 위장하여 PC 뉴스 차단 회피
-            res = requests.get(url, headers=GOOGLEBOT_HEADERS, timeout=6)
+            url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
+            res = requests.get(url, headers=HEADERS, timeout=6)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
                 table = soup.find("table", class_="type5")
@@ -158,10 +151,10 @@ def fetch_real_news(keyword, stock_code=""):
             pass
 
     if len(candidates) < 2:
-        enc_query = urllib.parse.quote(f"{keyword} 특징주", encoding="euc-kr")
-        url = f"https://finance.naver.com/news/news_search.naver?q={enc_query}"
         try:
-            res = requests.get(url, headers=GOOGLEBOT_HEADERS, timeout=6)
+            enc_query = urllib.parse.quote(f"{keyword} 특징주", encoding="euc-kr")
+            url = f"https://finance.naver.com/news/news_search.naver?q={enc_query}"
+            res = requests.get(url, headers=HEADERS, timeout=6)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
                 dl_list = soup.find_all("dl", class_="articleList") or soup.find_all("dl")
@@ -190,34 +183,50 @@ def fetch_real_news(keyword, stock_code=""):
     return candidates[:2]
 
 
-# 💡 방해꾼(HTML 긁어오기)을 버리고 "네이버 모바일 전용 JSON 데이터 통로"로 직행
-def get_world_market_index(name, code_key, category, reutersCode, unit=""):
-    url = f"https://m.stock.naver.com/front-api/v1/marketIndex/prices?category={category}&reutersCode={reutersCode}"
+# 💡 회원님 아이디어 적용: 빠르고 에러 없는 글로벌 '야후 파이낸스' API로 변경!
+def get_yahoo_finance_data(ticker, name, code_key, unit=""):
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=1d"
     try:
-        res = requests.get(url, headers=MOBILE_HEADERS, timeout=6)
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
         if res.status_code == 200:
-            data = res.json().get("result", {})
-            if data:
-                val = data.get("price", "0")
-                diff = str(data.get("compareToPreviousPrice", "0"))
-                rate = float(data.get("fluctuationsRatio", 0))
-                cd = str(data.get("compareToPreviousPriceCode", "3"))
+            data = res.json()
+            result = data.get("chart", {}).get("result", [])
+            if result:
+                meta = result[0].get("meta", {})
+                price = meta.get("regularMarketPrice", 0)
+                prev_close = meta.get("previousClose", price)
+
+                diff = price - prev_close
+                rate = (diff / prev_close) * 100 if prev_close else 0
                 
-                is_up = cd in ["1", "2"]
-                is_down = cd in ["4", "5"]
-                
+                # 미국채 금리는 야후에서 10배수로 나오는 경우가 있어 스케일 조정
+                if ticker in ["^TNX", "^TYX"] and price > 10:
+                    price = price / 10
+                    diff = diff / 10
+                    
+                is_up = diff > 0
+                is_down = diff < 0
+
+                # 값 포맷팅
+                if ticker in ["^TNX", "^TYX"]:
+                    price_str = f"{price:.3f}{unit}"
+                elif ticker == "GC=F":
+                    price_str = f"{price:,.1f}{unit}"
+                else:
+                    price_str = f"{price:,.2f}{unit}"
+
                 return {
                     "name": name,
                     "code_key": code_key,
-                    "value": f"{val}{unit}",
-                    "change_val": diff,
-                    "change_rate": rate,
+                    "value": price_str,
+                    "change_val": f"{abs(diff):.2f}",
+                    "change_rate": round(abs(rate), 2),
                     "is_up": is_up,
                     "is_down": is_down,
                 }
     except Exception as e:
-        print(f"[ERROR] {name} JSON 파싱 오류: {e}")
-        
+        print(f"[ERROR] Yahoo Finance {ticker} 파싱 오류: {e}")
+
     return {
         "name": name, "code_key": code_key, "value": "-", 
         "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False
@@ -225,37 +234,63 @@ def get_world_market_index(name, code_key, category, reutersCode, unit=""):
 
 
 def get_investor_trend():
+    """다시 안정적으로 돌아온 네이버 수급 긁어오기 (원상복구)"""
     trends = {"KOSPI": "집계 중...", "KOSDAQ": "집계 중..."}
     targets = [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]
     
     for name, code in targets:
-        url = f"https://finance.naver.com/sise/sise_index.naver?code={code}"
         try:
-            # 💡 Googlebot으로 위장해서 네이버 방화벽 뚫기
-            res = requests.get(url, headers=GOOGLEBOT_HEADERS, timeout=8)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-                dl = soup.find("dl", class_="lst_kos_info")
-                if dl:
-                    dds = dl.find_all("dd")
-                    parts = []
-                    for dd in dds:
-                        text = dd.text.strip()
-                        if text.startswith("개인") or text.startswith("외국인") or text.startswith("기관"):
-                            entity = text.split(" ")[0]
-                            val_str = text.replace(entity, "").strip()
-                            
-                            color = "text-down" if "-" in val_str else "text-up"
-                            sign = "" if "-" in val_str else "+"
-                            
-                            parts.append(f"{entity} <span class='{color} font-bold'>{sign}{val_str}</span>")
-                    
-                    if parts:
-                        trends[name] = " | ".join(parts)
-        except Exception as e:
-            print(f"[ERROR] {name} 수급 데이터 오류: {e}")
+            url = f"https://finance.naver.com/sise/sise_index.naver?code={code}"
+            res = requests.get(url, headers=HEADERS, timeout=8)
+            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+            dl = soup.find("dl", class_="lst_kos_info")
+            if dl:
+                dds = dl.find_all("dd")
+                parts = []
+                for dd in dds:
+                    text = dd.text.strip()
+                    if text.startswith("개인") or text.startswith("외국인") or text.startswith("기관"):
+                        entity = text.split(" ")[0]
+                        val_str = text.replace(entity, "").strip()
+                        
+                        color = "text-down" if "-" in val_str else "text-up"
+                        sign = "" if "-" in val_str else "+"
+                        
+                        parts.append(f"{entity} <span class='{color} font-bold'>{sign}{val_str}</span>")
+                
+                if parts:
+                    trends[name] = " | ".join(parts)
+        except Exception:
+            pass
             
     return trends
+
+
+def get_exchange_rate():
+    try:
+        url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if data and len(data) > 0:
+                item = data[0]
+                price = f"{item['basePrice']:,.2f}원"
+                diff = f"{item['changePrice']:,.2f}"
+                rate = round(item.get("changeRate", 0) * 100, 2)
+                chg = item.get("change", "EVEN")
+                is_up = chg == "RISE"
+                is_down = chg == "FALL"
+                return {
+                    "name": "원·달러 환율", "code_key": "FX_USDKRW", "value": price,
+                    "change_val": diff, "change_rate": rate, "is_up": is_up, "is_down": is_down,
+                }
+    except Exception:
+        pass
+    
+    return {
+        "name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", 
+        "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False,
+    }
 
 
 def get_market_indices():
@@ -267,7 +302,7 @@ def get_market_indices():
     results = []
     for name, key, url in targets:
         try:
-            res = requests.get(url, headers=MOBILE_HEADERS, timeout=5)
+            res = requests.get(url, headers=HEADERS, timeout=8)
             if res.status_code == 200:
                 data = res.json()
                 val = data.get("closePrice", "-")
@@ -294,37 +329,53 @@ def get_market_indices():
             "change_rate": 0.0, "is_up": False, "is_down": False,
         })
 
-    # 모든 글로벌 지표를 속도와 안전성이 100배 높은 JSON API로 통일했습니다
-    results.append(get_world_market_index("원·달러 환율", "FX_USDKRW", "exchange", "FX_USDKRW", "원"))
-    results.append(get_world_market_index("미국채 10년물", "US_10Y", "world", "IR_TNX", "%"))
-    results.append(get_world_market_index("미국채 30년물", "US_30Y", "world", "IR_TYX", "%"))
-    results.append(get_world_market_index("금값(Gold)", "COM_GOLD", "metal", "CMDT_GC", "$"))
-    results.append(get_world_market_index("엔·달러 환율", "FX_USDJPY", "exchange", "FX_USDJPY", "엔"))
+    # 한국 원달러 환율은 기존 공식대로
+    results.append(get_exchange_rate())
+    
+    # 💡 글로벌 4대 지표는 야후 파이낸스에서 깔끔하게!
+    results.append(get_yahoo_finance_data("^TNX", "미국채 10년물", "US_10Y", "%"))
+    results.append(get_yahoo_finance_data("^TYX", "미국채 30년물", "US_30Y", "%"))
+    results.append(get_yahoo_finance_data("GC=F", "금값(Gold)", "COM_GOLD", "$"))
+    results.append(get_yahoo_finance_data("JPY=X", "엔·달러 환율", "FX_USDJPY", "엔"))
     
     return results
 
 
 def get_market_stocks():
+    """예전 잘 작동하던 방식으로 완벽 원상복구!"""
     stocks = {}
-    # 💡 종목 정보 역시 차단없는 모바일 JSON 통로로 600개를 순식간에 가져옵니다.
-    for market in ["KOSPI", "KOSDAQ"]:
-        for page in [1, 2, 3]:
-            url = f"https://m.stock.naver.com/api/stocks/marketValue/{market}?page={page}&pageSize=200"
-            try:
-                res = requests.get(url, headers=MOBILE_HEADERS, timeout=8)
-                if res.status_code == 200:
-                    data = res.json()
-                    if "stocks" in data:
-                        for item in data["stocks"]:
-                            name = item.get("stockName")
-                            code = item.get("itemCode")
-                            price = item.get("closePrice", "0")
-                            rate = float(item.get("fluctuationsRatio", 0))
-                            stocks[name] = {
-                                "price": price, "rate": rate, "code": code, "market": market
-                            }
-            except Exception as e:
-                pass
+    urls = [
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
+    ]
+    for u, market in urls:
+        try:
+            res = requests.get(u, headers=HEADERS, timeout=8)
+            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+            table = soup.find("table", class_="type_2")
+            if table:
+                for tr in table.find_all("tr"):
+                    tds = tr.find_all("td")
+                    if len(tds) >= 5:
+                        a_tag = tds[1].find("a")
+                        if a_tag:
+                            name = a_tag.text.strip()
+                            href = a_tag.get("href", "")
+                            code_match = re.search(r"code=(\d+)", href)
+                            code = code_match.group(1) if code_match else ""
+                            price = tds[2].text.strip()
+                            rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
+                            try:
+                                stocks[name] = {
+                                    "price": price, "rate": float(rate_text), 
+                                    "code": code, "market": market,
+                                }
+                            except Exception:
+                                pass
+        except Exception:
+            pass
     return stocks
 
 
@@ -389,7 +440,7 @@ def calculate_sectors(sector_dict, stock_data):
 def generate_market_review(indices, k200_top, k200_bot, k150_top, k150_bot):
     kospi = next((x for x in indices if "코스피" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
-    fx = next((x for x in indices if "환율" in x["name"]), {})
+    fx = next((x for x in indices if "원·달러 환율" in x["name"]), {})
 
     k_dir = "상승" if kospi.get("is_up") else ("하락" if kospi.get("is_down") else "보합")
     kq_dir = "상승" if kosdaq.get("is_up") else ("하락" if kosdaq.get("is_down") else "보합")
@@ -484,7 +535,7 @@ def render_html(indices, investor_data, k200_top, k200_bot, k150_top, k150_bot):
     def build_sector_list(sectors):
         html = ""
         if not sectors:
-            return '<div class="sector-item" style="color:#64748b;">데이터를 처리 중이거나 일부 종목 정보가 없습니다.</div>'
+            return '<div class="sector-item" style="color:#64748b;">데이터 통신 지연으로 집계를 완료하지 못했습니다. 잠시 후 새로고침 해주세요.</div>'
 
         for s in sectors:
             r = s["rate"]
