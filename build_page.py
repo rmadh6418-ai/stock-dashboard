@@ -20,7 +20,7 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화 (최신 gemini-2.5-flash 모델 적용)
+# Gemini API 초기화 (안정적인 gemini-1.5-flash 모델 적용)
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -55,14 +55,14 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
-    """Gemini 2.5 Flash 모델을 활용한 실제 섹터 심층 분석"""
+    """Gemini 1.5 Flash 모델을 활용한 실제 섹터 심층 분석"""
     if not API_KEY:
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
         return f"{stock_str} 등 주요 종목을 중심으로 섹터가 변동했습니다. (API 키 미설정)"
     
     try:
         time.sleep(2) 
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         stock_info = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:3]])
         news_info = ", ".join([n['title'] for n in news_items]) if news_items else "특이 뉴스 없음"
         
@@ -143,8 +143,27 @@ def get_exchange_rate():
     except Exception:
         return {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
+def get_us_10y_yield():
+    """미국채 10년물 금리 (^TNX)"""
+    try:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta = res.json()['chart']['result'][0]['meta']
+        price = meta['regularMarketPrice']
+        prev = meta['previousClose']
+        diff = price - prev
+        rate = (diff / prev) * 100
+        return {
+            "name": "미국채 10년물", "code_key": "US10Y",
+            "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
+            "change_rate": abs(rate),
+            "is_up": diff > 0, "is_down": diff < 0
+        }
+    except:
+        return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+
 def get_us_30y_yield():
-    """미국채 30년물 금리 (Yahoo Finance ^TYX)"""
+    """미국채 30년물 금리 (^TYX)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TYX"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -163,7 +182,7 @@ def get_us_30y_yield():
         return {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_gold_price():
-    """국제 금시세 (Yahoo Finance GC=F)"""
+    """국제 금시세 (GC=F)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -182,7 +201,7 @@ def get_gold_price():
         return {"name": "금시세 (온스당)", "code_key": "GOLD", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_jpy_krw_rate():
-    """엔·원 환율 100엔 기준 (Yahoo Finance JPYKRW=X)"""
+    """엔·원 환율 100엔 기준 (JPYKRW=X)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/JPYKRW=X"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -219,9 +238,11 @@ def get_market_indices():
                 "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
             })
         except: 
-            results.append({"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
+            results.append({"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+        )
     
     results.append(get_exchange_rate())
+    results.append(get_us_10y_yield())
     results.append(get_us_30y_yield())
     results.append(get_gold_price())
     results.append(get_jpy_krw_rate())
@@ -309,6 +330,73 @@ def calculate_sectors(sector_dict, stock_data):
         
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
+
+def send_kakao_alert(indices, k200_top, k150_top):
+    """GitHub Secrets 카카오 토큰을 활용한 정규장 마감 알림 발송"""
+    rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
+    refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
+
+    if not rest_api_key or not refresh_token:
+        print("[INFO] 카카오 환경변수가 설정되지 않아 발송을 건너뜁니다.")
+        return
+
+    try:
+        token_url = "https://kauth.kakao.com/oauth/token"
+        token_data = {
+            "grant_type": "refresh_token",
+            "client_id": rest_api_key,
+            "refresh_token": refresh_token,
+        }
+        t_res = requests.post(token_url, data=token_data, timeout=5).json()
+        access_token = t_res.get("access_token")
+
+        if not access_token:
+            print(f"[ERROR] 카카오 토큰 갱신 실패: {t_res}")
+            return
+
+        kst_now = datetime.now(timezone(timedelta(hours=9)))
+        date_str = kst_now.strftime("%m/%d 15:30 마감")
+
+        kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
+        kosdaq = next((x for x in indices if "코스닥" in x["name"]), {})
+        fx = next((x for x in indices if "환율" in x["name"]), {})
+
+        k_sign = "▲ +" if kospi.get("is_up") else ("▼ -" if kospi.get("is_down") else "")
+        kq_sign = "▲ +" if kosdaq.get("is_up") else ("▼ -" if kosdaq.get("is_down") else "")
+        fx_sign = "▲ +" if fx.get("is_up") else ("▼ -" if fx.get("is_down") else "")
+
+        k200_lead = k200_top[0]["name"] if k200_top else "집계중"
+        k150_lead = k150_top[0]["name"] if k150_top else "집계중"
+
+        msg_text = (
+            f"📊 [정규장 마감 리포트] {date_str}\n\n"
+            f"• 코스피: {kospi.get('value')} ({k_sign}{abs(kospi.get('change_rate', 0)):.2f}%)\n"
+            f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{abs(kosdaq.get('change_rate', 0)):.2f}%)\n"
+            f"• 원·달러: {fx.get('value')} ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)\n"
+            f"• 상대강세: {k200_lead} / {k150_lead}\n\n"
+            f"언제든 접속 시 실시간 시세가 자동 동기화됩니다."
+        )
+
+        send_url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        payload = {
+            "template_object": json.dumps({
+                "object_type": "text",
+                "text": msg_text,
+                "link": {
+                    "web_url": DASHBOARD_URL,
+                    "mobile_web_url": DASHBOARD_URL,
+                },
+                "button_title": "📊 실시간 대시보드 바로가기",
+            })
+        }
+        s_res = requests.post(send_url, headers=headers, data=payload, timeout=5)
+        if s_res.status_code == 200:
+            print("[SUCCESS] 카카오톡 발송 완료")
+        else:
+            print(f"[ERROR] 카카오톡 발송 실패: {s_res.text}")
+    except Exception as e:
+        print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     index_cards = ""
@@ -413,3 +501,6 @@ if __name__ == "__main__":
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot)
+    
+    # 카카오톡 정규장 마감 알림 발송 함수 호출
+    send_kakao_alert(indices, k200_top, k150_top)
