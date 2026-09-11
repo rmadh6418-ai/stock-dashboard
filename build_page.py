@@ -9,8 +9,11 @@ import requests
 import google.generativeai as genai
 
 def get_headers(is_daum=False):
+    # 클라우드/깃허브 액션 등에서 차단당하지 않도록 헤더를 브라우저와 완벽히 동일하게 세팅
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
@@ -56,44 +59,70 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [최종 해결본] 네이버를 완전히 배제하고 '다음(Daum) 금융 실시간 API' 직접 호출
+# [완벽 해결] 날짜를 먼저 추적하여 공백(빈칸) 행을 완벽하게 걸러내는 2중 크롤링 로직
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
+    
+    # 1. 1차 시도: 매매동향 전용 표에서 "날짜"가 기록된 찐 데이터 행만 추적
     try:
-        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
-        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        sosok = "0" if market_code == "KOSPI" else "1"
+        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        # 다음 API는 이 특수한 헤더(Referer, X-Requested-With)들이 없으면 차단합니다.
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer": "https://finance.daum.net/domestic/investors",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "X-Requested-With": "XMLHttpRequest"
-        }
-        
-        res = requests.get(url, headers=headers, timeout=5)
-        
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get("data", [])
-            
-            if items:
-                item = items[0] # 가장 최신 영업일 데이터 파싱
-                
-                # 다음 API는 순매수 금액을 '원' 단위로 주므로 1억(100,000,000)으로 나눠서 억 단위로 맞춥니다.
-                # 데이터가 None일 경우를 대비해 (or 0) 처리로 완벽한 안전장치 추가
-                ind = (item.get("individualStraightPurchasePrice") or 0) / 100000000
-                forgn = (item.get("foreignStraightPurchasePrice") or 0) / 100000000
-                inst = (item.get("institutionStraightPurchasePrice") or 0) / 100000000
-                
-                trend_data["개인"] = f"{int(ind)}억"
-                trend_data["외국인"] = f"{int(forgn)}억"
-                trend_data["기관"] = f"{int(inst)}억"
-                
-        return trend_data
+        # 'date' 클래스를 가진 요소를 전부 뒤짐 (투명한 빈칸 행을 원천 차단)
+        date_tds = soup.find_all("td", class_="date")
+        for td in date_tds:
+            date_str = td.get_text(strip=True)
+            # 글자가 '2026.09.11' 처럼 완벽한 날짜 형식인지 검사
+            if re.search(r"\d{4}\.\d{2}\.\d{2}", date_str):
+                # 진짜 데이터 행을 찾았으므로 해당 행 안의 숫자들을 뽑음
+                tr = td.find_parent("tr")
+                num_tds = tr.find_all("td", class_="number")
+                if len(num_tds) >= 3:
+                    def parse_val(el):
+                        try: 
+                            # 단위가 '백만원'이므로 100을 나누면 '억원' 단위가 됨
+                            return int(el.get_text(strip=True).replace(",", "")) // 100
+                        except: 
+                            return 0
+                    
+                    ind = parse_val(num_tds[0])   # 개인
+                    forgn = parse_val(num_tds[1]) # 외국인
+                    inst = parse_val(num_tds[2])  # 기관계
+                    
+                    if ind != 0 or forgn != 0 or inst != 0:
+                        trend_data["개인"] = f"{ind}억"
+                        trend_data["외국인"] = f"{forgn}억"
+                        trend_data["기관"] = f"{inst}억"
+                        return trend_data
     except Exception as e:
-        print(f"[{market_code} 다음 수급 API 에러] {e}")
-        return trend_data
+        print(f"[{market_code} 수급 크롤링 1차 실패] {e}")
+
+    # 2. 2차 시도 (백업용): 개별 지수 페이지에서 단어 직접 탐색
+    try:
+        url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+        
+        # 특정 div 구조에 얽매이지 않고, 화면에 적힌 '개인', '외국인' 텍스트를 바로 찾음
+        for dt in soup.find_all("dt"):
+            text = dt.get_text(strip=True)
+            if text in ["개인", "외국인", "기관"]:
+                dd = dt.find_next_sibling("dd")
+                if dd:
+                    val = dd.get_text(strip=True)
+                    # "1조 2,345억" 같은 예외 상황도 안전하게 숫자로 변환
+                    clean_val = val.replace("조", "").replace("억", "").replace(",", "").replace(" ", "").strip()
+                    try:
+                        num_val = int(clean_val)
+                        trend_data[text] = f"{num_val}억"
+                    except:
+                        pass
+    except Exception as e:
+        print(f"[{market_code} 수급 크롤링 2차 실패] {e}")
+
+    return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
     if not API_KEY:
