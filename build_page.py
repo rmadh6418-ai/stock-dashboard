@@ -25,25 +25,6 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
-def get_gemini_model():
-    """API 키에 허용된 모델 목록을 동적으로 불러와 404 에러를 원천 차단합니다."""
-    try:
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 1순위: 가장 빠르고 똑똑한 1.5-flash
-        for target in ['models/gemini-1.5-flash', 'models/gemini-pro', 'models/gemini-1.0-pro']:
-            if target in available_models:
-                return genai.GenerativeModel(target)
-        
-        # 2순위: 목록에 있는 사용 가능한 아무 텍스트 모델
-        if available_models:
-            return genai.GenerativeModel(available_models[0])
-    except Exception as e:
-        pass
-    
-    # 최후의 보루
-    return genai.GenerativeModel('gemini-pro')
-
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
@@ -76,8 +57,9 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
+    """구글 API 에러 메시지에 맞춰 최신 gemini-3.6-flash 모델 적용"""
     if not API_KEY:
-        return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (환경변수 'GEMINI_API_KEY'를 확인해주세요.)"
+        return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다."
     
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -96,19 +78,20 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     - 코스닥 상승 주도 섹터: {k150_strong}
     
     [작성 지침 - 엄격하게 준수할 것]
-    1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 분석할 것.
+    1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
     2. 코스피와 코스닥에서 강세를 보인 주도 섹터(예: {k200_strong})가 상승한 이유와 향후 트렌드를 결합하여 설명할 것.
-    3. 전체 분량은 5~7문장 분량으로 깊이 있고 풍부하게 작성할 것.
+    3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
     
     try:
-        model = get_gemini_model() # 동적으로 안전한 모델을 불러옴
+        # 에러 메시지 지시대로 최신 권장 모델인 gemini-3.6-flash 사용
+        model = genai.GenerativeModel('gemini-3.6-flash')
         response = model.generate_content(prompt)
         if response and hasattr(response, 'text') and response.text:
             return response.text.strip().replace('\n', ' ')
         else:
-            return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 다시 시도해주세요."
+            return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 새로고침 해주세요."
     except Exception as e:
         return f"🚨 AI 호출 실패 (원인: {str(e)}).\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
@@ -275,12 +258,11 @@ def get_jpy_krw_rate():
     except:
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
-def get_index_data_robust(name, key, mobile_code, search_query):
-    """무적의 스크래핑: 네이버 통합검색을 활용하여 지수를 100% 강제로 뽑아옵니다."""
-    # 1. 모바일 API (가장 빠름)
+def get_index_data_robust(name, key, mobile_code, pc_code):
+    """네이버 PC Sise Index 페이지를 완벽하게 크롤링하는 무적 로직"""
     try:
         url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
-        res = requests.get(url, headers=get_headers(), timeout=4)
+        res = requests.get(url, headers=get_headers(), timeout=3)
         if res.status_code == 200:
             data = res.json()
             cd = str(data.get("compareToPreviousPrice", {}).get("code", "3"))
@@ -292,26 +274,27 @@ def get_index_data_robust(name, key, mobile_code, search_query):
             }
     except: pass
     
-    # 2. 통합검색 스크래핑 (API 실패 시 무조건 작동하는 철벽 방어 로직)
+    # 모바일 API 실패 시 (특히 코스닥 150) 네이버 PC 금융 지수 페이지 직접 타격
     try:
-        url = f"https://search.naver.com/search.naver?query={urllib.parse.quote(search_query)}"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        soup = BeautifulSoup(res.text, "html.parser")
+        url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
+        res = requests.get(url, headers=get_headers(), timeout=3)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        # 통합검색결과 최상단 증권 박스 강제 탐색
-        box = soup.find("div", class_=lambda x: x and "spt_con" in x)
-        if box:
-            val_text = box.find("strong", class_="t_num").text
-            val = re.search(r'[\d\,\.]+', val_text).group()
+        # HTML 태그 종류와 무관하게 ID로 정확히 값 추적
+        val_el = soup.find(id="now_value")
+        change_el = soup.find(id="change_value_and_rate")
+        
+        if val_el and change_el:
+            val = val_el.text.strip()
+            change_text = change_el.text.strip()
             
-            ch_span = box.find("span", class_="n_ch")
-            r_span = box.find("span", class_="n_r")
+            is_up = "red01" in str(change_el) or "+" in change_text
+            is_down = "nv01" in str(change_el) or "-" in change_text
             
-            c_val = re.search(r'[\d\.]+', ch_span.text).group() if ch_span else "0"
-            c_rate = re.search(r'[\d\.]+', r_span.text).group() if r_span else "0"
-            
-            is_up = "up" in box.get("class", []) or "+" in ch_span.text
-            is_down = "down" in box.get("class", []) or "-" in ch_span.text
+            # 특수기호 모두 제거하고 순수 숫자와 소수점만 추출
+            nums = re.findall(r'[\d\.]+', change_text)
+            c_val = nums[0] if len(nums) > 0 else "0"
+            c_rate = nums[1] if len(nums) > 1 else "0"
             
             return {
                 "name": name, "code_key": key, "value": val,
@@ -325,11 +308,11 @@ def get_index_data_robust(name, key, mobile_code, search_query):
 
 def get_market_indices():
     results = []
-    # 코스닥 150을 모바일 API가 아닌 "네이버 통합검색"으로 우회하여 무조건 잡아옵니다.
-    results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "코스피 지수"))
-    results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "코스닥 지수"))
-    results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "코스피 200"))
-    results.append(get_index_data_robust("코스닥 150", "KOSDAQ150", "KOSDAQ150", "코스닥 150"))
+    results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
+    results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
+    results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
+    # 코스닥 150의 PC 웹페이지 고유 코드는 '201' 입니다.
+    results.append(get_index_data_robust("코스닥 150", "KOSDAQ150", "KOSDAQ150", "201"))
     
     results.append(get_exchange_rate())
     results.append(get_us_10y_yield())
@@ -599,7 +582,11 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
+    # 1. AI 주식시장 전체 시황 분석 (gemini-3.6-flash 단일 모델 호출)
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
+    # 2. HTML 화면 그리기
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
+    
+    # 3. 카카오톡 알림 발송
     send_kakao_alert(indices, k200_top, k150_top)
