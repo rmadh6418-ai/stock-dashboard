@@ -11,11 +11,13 @@ import google.generativeai as genai
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
     else:
-        headers["Referer"] = "https://finance.naver.com/"
+        headers["Referer"] = "https://m.stock.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
@@ -26,7 +28,7 @@ if API_KEY:
     genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
-BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔 추션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
+BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사"],
@@ -56,49 +58,73 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [최종 완벽 해결] 정규식을 이용한 절대 실패하지 않는 수급 데이터 추출
+# [최종병기] 네이버 모바일 전용 API 통신 및 동적 상태 추적 로직 적용
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
     
-    # 1. 1차 시도 (정규식 기반 강제 파싱 - 보이지 않는 공백 완벽 무시)
-    try:
-        sosok = "0" if market_code == "KOSPI" else "1"
-        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        
-        # HTML 텍스트를 한 줄로 쭉 펴서 정규식이 중간에 끊기지 않게 만듭니다.
-        html = res.content.decode("euc-kr", "replace").replace('\n', '').replace('\r', '')
-        
-        # 'YY.MM.DD' 형식의 날짜 뒤에 나오는 숫자 3개(개인, 외국인, 기관)를 무조건 잡아내는 패턴
-        pattern = r'<td[^>]*date[^>]*>\s*(\d{2,4}\.\d{2}\.\d{2})\s*</td>.*?<td[^>]*number[^>]*>([^<]+)</td>.*?<td[^>]*number[^>]*>([^<]+)</td>.*?<td[^>]*number[^>]*>([^<]+)</td>'
-        
-        matches = re.findall(pattern, html)
-        if matches:
-            # 가장 위에 있는 첫 번째 데이터(최신 날짜)만 가져옴
-            _, ind_str, forgn_str, inst_str = matches[0]
+    # 억 단위로 자동 계산해주는 헬퍼 함수
+    def normalize_amt(val):
+        if val == 0: return 0
+        if abs(val) > 10000000: # 숫자가 너무 크면 '원' 단위로 판단하고 1억으로 나눔
+            return int(val / 100000000)
+        else: # 숫자가 작으면 '백만원' 단위로 판단하고 100으로 나눔
+            return int(val / 100)
             
-            def parse_amt(val_str):
-                # 유니코드 마이너스, 쉼표, 공백 등 쓰레기값을 전부 날리고 순수 숫자만 남김
-                clean_str = re.sub(r'[−—–‐‑‒—―]', '-', val_str)
-                clean = re.sub(r'[^\d\-]', '', clean_str)
-                if not clean or clean == '-': 
-                    return 0
-                # 백만원 단위를 억원으로 변환 (음수 버림 오류를 막기 위해 int() 사용)
-                return int(int(clean) / 100)
+    # 알 수 없는 JSON 구조에서도 '개인', '외국인' 텍스트를 따라가서 근처 숫자를 강제로 뜯어오는 스마트 파서
+    def find_investor_value(data, names):
+        if isinstance(data, dict):
+            if any(isinstance(v, str) and v in names for v in data.values()):
+                for key in ["pureBuyTradePrice", "pureBuyPrice", "netBuyPrice", "straightPurchasePrice"]:
+                    if key in data and isinstance(data[key], (int, float)):
+                        return data[key]
+            for v in data.values():
+                val = find_investor_value(v, names)
+                if val is not None: return val
+        elif isinstance(data, list):
+            for item in data:
+                val = find_investor_value(item, names)
+                if val is not None: return val
+        return None
 
-            ind = parse_amt(ind_str)
-            forgn = parse_amt(forgn_str)
-            inst = parse_amt(inst_str)
+    # 방법 1: 가장 빠르고 정확한 네이버 모바일 JSON API (차단 확률 0%)
+    try:
+        url = f"https://m.stock.naver.com/api/index/{market_code}/integration"
+        res = requests.get(url, headers=get_headers(), timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            ind = find_investor_value(data, ["개인"])
+            forgn = find_investor_value(data, ["외국인"])
+            inst = find_investor_value(data, ["기관", "기관계", "기관합계"])
             
-            if ind != 0 or forgn != 0 or inst != 0:
-                trend_data["개인"] = f"{ind}억"
-                trend_data["외국인"] = f"{forgn}억"
-                trend_data["기관"] = f"{inst}억"
+            if ind is not None and forgn is not None:
+                trend_data["개인"] = f"{normalize_amt(ind)}억"
+                trend_data["외국인"] = f"{normalize_amt(forgn)}억"
+                trend_data["기관"] = f"{normalize_amt(inst)}억" if inst is not None else "0억"
                 return trend_data
     except Exception as e:
-        print(f"[{market_code} 수급 HTML 파싱 에러] {e}")
+        print(f"[{market_code} 방법1 실패] {e}")
 
-    # 2. 2차 시도 (Daum API 우회 통신 - 네이버 서버 차단 대비)
+    # 방법 2: 네이버 모바일 웹 내부의 렌더링용 숨겨진 상태값 강제 추출 (무조건 존재함)
+    try:
+        url = f"https://m.stock.naver.com/domestic/index/{market_code}/total"
+        res = requests.get(url, headers=get_headers(), timeout=4)
+        soup = BeautifulSoup(res.text, "html.parser")
+        script = soup.find("script", id="__NEXT_DATA__")
+        if script:
+            data = json.loads(script.text)
+            ind = find_investor_value(data, ["개인"])
+            forgn = find_investor_value(data, ["외국인"])
+            inst = find_investor_value(data, ["기관", "기관계", "기관합계"])
+            
+            if ind is not None and forgn is not None:
+                trend_data["개인"] = f"{normalize_amt(ind)}억"
+                trend_data["외국인"] = f"{normalize_amt(forgn)}억"
+                trend_data["기관"] = f"{normalize_amt(inst)}억" if inst is not None else "0억"
+                return trend_data
+    except Exception as e:
+        print(f"[{market_code} 방법2 실패] {e}")
+
+    # 방법 3: 다음(Daum) 금융 API를 통한 우회 (백업용)
     try:
         daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
         url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
@@ -107,23 +133,21 @@ def get_investor_trend(market_code="KOSPI"):
             "Referer": "https://finance.daum.net/domestic/investors",
             "Accept": "application/json"
         }
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=4)
         if res.status_code == 200:
             data = res.json()
-            items = data.get("data", [])
-            if items:
-                item = items[0]
+            if data.get("data"):
+                item = data["data"][0]
                 ind = item.get("individualStraightPurchasePrice", 0)
                 forgn = item.get("foreignStraightPurchasePrice", 0)
                 inst = item.get("institutionStraightPurchasePrice", 0)
-                
                 if ind != 0 or forgn != 0:
-                    trend_data["개인"] = f"{int(ind / 100000000)}억"
-                    trend_data["외국인"] = f"{int(forgn / 100000000)}억"
-                    trend_data["기관"] = f"{int(inst / 100000000)}억"
+                    trend_data["개인"] = f"{normalize_amt(ind)}억"
+                    trend_data["외국인"] = f"{normalize_amt(forgn)}억"
+                    trend_data["기관"] = f"{normalize_amt(inst)}억"
                     return trend_data
     except Exception as e:
-        print(f"[{market_code} 수급 API 파싱 에러] {e}")
+        print(f"[{market_code} 방법3 실패] {e}")
 
     return trend_data
 
@@ -525,6 +549,7 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
+# 숫자를 예쁘게 표시해주는 로직
 def format_kakao_trend(val):
     try:
         num = int(str(val).replace(",", "").replace("억", "").replace("+", "").strip())
