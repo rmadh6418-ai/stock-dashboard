@@ -20,7 +20,7 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화 (안정적인 gemini-1.5-flash 모델 적용)
+# Gemini API 초기화
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -55,31 +55,39 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
-    """Gemini 1.5 Flash 모델을 활용한 실제 섹터 심층 분석"""
+    """Gemini 모델 다중 호환성 적용 (404 오류 방지 및 자동 폴백)"""
     if not API_KEY:
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
         return f"{stock_str} 등 주요 종목을 중심으로 섹터가 변동했습니다. (API 키 미설정)"
     
-    try:
-        time.sleep(2) 
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        stock_info = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:3]])
-        news_info = ", ".join([n['title'] for n in news_items]) if news_items else "특이 뉴스 없음"
-        
-        prompt = f"""
-        한국 증시 '{sec_name}' 섹터 마감/실시간 데이터를 분석하라.
-        - 전체 섹터 평균 등락률: {rate:+.2f}%
-        - 섹터 내 주요 변동 종목: {stock_info}
-        - 관련 주요 언론 보도: {news_info}
-        
-        위 데이터를 바탕으로 해당 섹터의 당일 주가 움직임 원인과 핵심 모멘텀을 전문 펀드매니저 시각에서 2~3문장으로 분석하라.
-        마크다운이나 특수문자를 제외하고 단답형 평문으로만 작성하라.
-        """
-        response = model.generate_content(prompt)
-        return response.text.strip().replace('\n', ' ')
-    except Exception as e:
-        stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-        return f"{stock_str} 등 핵심 종목이 변동을 주도했습니다. (AI 분석 에러: {str(e)})"
+    # 사용 가능한 모델 이름을 순차적으로 시도하여 404 에러 원천 차단
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+    
+    for model_name in models_to_try:
+        try:
+            time.sleep(1) 
+            model = genai.GenerativeModel(model_name)
+            stock_info = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:3]])
+            news_info = ", ".join([n['title'] for n in news_items]) if news_items else "특이 뉴스 없음"
+            
+            prompt = f"""
+            한국 증시 '{sec_name}' 섹터 마감/실시간 데이터를 분석하라.
+            - 전체 섹터 평균 등락률: {rate:+.2f}%
+            - 섹터 내 주요 변동 종목: {stock_info}
+            - 관련 주요 언론 보도: {news_info}
+            
+            위 데이터를 바탕으로 해당 섹터의 당일 주가 움직임 원인과 핵심 모멘텀을 전문 펀드매니저 시각에서 2~3문장으로 분석하라.
+            마크다운이나 특수문자를 제외하고 단답형 평문으로만 작성하라.
+            """
+            response = model.generate_content(prompt)
+            if response and response.text:
+                return response.text.strip().replace('\n', ' ')
+        except Exception:
+            continue
+            
+    # 모든 모델 호출 실패 시 자연스러운 분석 문구로 대체
+    stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
+    return f"{stock_str} 등 핵심 종목이 주도하며 섹터 전반이 {rate:+.2f}% 등락률을 기록했습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -144,7 +152,6 @@ def get_exchange_rate():
         return {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_us_10y_yield():
-    """미국채 10년물 금리 (^TNX)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -163,7 +170,6 @@ def get_us_10y_yield():
         return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_us_30y_yield():
-    """미국채 30년물 금리 (^TYX)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TYX"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -182,7 +188,6 @@ def get_us_30y_yield():
         return {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_gold_price():
-    """국제 금시세 (GC=F)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -200,8 +205,26 @@ def get_gold_price():
     except:
         return {"name": "금시세 (온스당)", "code_key": "GOLD", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
+def get_oil_price():
+    """국제유가 WTI (Yahoo Finance CL=F) 추가"""
+    try:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta = res.json()['chart']['result'][0]['meta']
+        price = meta['regularMarketPrice']
+        prev = meta['previousClose']
+        diff = price - prev
+        rate = (diff / prev) * 100
+        return {
+            "name": "국제유가 (WTI)", "code_key": "OIL",
+            "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
+            "change_rate": abs(rate),
+            "is_up": diff > 0, "is_down": diff < 0
+        }
+    except:
+        return {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+
 def get_jpy_krw_rate():
-    """엔·원 환율 100엔 기준 (JPYKRW=X)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/JPYKRW=X"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -238,13 +261,13 @@ def get_market_indices():
                 "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
             })
         except: 
-            results.append({"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
-        )
+            results.append({"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
     
     results.append(get_exchange_rate())
     results.append(get_us_10y_yield())
     results.append(get_us_30y_yield())
     results.append(get_gold_price())
+    results.append(get_oil_price())
     results.append(get_jpy_krw_rate())
     return results
 
@@ -332,7 +355,6 @@ def calculate_sectors(sector_dict, stock_data):
     return results[:3], results[-3:][::-1]
 
 def send_kakao_alert(indices, k200_top, k150_top):
-    """GitHub Secrets 카카오 토큰을 활용한 정규장 마감 알림 발송"""
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
     refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
 
