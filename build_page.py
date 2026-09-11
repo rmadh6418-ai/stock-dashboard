@@ -2,13 +2,12 @@ import json
 import os
 import re
 import urllib.parse
-import time  # AI API 속도 조절을 위해 추가
+import time
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-# 단일 세션 해제 (IP 차단 방지를 위해 매번 새로운 요청 헤더 생성)
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -21,7 +20,7 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
+# Gemini API 초기화 (최신 gemini-2.5-flash 모델 적용)
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -56,16 +55,14 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
-    """Gemini 1.5 Flash 모델을 활용한 실제 섹터 심층 분석"""
+    """Gemini 2.5 Flash 모델을 활용한 실제 섹터 심층 분석"""
     if not API_KEY:
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-        return f"{stock_str} 등 주요 종목을 중심으로 섹터가 변동했습니다. (현재 GEMINI_API_KEY 미입력 상태)"
+        return f"{stock_str} 등 주요 종목을 중심으로 섹터가 변동했습니다. (API 키 미설정)"
     
     try:
-        # API 단기간 요청 제한(429 에러) 방지를 위해 요청 전 2초 대기
         time.sleep(2) 
-        
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         stock_info = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:3]])
         news_info = ", ".join([n['title'] for n in news_items]) if news_items else "특이 뉴스 없음"
         
@@ -82,7 +79,6 @@ def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
         return response.text.strip().replace('\n', ' ')
     except Exception as e:
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-        # 에러 발생 시 원인을 구체적으로 표시하여 디버깅을 돕습니다.
         return f"{stock_str} 등 핵심 종목이 변동을 주도했습니다. (AI 분석 에러: {str(e)})"
 
 def get_news_score(title, stock_name):
@@ -147,9 +143,10 @@ def get_exchange_rate():
     except Exception:
         return {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
-def get_us_10y_yield():
+def get_us_30y_yield():
+    """미국채 30년물 금리 (Yahoo Finance ^TYX)"""
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX"
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TYX"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
         meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
@@ -157,39 +154,51 @@ def get_us_10y_yield():
         diff = price - prev
         rate = (diff / prev) * 100
         return {
-            "name": "미국채 10년물", "code_key": "US10Y",
+            "name": "미국채 30년물", "code_key": "US30Y",
             "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
             "change_rate": abs(rate),
             "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+        return {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
-def get_investor_trend():
-    """dt(주체)와 dd(금액)를 짝지어 정확하게 파싱하도록 수정"""
-    trends = {"KOSPI": "데이터 집계 중", "KOSDAQ": "데이터 집계 중"}
+def get_gold_price():
+    """국제 금시세 (Yahoo Finance GC=F)"""
     try:
-        res = requests.get("https://finance.naver.com/", headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-            for market, cls in [("KOSPI", "kospi_area"), ("KOSDAQ", "kosdaq_area")]:
-                area = soup.find("div", class_=cls)
-                if area:
-                    dl = area.find("dl", class_="dl_invest") or area.find("dl", class_="blind")
-                    if dl:
-                        parsed = []
-                        # dt와 dd를 1:1로 묶어서 처리
-                        for dt, dd in zip(dl.find_all("dt"), dl.find_all("dd")):
-                            actor = dt.text.strip()
-                            val = dd.text.strip()
-                            # 정확한 투자 주체일 경우에만 추가
-                            if actor in ["개인", "외국인", "기관"]:
-                                parsed.append(f"{actor} {val}")
-                        if parsed:
-                            trends[market] = " | ".join(parsed)
-    except Exception as e:
-        print(f"수급 동향 수집 오류: {e}")
-    return trends
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta = res.json()['chart']['result'][0]['meta']
+        price = meta['regularMarketPrice']
+        prev = meta['previousClose']
+        diff = price - prev
+        rate = (diff / prev) * 100
+        return {
+            "name": "금시세 (온스당)", "code_key": "GOLD",
+            "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
+            "change_rate": abs(rate),
+            "is_up": diff > 0, "is_down": diff < 0
+        }
+    except:
+        return {"name": "금시세 (온스당)", "code_key": "GOLD", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+
+def get_jpy_krw_rate():
+    """엔·원 환율 100엔 기준 (Yahoo Finance JPYKRW=X)"""
+    try:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/JPYKRW=X"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        meta = res.json()['chart']['result'][0]['meta']
+        price = meta['regularMarketPrice'] * 100
+        prev = meta['previousClose'] * 100
+        diff = price - prev
+        rate = (diff / prev) * 100
+        return {
+            "name": "엔·원 환율 (100엔)", "code_key": "JPYKRW",
+            "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
+            "change_rate": abs(rate),
+            "is_up": diff > 0, "is_down": diff < 0
+        }
+    except:
+        return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_market_indices():
     targets = [
@@ -213,14 +222,13 @@ def get_market_indices():
             results.append({"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False})
     
     results.append(get_exchange_rate())
-    results.append(get_us_10y_yield())
+    results.append(get_us_30y_yield())
+    results.append(get_gold_price())
+    results.append(get_jpy_krw_rate())
     return results
 
 def get_market_stocks():
-    """듀얼 엔진 탑재: 네이버(Naver) 접속 차단 시 다음(Daum) 금융 API로 자동 우회"""
     stocks = {}
-    
-    # [1차 시도] 네이버 증권 데이터 파싱
     urls = [
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
@@ -250,7 +258,6 @@ def get_market_stocks():
                                 except: pass
         except: pass
 
-    # [2차 시도] 네이버가 차단하여 종목 수집에 실패했을 경우, Daum 주식 API로 우회 작동!
     if len(stocks) < 50:
         daum_headers = get_headers(is_daum=True)
         for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
@@ -274,7 +281,6 @@ def get_market_stocks():
 
 def calculate_sectors(sector_dict, stock_data):
     results = []
-    
     for sec_name, stock_names in sector_dict.items():
         try:
             matched = []
@@ -304,7 +310,7 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends):
+def render_html(indices, k200_top, k200_bot, k150_top, k150_bot):
     index_cards = ""
     for idx in indices:
         sign = "▲ +" if idx["is_up"] else ("▼ -" if idx["is_down"] else "― ")
@@ -320,16 +326,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
         </div>
         """
 
-    trend_html = f"""
-    <div class="investor-trend-box">
-        <div class="trend-row"><span class="trend-label">KOSPI 수급</span> <span class="trend-data">{investor_trends.get('KOSPI', '집계중')}</span></div>
-        <div class="trend-row"><span class="trend-label">KOSDAQ 수급</span> <span class="trend-data">{investor_trends.get('KOSDAQ', '집계중')}</span></div>
-    </div>
-    """
-
     def build_sector_list(sectors):
         if not sectors: 
-            return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다. (네트워크 상태를 확인해 주세요.)</div>'
+            return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다.</div>'
         html = ""
         for s in sectors:
             r = s["rate"]
@@ -361,17 +360,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
         body {{ background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
         header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 12px; }}
-        .card {{ background: #fff; padding: 16px 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
-        .card-title {{ font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
-        .card-value {{ font-size: 1.30rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .badge {{ display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }}
-        
-        .investor-trend-box {{ background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }}
-        .trend-row {{ margin-bottom: 6px; }}
-        .trend-row:last-child {{ margin-bottom: 0; }}
-        .trend-label {{ font-weight: 800; color: #334155; display: inline-block; width: 90px; }}
-        .trend-data {{ color: #0f172a; font-weight: 600; }}
+        .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }}
+        .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
+        .card-title {{ font-size: 0.80rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
+        .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
+        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
 
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
@@ -397,7 +390,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
 <body>
     <header><h1>📊 실시간 국내 증시 대시보드</h1></header>
     <div class="grid-indices">{index_cards}</div>
-    {trend_html}
     
     <div class="group-title">🏢 코스피 200 업종 동향</div>
     <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
@@ -415,10 +407,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
 
 if __name__ == "__main__":
     indices = get_market_indices()
-    investor_trends = get_investor_trend()
     stock_data = get_market_stocks()
 
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends)
+    render_html(indices, k200_top, k200_bot, k150_top, k150_bot)
