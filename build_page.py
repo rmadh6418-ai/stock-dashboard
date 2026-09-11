@@ -57,9 +57,9 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """주식시장 전체 동향 통합 AI 분석 (프롬프트 엔지니어링 대폭 강화)"""
+    """주식시장 전체 동향 통합 AI 분석 (에러 추적 기능 추가)"""
     if not API_KEY:
-        return "API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (환경변수 GEMINI_API_KEY를 등록해주세요.)"
+        return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (OS 환경변수 'GEMINI_API_KEY'를 확인해주세요.)"
     
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -84,20 +84,21 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
     
-    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-pro']
+    models_to_try = ['gemini-1.5-flash', 'gemini-pro']
+    last_error = ""
     
     for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
-            if response and response.text:
-                # 줄바꿈 문자를 띄어쓰기로 치환하여 완벽한 평문 구성
+            if response and hasattr(response, 'text') and response.text:
                 return response.text.strip().replace('\n', ' ')
-        except Exception:
+        except Exception as e:
+            last_error = str(e)
             continue
             
-    # 완벽하게 모든 모델이 실패했을 경우에만 나오는 자연스러운 백업 텍스트
-    return f"코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다. (현재 AI 서버 응답 지연으로 상세 분석 대신 핵심 데이터 요약만 제공합니다. 잠시 후 새로고침 해보세요.)"
+    # 에러가 발생한 이유를 화면에 직접 출력하여 디버깅을 돕습니다.
+    return f"🚨 AI 호출 실패 (원인: {last_error}).\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -263,7 +264,7 @@ def get_jpy_krw_rate():
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_index_data_robust(name, key, mobile_code, pc_code):
-    """모바일 API 실패 시 PC 크롤링으로 이중 백업하여 누락 방지"""
+    """모바일 API 실패 시 PC 크롤링으로 이중 백업하여 완벽하게 데이터 수집"""
     # 1. 네이버 모바일 API 시도
     try:
         url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
@@ -279,7 +280,7 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
             }
     except: pass
     
-    # 2. 실패 시 네이버 PC 금융에서 직접 스크래핑 (코스닥 150용 특효약)
+    # 2. 실패 시 네이버 PC 금융에서 직접 스크래핑 (특히 코스닥150은 PC 코드가 201임)
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
         res = requests.get(url, headers=get_headers(), timeout=4)
@@ -306,10 +307,11 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
 
 def get_market_indices():
     results = []
+    # 코스닥 150의 PC 웹페이지 코드는 KOSDAQ150이 아니라 201입니다. 이것을 적용하여 완벽하게 가져옵니다.
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
-    results.append(get_index_data_robust("코스닥 150", "KOSDAQ150", "KOSDAQ150", "KOSDAQ150"))
+    results.append(get_index_data_robust("코스닥 150", "KOSDAQ150", "KOSDAQ150", "201"))
     
     results.append(get_exchange_rate())
     results.append(get_us_10y_yield())
@@ -387,7 +389,6 @@ def calculate_sectors(sector_dict, stock_data):
             top_stock = matched[0]
             news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
             
-            # 여기서 섹터별 AI 분석은 완전히 생략합니다. (전체 시장 통합 분석으로 이관)
             avg_r = sum(s["rate"] for s in matched) / len(matched)
             
             results.append({
@@ -526,7 +527,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }}
-        .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; }}
+        .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }}
 
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
@@ -580,10 +581,10 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
-    # 1. AI 주식시장 전체 시황 분석 실행 (강력한 프롬프트 적용)
+    # 1. AI 주식시장 전체 시황 분석 (에러 추적 포함)
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
-    # 2. 결과 렌더링
+    # 2. HTML 화면 그리기
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
     
     # 3. 카카오톡 알림 발송
