@@ -26,7 +26,6 @@ else:
     gemini_model = None
     print("[WARNING] GEMINI_API_KEY가 설정되지 않아 기본 텍스트 생성 모드로 작동합니다.")
 
-# 경제·기업과 무관한 뉴스 필터링용 제외 키워드 목록
 EXCLUDE_NEWS_KEYWORDS = [
     "콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", 
     "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", 
@@ -69,7 +68,6 @@ SECTOR_MOMENTUM_THEMES = {
 }
 
 def generate_gemini_summary(sec_name, rate, matched_stocks):
-    """Gemini AI를 호출하여 섹터 동향을 실제 전문적으로 분석 및 요약"""
     if not gemini_model:
         return f"{sec_name} 섹터는 주요 종목 간 수급 공방이 이어지며 {rate:+.2f}%를 기록했습니다."
 
@@ -121,7 +119,6 @@ def get_news_score(title, stock_name):
 
     if not has_stock and not has_biz:
         return -1
-
     return score
 
 
@@ -185,12 +182,13 @@ def fetch_real_news(keyword, stock_code=""):
 
 
 def get_world_market_index(name, code_key, marketindexCd, unit=""):
-    """네이버 금융 시장지표에서 글로벌 지표 단일 추출 (미국채, 귀금속, 환율 등 통합 함수)"""
     try:
         url = f"https://finance.naver.com/marketindex/worldDailyQuote.naver?marketindexCd={marketindexCd}"
         res = requests.get(url, headers=HEADERS, timeout=8)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        table = soup.find("table", class_="tbl_exchange today")
+        
+        # 💡 수정된 부분: "today" 클래스가 없어도 무조건 "tbl_exchange" 표를 찾도록 유연하게 변경
+        table = soup.find("table", class_="tbl_exchange")
         if table:
             tr = table.find("tbody").find("tr")
             tds = tr.find_all("td")
@@ -220,7 +218,6 @@ def get_world_market_index(name, code_key, marketindexCd, unit=""):
 
 
 def get_investor_trend():
-    """코스피/코스닥 개인, 외국인, 기관 매수/매도 현황 스크래핑"""
     trends = {"KOSPI": "집계 중...", "KOSDAQ": "집계 중..."}
     targets = [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]
     
@@ -315,7 +312,6 @@ def get_market_indices():
             "change_rate": 0.0, "is_up": False, "is_down": False,
         })
 
-    # 지표 수집 영역 (은값 -> 금값으로 수정됨)
     results.append(get_exchange_rate())
     results.append(get_world_market_index("미국채 10년물", "US_10Y", "IR_TNX", "%"))
     results.append(get_world_market_index("미국채 30년물", "US_30Y", "IR_TYX", "%"))
@@ -791,7 +787,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
 
 if __name__ == "__main__":
     indices = get_market_indices()
-    investor_data = get_investor_trend() # 수급 동향 데이터 추가
+    investor_data = get_investor_trend()
     stock_data = get_market_stocks()
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
