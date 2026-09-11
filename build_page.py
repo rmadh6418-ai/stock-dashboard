@@ -56,11 +56,39 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [완벽 수정본] 투자자별 매매동향 상세 표 페이지 직접 크롤링 (실패율 0%)
+# [최종 해결본] JSON API 직접 호출 + 날짜 정규식(Regex) 안전장치 적용
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
+    
+    # 1. API 통신 (HTML 태그 변경에 영향 받지 않는 가장 확실한 방법)
     try:
-        # KOSPI는 sosok=0, KOSDAQ은 sosok=1
+        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
+        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Referer": "https://finance.daum.net/domestic/investors"
+        }
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            items = data.get("data", [])
+            if items:
+                item = items[0]
+                ind = item.get("individualStraightPurchasePrice", 0)
+                forgn = item.get("foreignStraightPurchasePrice", 0)
+                inst = item.get("institutionStraightPurchasePrice", 0)
+                
+                if ind != 0 or forgn != 0:
+                    # 원 단위를 억 단위로 변환 (100,000,000 나눔)
+                    trend_data["개인"] = f"{int(ind / 100000000)}억"
+                    trend_data["외국인"] = f"{int(forgn / 100000000)}억"
+                    trend_data["기관"] = f"{int(inst / 100000000)}억"
+                    return trend_data
+    except:
+        pass
+
+    # 2. 강력한 백업 (표 안의 빈칸 함정을 정규식으로 회피)
+    try:
         sosok = "0" if market_code == "KOSPI" else "1"
         url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
         res = requests.get(url, headers=get_headers(), timeout=5)
@@ -68,31 +96,27 @@ def get_investor_trend(market_code="KOSPI"):
         
         table = soup.find("table", class_="type_1")
         if table:
-            rows = table.find_all("tr")
-            for row in rows:
-                cols = row.find_all("td", class_="number")
+            for row in table.find_all("tr"):
                 tds = row.find_all("td")
-                
-                # number 클래스가 3개 이상 있으면 무조건 데이터 행으로 간주 (헤더 제외)
-                if len(cols) >= 3 and len(tds) > 3:
-                    def parse_val(text):
-                        try: 
-                            # 불필요한 공백과 쉼표 제거 후 정수 변환
-                            return int(text.replace(",", "").strip())
-                        except: 
-                            return 0
+                if len(tds) >= 4:
+                    date_text = tds[0].text.strip()
+                    # 오직 'YYYY.MM.DD' 형태의 진짜 날짜 행만 골라서 읽음
+                    if re.match(r"^\d{2,4}\.\d{2}\.\d{2}$", date_text):
+                        def parse_val(t):
+                            try: return int(t.replace(",", "").strip())
+                            except: return 0
+                            
+                        ind = parse_val(tds[1].text)
+                        forgn = parse_val(tds[2].text)
+                        inst = parse_val(tds[3].text)
                         
-                    # cols[0]: 개인, cols[1]: 외국인, cols[2]: 기관
-                    # 단위가 '백만원'이므로 100으로 나누어 '억원'으로 변환
-                    trend_data["개인"] = f"{int(parse_val(cols[0].text) / 100)}억"
-                    trend_data["외국인"] = f"{int(parse_val(cols[1].text) / 100)}억"
-                    trend_data["기관"] = f"{int(parse_val(cols[2].text) / 100)}억"
-                    
-                    # 가장 첫 번째 데이터 행(최신 날짜)만 읽고 반복 종료
-                    break 
-                    
+                        # 백만원 단위를 억 단위로 변환 (100 나눔)
+                        trend_data["개인"] = f"{int(ind / 100)}억"
+                        trend_data["외국인"] = f"{int(forgn / 100)}억"
+                        trend_data["기관"] = f"{int(inst / 100)}억"
+                        break
     except Exception as e:
-        print(f"[{market_code} 수급 크롤링 에러] {e}")
+        print(f"[{market_code} 수급 백업 파싱 에러] {e}")
         
     return trend_data
 
@@ -494,7 +518,6 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-# 카카오톡 전송 시 수급 데이터에 +/- 및 쉼표 표기 로직 추가
 def format_kakao_trend(val):
     try:
         num = int(str(val).replace(",", "").replace("억", "").replace("+", "").strip())
