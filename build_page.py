@@ -11,13 +11,11 @@ import google.generativeai as genai
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
     else:
-        headers["Referer"] = "https://m.stock.naver.com/"
+        headers["Referer"] = "https://finance.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
@@ -58,97 +56,48 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [최종병기] 네이버 모바일 전용 API 통신 및 동적 상태 추적 로직 적용
+# [핵심] 네이버 완전 제거, 다음(Daum) 금융 공식 API 통신으로 변경
 def get_investor_trend(market_code="KOSPI"):
-    trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
+    trend_data = {"개인": "불러오는중", "외국인": "불러오는중", "기관": "불러오는중"}
     
-    # 억 단위로 자동 계산해주는 헬퍼 함수
-    def normalize_amt(val):
-        if val == 0: return 0
-        if abs(val) > 10000000: # 숫자가 너무 크면 '원' 단위로 판단하고 1억으로 나눔
-            return int(val / 100000000)
-        else: # 숫자가 작으면 '백만원' 단위로 판단하고 100으로 나눔
-            return int(val / 100)
-            
-    # 알 수 없는 JSON 구조에서도 '개인', '외국인' 텍스트를 따라가서 근처 숫자를 강제로 뜯어오는 스마트 파서
-    def find_investor_value(data, names):
-        if isinstance(data, dict):
-            if any(isinstance(v, str) and v in names for v in data.values()):
-                for key in ["pureBuyTradePrice", "pureBuyPrice", "netBuyPrice", "straightPurchasePrice"]:
-                    if key in data and isinstance(data[key], (int, float)):
-                        return data[key]
-            for v in data.values():
-                val = find_investor_value(v, names)
-                if val is not None: return val
-        elif isinstance(data, list):
-            for item in data:
-                val = find_investor_value(item, names)
-                if val is not None: return val
-        return None
-
-    # 방법 1: 가장 빠르고 정확한 네이버 모바일 JSON API (차단 확률 0%)
-    try:
-        url = f"https://m.stock.naver.com/api/index/{market_code}/integration"
-        res = requests.get(url, headers=get_headers(), timeout=4)
-        if res.status_code == 200:
-            data = res.json()
-            ind = find_investor_value(data, ["개인"])
-            forgn = find_investor_value(data, ["외국인"])
-            inst = find_investor_value(data, ["기관", "기관계", "기관합계"])
-            
-            if ind is not None and forgn is not None:
-                trend_data["개인"] = f"{normalize_amt(ind)}억"
-                trend_data["외국인"] = f"{normalize_amt(forgn)}억"
-                trend_data["기관"] = f"{normalize_amt(inst)}억" if inst is not None else "0억"
-                return trend_data
-    except Exception as e:
-        print(f"[{market_code} 방법1 실패] {e}")
-
-    # 방법 2: 네이버 모바일 웹 내부의 렌더링용 숨겨진 상태값 강제 추출 (무조건 존재함)
-    try:
-        url = f"https://m.stock.naver.com/domestic/index/{market_code}/total"
-        res = requests.get(url, headers=get_headers(), timeout=4)
-        soup = BeautifulSoup(res.text, "html.parser")
-        script = soup.find("script", id="__NEXT_DATA__")
-        if script:
-            data = json.loads(script.text)
-            ind = find_investor_value(data, ["개인"])
-            forgn = find_investor_value(data, ["외국인"])
-            inst = find_investor_value(data, ["기관", "기관계", "기관합계"])
-            
-            if ind is not None and forgn is not None:
-                trend_data["개인"] = f"{normalize_amt(ind)}억"
-                trend_data["외국인"] = f"{normalize_amt(forgn)}억"
-                trend_data["기관"] = f"{normalize_amt(inst)}억" if inst is not None else "0억"
-                return trend_data
-    except Exception as e:
-        print(f"[{market_code} 방법2 실패] {e}")
-
-    # 방법 3: 다음(Daum) 금융 API를 통한 우회 (백업용)
     try:
         daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
         url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        
+        # 다음 API는 아래 4개의 헤더가 완벽히 일치해야 403 에러 없이 통과됨
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Referer": "https://finance.daum.net/domestic/investors",
-            "Accept": "application/json"
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest"
         }
-        res = requests.get(url, headers=headers, timeout=4)
+        
+        res = requests.get(url, headers=headers, timeout=5)
+        
         if res.status_code == 200:
             data = res.json()
-            if data.get("data"):
-                item = data["data"][0]
-                ind = item.get("individualStraightPurchasePrice", 0)
-                forgn = item.get("foreignStraightPurchasePrice", 0)
-                inst = item.get("institutionStraightPurchasePrice", 0)
-                if ind != 0 or forgn != 0:
-                    trend_data["개인"] = f"{normalize_amt(ind)}억"
-                    trend_data["외국인"] = f"{normalize_amt(forgn)}억"
-                    trend_data["기관"] = f"{normalize_amt(inst)}억"
-                    return trend_data
+            items = data.get("data", [])
+            if items:
+                item = items[0]
+                # 다음 API는 '원' 단위이므로 1억(100,000,000)으로 나눕니다.
+                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
+                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
+                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
+                
+                trend_data["개인"] = str(ind)
+                trend_data["외국인"] = str(forgn)
+                trend_data["기관"] = str(inst)
+        else:
+            # 상태 코드가 200이 아닐 경우 0억으로 숨기지 않고 원인을 반환
+            trend_data["개인"] = f"차단됨({res.status_code})"
+            trend_data["외국인"] = "차단됨"
+            trend_data["기관"] = "차단됨"
+            
     except Exception as e:
-        print(f"[{market_code} 방법3 실패] {e}")
-
+        trend_data["개인"] = "연결오류"
+        trend_data["외국인"] = "연결오류"
+        trend_data["기관"] = "연결오류"
+        
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -168,8 +117,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
-    - 코스피 수급(순매수): 개인 {kospi_trend.get('개인')}, 외국인 {kospi_trend.get('외국인')}, 기관 {kospi_trend.get('기관')}
-    - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}, 외국인 {kosdaq_trend.get('외국인')}, 기관 {kosdaq_trend.get('기관')}
+    - 코스피 수급(순매수): 개인 {kospi_trend.get('개인')}억, 외국인 {kospi_trend.get('외국인')}억, 기관 {kospi_trend.get('기관')}억
+    - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}억, 외국인 {kosdaq_trend.get('외국인')}억, 기관 {kosdaq_trend.get('기관')}억
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
     
@@ -188,7 +137,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
         else:
             return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 새로고침 해주세요."
     except Exception as e:
-        return f"🚨 AI 호출 실패 (원인: {str(e)}).\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+        return f"🚨 AI 호출 실패.\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -549,13 +498,16 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-# 숫자를 예쁘게 표시해주는 로직
+# [핵심 버그 수정] 화면 표시 중 에러를 0억으로 숨기던 버그 제거
 def format_kakao_trend(val):
+    val_str = str(val).strip()
+    if "차단" in val_str or "오류" in val_str or "실패" in val_str:
+        return val_str
     try:
-        num = int(str(val).replace(",", "").replace("억", "").replace("+", "").strip())
+        num = int(val_str.replace(",", "").replace("억", "").replace("+", ""))
         return f"+{num:,}억" if num > 0 else f"{num:,}억"
     except:
-        return "0억"
+        return val_str
 
 def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
@@ -646,9 +598,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
+    # [핵심 버그 수정] 에러가 났을 때 '0억'으로 가리지 않고 빨간색 에러 메시지를 그대로 표시
     def format_trend(val):
+        val_str = str(val).strip()
+        if "차단" in val_str or "오류" in val_str or "실패" in val_str:
+            return f'<span class="trend-val text-flat" style="font-size:0.85rem; color:#ef4444;">{val_str}</span>'
+            
         try:
-            raw_num = int(str(val).replace(",", "").replace("억", "").replace("+", "").strip())
+            raw_num = int(val_str.replace(",", "").replace("억", "").replace("+", "").strip())
             
             if raw_num > 0:
                 return f'<span class="trend-val text-up">+{raw_num:,}억</span>'
@@ -657,7 +614,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             else:
                 return f'<span class="trend-val text-flat">0억</span>'
         except:
-            return f'<span class="trend-val text-flat">0억</span>'
+            return f'<span class="trend-val text-flat">{val_str}</span>'
 
     def build_sector_list(sectors):
         if not sectors: 
