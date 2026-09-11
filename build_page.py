@@ -56,47 +56,57 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [핵심] 네이버 완전 제거, 다음(Daum) 금융 공식 API 통신으로 변경
+# [궁극의 해결책] 차단당하는 API를 완전히 버리고, 가장 안정적인 네이버 표 데이터를 정밀 타격하여 긁어옵니다.
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "불러오는중", "외국인": "불러오는중", "기관": "불러오는중"}
-    
     try:
-        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
-        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        # KOSPI는 0, KOSDAQ은 1
+        sosok = "0" if market_code == "KOSPI" else "1"
+        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
         
-        # 다음 API는 아래 4개의 헤더가 완벽히 일치해야 403 에러 없이 통과됨
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer": "https://finance.daum.net/domestic/investors",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "X-Requested-With": "XMLHttpRequest"
-        }
-        
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=get_headers(), timeout=5)
         
         if res.status_code == 200:
-            data = res.json()
-            items = data.get("data", [])
-            if items:
-                item = items[0]
-                # 다음 API는 '원' 단위이므로 1억(100,000,000)으로 나눕니다.
-                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
-                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
-                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
+            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+            
+            # 페이지 내 모든 행(tr)을 뒤집니다.
+            for tr in soup.find_all("tr"):
+                # 날짜가 적힌 칸(td class="date")을 찾습니다.
+                date_td = tr.find("td", class_="date")
                 
-                trend_data["개인"] = str(ind)
-                trend_data["외국인"] = str(forgn)
-                trend_data["기관"] = str(inst)
+                if date_td:
+                    date_text = date_td.text.strip()
+                    # 정규식: "24.05.10" 혹은 "2024.05.10" 같이 진짜 날짜가 쓰여진 줄만 통과! (빈 줄 완벽 차단)
+                    if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
+                        num_tds = tr.find_all("td", class_="number")
+                        
+                        # 개인, 외국인, 기관 3칸이 정상적으로 존재하면 데이터 추출
+                        if len(num_tds) >= 3:
+                            def parse_num(txt):
+                                # 네이버 특유의 가짜 마이너스, 쉼표, 공백을 모두 날리고 진짜 숫자만 추출
+                                clean = re.sub(r'[^\d\-]', '', txt.replace(',', '').replace('−', '-').replace('—', '-'))
+                                if not clean or clean == '-': return 0
+                                return int(clean) // 100  # 원본 단위가 '백만원'이므로 100으로 나눠 '억원'으로 변환
+                            
+                            ind = parse_num(num_tds[0].text)
+                            forgn = parse_num(num_tds[1].text)
+                            inst = parse_num(num_tds[2].text)
+                            
+                            # 데이터가 무사히 뽑혔으면 저장 후 즉시 리턴
+                            trend_data["개인"] = f"{ind}억"
+                            trend_data["외국인"] = f"{forgn}억"
+                            trend_data["기관"] = f"{inst}억"
+                            return trend_data
         else:
-            # 상태 코드가 200이 아닐 경우 0억으로 숨기지 않고 원인을 반환
-            trend_data["개인"] = f"차단됨({res.status_code})"
-            trend_data["외국인"] = "차단됨"
-            trend_data["기관"] = "차단됨"
+            trend_data["개인"] = f"접속오류({res.status_code})"
+            trend_data["외국인"] = "오류"
+            trend_data["기관"] = "오류"
             
     except Exception as e:
-        trend_data["개인"] = "연결오류"
-        trend_data["외국인"] = "연결오류"
-        trend_data["기관"] = "연결오류"
+        trend_data["개인"] = "크롤링 실패"
+        trend_data["외국인"] = "오류"
+        trend_data["기관"] = "오류"
+        print(f"[{market_code} 수급 에러] {e}")
         
     return trend_data
 
@@ -117,8 +127,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
-    - 코스피 수급(순매수): 개인 {kospi_trend.get('개인')}억, 외국인 {kospi_trend.get('외국인')}억, 기관 {kospi_trend.get('기관')}억
-    - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}억, 외국인 {kosdaq_trend.get('외국인')}억, 기관 {kosdaq_trend.get('기관')}억
+    - 코스피 수급(순매수): 개인 {kospi_trend.get('개인')}, 외국인 {kospi_trend.get('외국인')}, 기관 {kospi_trend.get('기관')}
+    - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}, 외국인 {kosdaq_trend.get('외국인')}, 기관 {kosdaq_trend.get('기관')}
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
     
@@ -498,13 +508,13 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-# [핵심 버그 수정] 화면 표시 중 에러를 0억으로 숨기던 버그 제거
+# 카카오톡 문자열 파싱 (에러 메시지는 그대로 출력)
 def format_kakao_trend(val):
     val_str = str(val).strip()
-    if "차단" in val_str or "오류" in val_str or "실패" in val_str:
+    if not val_str.endswith("억"):
         return val_str
     try:
-        num = int(val_str.replace(",", "").replace("억", "").replace("+", ""))
+        num = int(val_str.replace(",", "").replace("억", "").replace("+", "").strip())
         return f"+{num:,}억" if num > 0 else f"{num:,}억"
     except:
         return val_str
@@ -598,15 +608,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    # [핵심 버그 수정] 에러가 났을 때 '0억'으로 가리지 않고 빨간색 에러 메시지를 그대로 표시
+    # [버그 수정 완료] 에러 메시지가 들어오면 0억으로 숨기지 않고 빨간 글씨로 띄워줍니다.
     def format_trend(val):
         val_str = str(val).strip()
-        if "차단" in val_str or "오류" in val_str or "실패" in val_str:
+        if not val_str.endswith("억"):
             return f'<span class="trend-val text-flat" style="font-size:0.85rem; color:#ef4444;">{val_str}</span>'
             
         try:
             raw_num = int(val_str.replace(",", "").replace("억", "").replace("+", "").strip())
-            
             if raw_num > 0:
                 return f'<span class="trend-val text-up">+{raw_num:,}억</span>'
             elif raw_num < 0:
