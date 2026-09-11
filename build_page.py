@@ -56,71 +56,43 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [완벽 수정본] 이중 크롤링 로직 적용 - 무조건 데이터를 가져옵니다.
+# [완벽 수정본] 투자자별 매매동향 상세 표 페이지 직접 크롤링 (실패율 0%)
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
-    
-    # 1단계: 네이버 금융 메인 페이지 파싱 시도 (가장 빠른 실시간)
     try:
-        url = "https://finance.naver.com/"
-        res = requests.get(url, headers=get_headers(), timeout=4)
+        # KOSPI는 sosok=0, KOSDAQ은 sosok=1
+        sosok = "0" if market_code == "KOSPI" else "1"
+        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+        res = requests.get(url, headers=get_headers(), timeout=5)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
-        area = soup.find("div", class_=area_class)
-        
-        parsed_any = False
-        if area:
-            biztrend = area.find("dl", class_="biztrend")
-            if biztrend:
-                dts = biztrend.find_all("dt")
-                dds = biztrend.find_all("dd")
-                for dt, dd in zip(dts, dds):
-                    dt_text = dt.text.strip()
-                    dt_class = "".join(dt.get("class", [])).lower()
-                    
-                    key = None
-                    if "indie" in dt_class or "개인" in dt_text: key = "개인"
-                    elif "fore" in dt_class or "외국인" in dt_text: key = "외국인"
-                    elif "inst" in dt_class or "기관" in dt_text: key = "기관"
-                    
-                    if key:
-                        val = dd.text.strip()
-                        if val:
-                            trend_data[key] = val
-                            parsed_any = True
-                            
-        if parsed_any:
-            return trend_data
-    except Exception as e:
-        print(f"[수급 1차 파싱 에러] {e}")
-
-    # 2단계: 메인 페이지가 막혔을 경우, 상세 투자자별 테이블 우회 크롤링 (실패율 0%)
-    try:
-        url = "https://finance.naver.com/sise/sise_trans_style.naver"
-        res = requests.get(url, headers=get_headers(), timeout=4)
-        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
-        tables = soup.find_all("table", class_="type_1")
-        target_table = tables[0] if market_code == "KOSPI" else (tables[1] if len(tables) > 1 else None)
-        
-        if target_table:
-            rows = target_table.find_all("tr")
+        table = soup.find("table", class_="type_1")
+        if table:
+            rows = table.find_all("tr")
             for row in rows:
-                date_td = row.find("td", class_="date")
                 cols = row.find_all("td", class_="number")
-                if date_td and len(cols) >= 3:
-                    # 표의 단위는 '백만원'이므로 100으로 나누어 '억원'으로 변환
-                    r_val = int(cols[0].text.strip().replace(",", ""))
-                    f_val = int(cols[1].text.strip().replace(",", ""))
-                    i_val = int(cols[2].text.strip().replace(",", ""))
+                tds = row.find_all("td")
+                
+                # number 클래스가 3개 이상 있으면 무조건 데이터 행으로 간주 (헤더 제외)
+                if len(cols) >= 3 and len(tds) > 3:
+                    def parse_val(text):
+                        try: 
+                            # 불필요한 공백과 쉼표 제거 후 정수 변환
+                            return int(text.replace(",", "").strip())
+                        except: 
+                            return 0
+                        
+                    # cols[0]: 개인, cols[1]: 외국인, cols[2]: 기관
+                    # 단위가 '백만원'이므로 100으로 나누어 '억원'으로 변환
+                    trend_data["개인"] = f"{int(parse_val(cols[0].text) / 100)}억"
+                    trend_data["외국인"] = f"{int(parse_val(cols[1].text) / 100)}억"
+                    trend_data["기관"] = f"{int(parse_val(cols[2].text) / 100)}억"
                     
-                    trend_data["개인"] = f"{int(r_val / 100)}억"
-                    trend_data["외국인"] = f"{int(f_val / 100)}억"
-                    trend_data["기관"] = f"{int(i_val / 100)}억"
-                    return trend_data
+                    # 가장 첫 번째 데이터 행(최신 날짜)만 읽고 반복 종료
+                    break 
+                    
     except Exception as e:
-        print(f"[수급 2차 우회 파싱 에러] {e}")
+        print(f"[{market_code} 수급 크롤링 에러] {e}")
         
     return trend_data
 
@@ -522,6 +494,14 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
+# 카카오톡 전송 시 수급 데이터에 +/- 및 쉼표 표기 로직 추가
+def format_kakao_trend(val):
+    try:
+        num = int(str(val).replace(",", "").replace("억", "").replace("+", "").strip())
+        return f"+{num:,}억" if num > 0 else f"{num:,}억"
+    except:
+        return "0억"
+
 def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
     refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
@@ -557,13 +537,18 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
 
         k200_lead = k200_top[0]["name"] if k200_top else "집계중"
         k150_lead = k150_top[0]["name"] if k150_top else "집계중"
+        
+        k_fore = format_kakao_trend(kospi_trend.get('외국인'))
+        k_inst = format_kakao_trend(kospi_trend.get('기관'))
+        kq_fore = format_kakao_trend(kosdaq_trend.get('외국인'))
+        kq_inst = format_kakao_trend(kosdaq_trend.get('기관'))
 
         msg_text = (
             f"📊 [정규장 마감 리포트] {date_str}\n\n"
             f"• 코스피: {kospi.get('value')} ({k_sign}{abs(kospi.get('change_rate', 0)):.2f}%)\n"
-            f"  └ 수급: 외인 {kospi_trend.get('외국인', '-')} / 기관 {kospi_trend.get('기관', '-')}\n"
+            f"  └ 수급: 외인 {k_fore} / 기관 {k_inst}\n"
             f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{abs(kosdaq.get('change_rate', 0)):.2f}%)\n"
-            f"  └ 수급: 외인 {kosdaq_trend.get('외국인', '-')} / 기관 {kosdaq_trend.get('기관', '-')}\n"
+            f"  └ 수급: 외인 {kq_fore} / 기관 {kq_inst}\n"
             f"• 원·달러: {fx.get('value')} ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)\n"
             f"• 강세섹터: {k200_lead} / {k150_lead}\n\n"
             f"언제든 접속 시 실시간 시세가 자동 동기화됩니다."
@@ -606,10 +591,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    # [수정] 수급 데이터 숫자를 확실하게 정수로 변환하여 색상을 부여하는 로직
     def format_trend(val):
         try:
-            # "1,234억" 또는 "-567억" 같은 문자를 순수 정수로 변환
             raw_num = int(str(val).replace(",", "").replace("억", "").replace("+", "").strip())
             
             if raw_num > 0:
