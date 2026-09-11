@@ -57,7 +57,6 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """구글 API 에러 메시지에 맞춰 최신 gemini-3.6-flash 모델 적용"""
     if not API_KEY:
         return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다."
     
@@ -85,7 +84,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     """
     
     try:
-        # 에러 메시지 지시대로 최신 권장 모델인 gemini-3.6-flash 사용
         model = genai.GenerativeModel('gemini-3.6-flash')
         response = model.generate_content(prompt)
         if response and hasattr(response, 'text') and response.text:
@@ -137,7 +135,8 @@ def fetch_real_news(keyword, stock_code=""):
         except: pass
     
     candidates.sort(key=lambda x: x["score"], reverse=True)
-    return candidates[:2]
+    # 기존 1개에서 3개까지 노출되도록 범위 수정
+    return candidates[:3]
 
 def get_exchange_rate():
     try:
@@ -259,7 +258,6 @@ def get_jpy_krw_rate():
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_index_data_robust(name, key, mobile_code, pc_code):
-    """네이버 PC Sise Index 페이지를 완벽하게 크롤링하는 무적 로직"""
     try:
         url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
         res = requests.get(url, headers=get_headers(), timeout=3)
@@ -274,13 +272,11 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
             }
     except: pass
     
-    # 모바일 API 실패 시 (특히 코스닥 150) 네이버 PC 금융 지수 페이지 직접 타격
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
         res = requests.get(url, headers=get_headers(), timeout=3)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        # HTML 태그 종류와 무관하게 ID로 정확히 값 추적
         val_el = soup.find(id="now_value")
         change_el = soup.find(id="change_value_and_rate")
         
@@ -291,7 +287,6 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
             is_up = "red01" in str(change_el) or "+" in change_text
             is_down = "nv01" in str(change_el) or "-" in change_text
             
-            # 특수기호 모두 제거하고 순수 숫자와 소수점만 추출
             nums = re.findall(r'[\d\.]+', change_text)
             c_val = nums[0] if len(nums) > 0 else "0"
             c_rate = nums[1] if len(nums) > 1 else "0"
@@ -311,8 +306,8 @@ def get_market_indices():
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
-    # 코스닥 150의 PC 웹페이지 고유 코드는 '201' 입니다.
-    results.append(get_index_data_robust("코스닥 150", "KOSDAQ150", "KOSDAQ150", "201"))
+    # 코스닥 150 삭제 후 코스피200선물 추가 (네이버 PC 코드는 FUP)
+    results.append(get_index_data_robust("코스피200선물", "KPI200F", "KPI200F", "FUP"))
     
     results.append(get_exchange_rate())
     results.append(get_us_10y_yield())
@@ -495,7 +490,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
-            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])[:1]])
+            
+            # 뉴스 항목을 최대 3개까지 가져오도록 변경 [:3]
+            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])[:3]])
             
             html += f"""
             <div class="sector-item">
@@ -540,7 +537,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
         
-        .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; border-left: 3px solid #3b82f6; font-weight: 500; }}
+        .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }}
         .news-link {{ color: #1d4ed8; text-decoration: none; }}
         .news-link:hover {{ text-decoration: underline; }}
         
@@ -582,11 +579,7 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
-    # 1. AI 주식시장 전체 시황 분석 (gemini-3.6-flash 단일 모델 호출)
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
-    # 2. HTML 화면 그리기
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
-    
-    # 3. 카카오톡 알림 발송
     send_kakao_alert(indices, k200_top, k150_top)
