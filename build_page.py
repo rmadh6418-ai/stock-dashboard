@@ -135,8 +135,24 @@ def fetch_real_news(keyword, stock_code=""):
         except: pass
     
     candidates.sort(key=lambda x: x["score"], reverse=True)
-    # 기존 1개에서 3개까지 노출되도록 범위 수정
-    return candidates[:3]
+    
+    # [수정] 중복 뉴스 완벽 필터링 (괄호, 특수문자 제거 후 순수 텍스트 비교)
+    unique_news = []
+    seen_titles = set()
+    for item in candidates:
+        # [핫종목], (종합) 등 괄호 안의 내용 모두 제거
+        clean_title = re.sub(r'\[.*?\]', '', item['title'])
+        clean_title = re.sub(r'\(.*?\)', '', clean_title)
+        # 띄어쓰기 및 특수문자 제거 (오로지 글자만 남김)
+        clean_title = re.sub(r'\W+', '', clean_title)
+        
+        if clean_title not in seen_titles:
+            seen_titles.add(clean_title)
+            unique_news.append(item)
+            if len(unique_news) == 3: # 겹치지 않는 뉴스 최대 3개까지 수집
+                break
+                
+    return unique_news
 
 def get_exchange_rate():
     try:
@@ -301,13 +317,43 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
     
     return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
+def get_kospi200_futures():
+    """[수정] 코스피 200 선물 전용 스크래핑 (네이버 검색 활용)"""
+    try:
+        url = f"https://search.naver.com/search.naver?query={urllib.parse.quote('코스피200선물')}"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        soup = BeautifulSoup(res.text, "html.parser")
+        
+        box = soup.find("div", class_=lambda x: x and "spt_con" in x)
+        if box:
+            val_text = box.find("strong", class_="t_num").text
+            val = re.search(r'[\d\,\.]+', val_text).group()
+            
+            ch_span = box.find("span", class_="n_ch")
+            r_span = box.find("span", class_="n_r")
+            
+            c_val = re.search(r'[\d\.]+', ch_span.text).group() if ch_span else "0"
+            c_rate = re.search(r'[\d\.]+', r_span.text).group() if r_span else "0"
+            
+            is_up = "up" in box.get("class", []) or (ch_span and "+" in ch_span.text)
+            is_down = "down" in box.get("class", []) or (ch_span and "-" in ch_span.text)
+            
+            return {
+                "name": "코스피200선물", "code_key": "KPI200F", "value": val,
+                "change_val": c_val,
+                "change_rate": abs(float(c_rate)),
+                "is_up": is_up, "is_down": is_down
+            }
+    except: pass
+    return {"name": "코스피200선물", "code_key": "KPI200F", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
+
 def get_market_indices():
     results = []
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
-    # 코스닥 150 삭제 후 코스피200선물 추가 (네이버 PC 코드는 FUP)
-    results.append(get_index_data_robust("코스피200선물", "KPI200F", "KPI200F", "FUP"))
+    # [수정] 코스피 200 선물은 가장 확실한 전용 함수로 대체합니다.
+    results.append(get_kospi200_futures())
     
     results.append(get_exchange_rate())
     results.append(get_us_10y_yield())
@@ -491,8 +537,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
             
-            # 뉴스 항목을 최대 3개까지 가져오도록 변경 [:3]
-            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])[:3]])
+            # [수정] 필터링된 고유 뉴스를 모두 출력
+            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])])
             
             html += f"""
             <div class="sector-item">
