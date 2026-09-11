@@ -68,7 +68,6 @@ SECTOR_MOMENTUM_THEMES = {
     "피팅·배관기자재": "조선·해양플랜트 및 EPC 배관 기자재 수주",
 }
 
-# 💡 핵심 방어 코드 1: 모바일 JSON 데이터를 안정적으로 가져오고, 막히면 프록시 우회
 def get_json(url):
     try:
         res = requests.get(url, headers=HEADERS, timeout=5)
@@ -76,8 +75,6 @@ def get_json(url):
             return res.json()
     except Exception:
         pass
-    
-    # GitHub Actions IP 차단 시 AllOrigins 프록시를 통해 우회 접속
     try:
         proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(url, safe='')}"
         res = requests.get(proxy_url, timeout=8)
@@ -87,7 +84,6 @@ def get_json(url):
         pass
     return None
 
-# 💡 핵심 방어 코드 2: PC 웹페이지 HTML을 긁어올 때 차단당하면 프록시 우회 후 인코딩 복원
 def get_html(url):
     try:
         res = requests.get(url, headers=HEADERS, timeout=5)
@@ -95,8 +91,6 @@ def get_html(url):
             return res.content.decode("euc-kr", "replace")
     except Exception:
         pass
-    
-    # GitHub Actions IP 차단 시 AllOrigins 프록시를 통해 우회 접속
     try:
         proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(url, safe='')}"
         res = requests.get(proxy_url, timeout=10)
@@ -218,6 +212,7 @@ def fetch_real_news(keyword, stock_code=""):
     return candidates[:2]
 
 
+# 💡 뻗지 않도록 4중 철벽 안전장치를 추가했습니다!
 def get_world_market_index(name, code_key, marketindexCd, unit=""):
     url = f"https://finance.naver.com/marketindex/worldDailyQuote.naver?marketindexCd={marketindexCd}"
     html = get_html(url)
@@ -225,24 +220,28 @@ def get_world_market_index(name, code_key, marketindexCd, unit=""):
         soup = BeautifulSoup(html, "html.parser")
         table = soup.find("table", class_="tbl_exchange")
         if table:
-            tr = table.find("tbody").find("tr")
-            tds = tr.find_all("td")
-            val = tds[0].text.strip()
-            diff = tds[2].text.strip()
-            rate = tds[3].text.strip()
-            
-            is_up = "상승" in str(tds[2])
-            is_down = "하락" in str(tds[2])
-            
-            return {
-                "name": name,
-                "code_key": code_key,
-                "value": f"{val}{unit}",
-                "change_val": diff,
-                "change_rate": float(rate.replace("%", "")) if rate != "-" else 0.0,
-                "is_up": is_up,
-                "is_down": is_down,
-            }
+            tbody = table.find("tbody")
+            if tbody:
+                tr = tbody.find("tr")
+                if tr:
+                    tds = tr.find_all("td")
+                    if len(tds) >= 4:
+                        val = tds[0].text.strip()
+                        diff = tds[2].text.strip()
+                        rate = tds[3].text.strip()
+                        
+                        is_up = "상승" in str(tds[2])
+                        is_down = "하락" in str(tds[2])
+                        
+                        return {
+                            "name": name,
+                            "code_key": code_key,
+                            "value": f"{val}{unit}",
+                            "change_val": diff,
+                            "change_rate": float(rate.replace("%", "")) if rate != "-" else 0.0,
+                            "is_up": is_up,
+                            "is_down": is_down,
+                        }
         
     return {
         "name": name, "code_key": code_key, "value": "-", 
@@ -341,11 +340,9 @@ def get_market_indices():
     return results
 
 
-# 💡 핵심 방어 코드 3: PC 웹페이지를 긁는 대신 차단이 없는 모바일 JSON API로 종목 정보를 수집
 def get_market_stocks():
     stocks = {}
     for market in ["KOSPI", "KOSDAQ"]:
-        # 상위 600개 종목을 빠르고 안정적으로 가져옵니다 (KOSPI 200, KOSDAQ 150 모두 커버 가능)
         for page in [1, 2, 3]:
             url = f"https://m.stock.naver.com/api/stocks/marketValue/{market}?page={page}&pageSize=200"
             data = get_json(url)
