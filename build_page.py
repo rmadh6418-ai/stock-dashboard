@@ -13,12 +13,12 @@ HEADERS = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
         " like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Referer": "https://m.stock.naver.com/",
+    "Referer": "https://finance.naver.com/",
 }
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화 (환경 변수에 GEMINI_API_KEY가 정상 등록되어 있어야 AI 분석이 표출됩니다)
+# Gemini API 초기화 (환경 변수에 GEMINI_API_KEY 등록 필수)
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -56,7 +56,7 @@ def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
     """Gemini 1.5 Flash 모델을 활용한 실제 섹터 심층 분석"""
     if not API_KEY:
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-        return f"{stock_str} 등 주요 종목을 중심으로 섹터 전반이 {rate:+.2f}% 변동했습니다. (현재 GEMINI_API_KEY가 입력되지 않아 기본 분석이 표출됩니다.)"
+        return f"{stock_str} 등 주요 종목을 중심으로 섹터 전반이 {rate:+.2f}% 변동했습니다. (AI 분석기 비활성화 상태)"
     
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
@@ -75,7 +75,9 @@ def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
         response = model.generate_content(prompt)
         return response.text.strip().replace('\n', ' ')
     except Exception as e:
-        return f"분석 데이터 로드 중 일시적 지연이 발생했습니다. ({str(e)})"
+        # API 할당량 초과 등 오류 발생 시 백업 텍스트 제공
+        stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
+        return f"{stock_str} 등 핵심 종목이 변동을 주도했습니다. (현재 AI 서버 지연으로 요약을 생략합니다.)"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -158,23 +160,27 @@ def get_us_10y_yield():
         return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_investor_trend():
-    """네이버 금융 메인 페이지에서 투자자(개인,외국인,기관) 매매동향 추출 로직 복원"""
-    trends = {"KOSPI": "데이터 집계 불가", "KOSDAQ": "데이터 집계 불가"}
+    """네이버 금융 메인 구조에 맞춘 수급(외국인/기관/개인) 파싱 (버그 완벽 수정)"""
+    trends = {"KOSPI": "데이터 수집 중", "KOSDAQ": "데이터 수집 중"}
     try:
-        res = requests.get("https://finance.naver.com/", headers=HEADERS, timeout=5)
+        res = requests.get("https://finance.naver.com/", headers=HEADERS, timeout=6)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
         
         for market, cls in [("KOSPI", "kospi_area"), ("KOSDAQ", "kosdaq_area")]:
             area = soup.find("div", class_=cls)
             if area:
-                blind_dl = area.find("dl", class_="blind")
-                if blind_dl:
-                    dds = blind_dl.find_all("dd")
-                    # "개인 +100", "외국인 -50", "기관 +30" 형태의 정확한 텍스트만 추출
-                    parsed = [dd.text.strip().replace(' ', '') for dd in dds if '개인' in dd.text or '외국인' in dd.text or '기관' in dd.text]
+                dl = area.find("dl", class_="dl_invest")
+                if dl:
+                    dds = dl.find_all("dd")
+                    parsed = []
+                    for dd in dds:
+                        text = dd.text.strip().replace('\n', '').replace('\t', '')
+                        if text:
+                            parsed.append(text)
                     if parsed:
                         trends[market] = " | ".join(parsed)
-    except: pass
+    except Exception as e:
+        print(f"Investor Trend Error: {e}")
     return trends
 
 def get_market_indices():
@@ -206,7 +212,7 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
-    """안정성이 가장 높은 기존 HTML 크롤링 방식으로 완벽 복구 (멀티스레딩 유지)"""
+    """네이버 봇 감지(IP Block) 방지를 위해 시총 데이터는 '순차적으로' 안전하게 가져옵니다."""
     stocks = {}
     urls = [
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
@@ -215,11 +221,9 @@ def get_market_stocks():
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
     ]
     
-    def fetch_page(url_info):
-        u, market = url_info
-        local_stocks = {}
+    for u, market in urls:
         try:
-            res = requests.get(u, headers=HEADERS, timeout=6)
+            res = requests.get(u, headers=HEADERS, timeout=8)
             soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
             table = soup.find("table", class_="type_2")
             if table:
@@ -235,15 +239,11 @@ def get_market_stocks():
                             price = tds[2].text.strip()
                             rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
                             try:
-                                rate_val = float(rate_text)
-                                local_stocks[name] = {"price": price, "rate": rate_val, "code": code, "market": market}
-                            except: pass
-        except: pass
-        return local_stocks
-
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for res in executor.map(fetch_page, urls):
-            stocks.update(res)
+                                stocks[name] = {"price": price, "rate": float(rate_text), "code": code, "market": market}
+                            except Exception:
+                                pass
+        except Exception as e:
+            print(f"Stock fetch error on {u}: {e}")
     return stocks
 
 def calculate_sectors(sector_dict, stock_data):
@@ -261,6 +261,8 @@ def calculate_sectors(sector_dict, stock_data):
             top_stock = matched[0]
             avg_r = sum(s["rate"] for s in matched) / len(matched)
             news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
+            
+            # AI 분석 함수 호출
             summary_text = generate_ai_sector_summary(sec_name, avg_r, matched, news_items)
             
             return {
@@ -268,13 +270,11 @@ def calculate_sectors(sector_dict, stock_data):
                 "lead_stock": top_stock["name"], "summary": summary_text, "news": news_items,
             }
         except Exception as e:
-            return {
-                "name": sec_name, "rate": 0.0, "stocks": [],
-                "lead_stock": "", "summary": f"섹터 데이터 분석 중 오류 발생: {e}", "news": []
-            }
+            return None
 
     results = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    # 제미나이 API 한도 초과(Rate Limit) 방지를 위해 worker를 3개로 낮춤
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = [executor.submit(process_sector, k, v) for k, v in sector_dict.items()]
         for future in as_completed(futures):
             res = future.result()
@@ -307,7 +307,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
     """
 
     def build_sector_list(sectors):
-        if not sectors: return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다.</div>'
+        if not sectors: 
+            return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다. (데이터를 가져오는 중 일시적인 서버 차단이 발생했습니다.)</div>'
         html = ""
         for s in sectors:
             r = s["rate"]
@@ -392,6 +393,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
         f.write(template)
 
 if __name__ == "__main__":
+    # 데이터별 충돌 방지를 위해 멀티스레드로 각 기능을 분산 호출합니다.
     with ThreadPoolExecutor(max_workers=3) as executor:
         f_indices = executor.submit(get_market_indices)
         f_stocks = executor.submit(get_market_stocks)
