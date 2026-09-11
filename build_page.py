@@ -56,7 +56,7 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [수정] 투자자별 매매동향 크롤링 함수 (div -> dl 태그로 변경)
+# [수정완료] 투자자별 매매동향 크롤링 함수 (div -> dl 태그로 변경)
 def get_investor_trend(market_code="KOSPI"):
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
@@ -84,12 +84,6 @@ def get_investor_trend(market_code="KOSPI"):
     except Exception as e:
         print(f"[{market_code} 수급 크롤링 에러] {e}")
         return {"개인": "-", "외국인": "-", "기관": "-"}
-            if key not in trend_data:
-                trend_data[key] = "0억"
-                
-        return trend_data
-    except Exception:
-        return {"개인": "-", "외국인": "-", "기관": "-"}
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
     if not API_KEY:
@@ -101,7 +95,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
     
-    # [수정] 수급 데이터를 AI 프롬프트에 제공
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
     오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
@@ -490,7 +483,6 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-# [수정] 수급 데이터를 카카오톡 메시지에 포함
 def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
     refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
@@ -559,7 +551,6 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-# [수정] 수급 데이터 HTML 렌더링 추가
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, kospi_trend, kosdaq_trend):
     index_cards = ""
     for idx in indices:
@@ -576,7 +567,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    # 수급 데이터를 색상과 함께 예쁘게 포맷팅하는 내부 헬퍼 함수
     def format_trend(val):
         if val.startswith("-"): return f'<span class="trend-val text-down">{val}</span>'
         elif val in ["-", "0", "0억"]: return f'<span class="trend-val text-flat">{val}</span>'
@@ -628,7 +618,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }}
         .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }}
 
-        /* 수급 동향 UI 스타일 */
         .trend-wrap {{ display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }}
         .trend-box {{ flex: 1; min-width: 280px; background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .trend-title {{ font-weight: 800; font-size: 1.05rem; margin-bottom: 12px; text-align: center; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; }}
@@ -704,15 +693,11 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
-    # [신규 추가] 코스피/코스닥 투자자별 매매동향(수급) 가져오기
     kospi_trend = get_investor_trend("KOSPI")
     kosdaq_trend = get_investor_trend("KOSDAQ")
     
-    # AI 요약 함수에 수급 데이터를 파라미터로 넘겨줌
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend)
 
-    # HTML 렌더링에 수급 데이터 추가
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, kospi_trend, kosdaq_trend)
     
-    # 카카오톡 메시지에 수급 데이터 추가
     send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend)
