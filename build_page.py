@@ -56,25 +56,28 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [수정완료] 투자자별 매매동향 크롤링 함수 (div -> dl 태그로 변경)
+# [핵심 수정 완료] 네이버 금융 메인 페이지(finance.naver.com)에서 스크래핑하도록 완벽 변경
 def get_investor_trend(market_code="KOSPI"):
     try:
-        url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
+        url = "https://finance.naver.com/"
         res = requests.get(url, headers=get_headers(), timeout=4)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        # 핵심 원인 해결: 'div'가 아닌 'dl' 태그로 탐색
-        biztrend = soup.find("dl", class_="biztrend")
+        # 코스피와 코스닥 영역 분리 탐색
+        area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
+        area = soup.find("div", class_=area_class)
         
         trend_data = {}
-        if biztrend:
-            dts = biztrend.find_all("dt")
-            dds = biztrend.find_all("dd")
-            for dt, dd in zip(dts, dds):
-                investor = dt.text.strip()
-                value = dd.text.strip()
-                trend_data[investor] = value
-                
+        if area:
+            biztrend = area.find("dl", class_="biztrend")
+            if biztrend:
+                dts = biztrend.find_all("dt")
+                dds = biztrend.find_all("dd")
+                for dt, dd in zip(dts, dds):
+                    investor = dt.text.strip()
+                    value = dd.text.strip()
+                    trend_data[investor] = value
+                    
         # 크롤링 실패나 누락 대비 기본값 세팅
         for key in ["개인", "외국인", "기관"]:
             if key not in trend_data:
@@ -567,11 +570,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
+    # [핵심] 수급 데이터를 시각적으로 더 깔끔하게 처리하는 로직 추가
     def format_trend(val):
-        if val.startswith("-"): return f'<span class="trend-val text-down">{val}</span>'
-        elif val in ["-", "0", "0억"]: return f'<span class="trend-val text-flat">{val}</span>'
+        val_str = str(val).strip()
+        if not val_str or val_str in ["-", "0", "0억"]: 
+            return f'<span class="trend-val text-flat">0억</span>'
+            
+        if "-" in val_str: 
+            return f'<span class="trend-val text-down">{val_str}</span>'
         else:
-            display_val = f"+{val}" if val[0].isdigit() else val
+            display_val = f"+{val_str}" if val_str[0].isdigit() else val_str
             return f'<span class="trend-val text-up">{display_val}</span>'
 
     def build_sector_list(sectors):
@@ -693,6 +701,7 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
+    # 수정된 수급 함수 호출
     kospi_trend = get_investor_trend("KOSPI")
     kosdaq_trend = get_investor_trend("KOSDAQ")
     
