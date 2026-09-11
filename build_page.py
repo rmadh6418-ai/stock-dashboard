@@ -11,8 +11,6 @@ import google.generativeai as genai
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
@@ -58,92 +56,58 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [최종 완벽 해결] 조 단위 연산 오류 제거 및 이중 수집 안전망 설계
+# [궁극의 해결책] 차단당하는 API를 완전히 버리고, 가장 안정적인 네이버 표 데이터를 정밀 타격하여 긁어옵니다.
 def get_investor_trend(market_code="KOSPI"):
-    trend_data = {"개인": "수집대기", "외국인": "수집대기", "기관": "수집대기"}
-    
-    # 1. 1차 시도: 네이버 '투자자별 매매동향' 전용 테이블 (가장 확실한 소스)
+    trend_data = {"개인": "불러오는중", "외국인": "불러오는중", "기관": "불러오는중"}
     try:
+        # KOSPI는 0, KOSDAQ은 1
         sosok = "0" if market_code == "KOSPI" else "1"
         url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+        
         res = requests.get(url, headers=get_headers(), timeout=5)
         
         if res.status_code == 200:
             soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-            for tr in soup.find_all("tr"):
-                tds = tr.find_all("td")
-                if len(tds) >= 4:
-                    date_str = tds[0].get_text(strip=True)
-                    # "24.09.11" 같은 날짜 행이 아니면 빈칸으로 간주하고 무시
-                    if re.match(r'^\d{2,4}\.\d{2}\.\d{2}$', date_str):
-                        def safe_parse(node):
-                            s = node.get_text(strip=True)
-                            is_minus = "-" in s or "−" in s
-                            # 정규식으로 순수 숫자만 모조리 발라냄
-                            num_str = re.sub(r'[^\d]', '', s)
-                            if not num_str: return 0
-                            # 테이블의 단위가 '백만원'이므로 100을 나누면 '억원'이 됨
-                            val = int(num_str) // 100
-                            return -val if is_minus else val
-                            
-                        ind = safe_parse(tds[1])
-                        forgn = safe_parse(tds[2])
-                        inst = safe_parse(tds[3])
-                        
-                        trend_data["개인"] = f"{ind}억"
-                        trend_data["외국인"] = f"{forgn}억"
-                        trend_data["기관"] = f"{inst}억"
-                        return trend_data
-    except Exception as e:
-        trend_data["개인"] = f"표에러:{str(e)[:10]}"
-
-    # 2. 2차 시도: 1차가 막혔을 경우 메인 지수 페이지 텍스트 유연 파싱 (조 단위 처리 포함)
-    try:
-        url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-            found_any = False
             
-            for dt in soup.find_all(["dt", "th", "td", "span", "div"]):
-                txt = dt.get_text(strip=True)
-                if txt in ["개인", "외국인", "기관", "기관계"]:
-                    val_node = dt.find_next_sibling(["dd", "td", "span", "div"])
-                    if val_node:
-                        val_str = val_node.get_text(strip=True)
-                        if "억" not in val_str and "조" not in val_str:
-                            continue
-                            
-                        is_minus = "-" in val_str or "−" in val_str or "하락" in val_str
-                        clean_str = re.sub(r'[^\d조]', '', val_str)
-                        
-                        num = 0
-                        # 조 단위 문자열이 나타났을 때 발생하는 에러 원천 차단
-                        if "조" in clean_str:
-                            parts = clean_str.split("조")
-                            jo = int(parts[0]) if parts[0] else 0
-                            eok = int(parts[1]) if len(parts) > 1 and parts[1] else 0
-                            num = (jo * 10000) + eok
-                        else:
-                            num = int(clean_str) if clean_str else 0
-                            
-                        key = "기관" if "기관" in txt else txt
-                        trend_data[key] = f"{-num if is_minus else num}억"
-                        found_any = True
-                        
-            if found_any:
-                return trend_data
+            # 페이지 내 모든 행(tr)을 뒤집니다.
+            for tr in soup.find_all("tr"):
+                # 날짜가 적힌 칸(td class="date")을 찾습니다.
+                date_td = tr.find("td", class_="date")
                 
+                if date_td:
+                    date_text = date_td.text.strip()
+                    # 정규식: "24.05.10" 혹은 "2024.05.10" 같이 진짜 날짜가 쓰여진 줄만 통과! (빈 줄 완벽 차단)
+                    if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
+                        num_tds = tr.find_all("td", class_="number")
+                        
+                        # 개인, 외국인, 기관 3칸이 정상적으로 존재하면 데이터 추출
+                        if len(num_tds) >= 3:
+                            def parse_num(txt):
+                                # 네이버 특유의 가짜 마이너스, 쉼표, 공백을 모두 날리고 진짜 숫자만 추출
+                                clean = re.sub(r'[^\d\-]', '', txt.replace(',', '').replace('−', '-').replace('—', '-'))
+                                if not clean or clean == '-': return 0
+                                return int(clean) // 100  # 원본 단위가 '백만원'이므로 100으로 나눠 '억원'으로 변환
+                            
+                            ind = parse_num(num_tds[0].text)
+                            forgn = parse_num(num_tds[1].text)
+                            inst = parse_num(num_tds[2].text)
+                            
+                            # 데이터가 무사히 뽑혔으면 저장 후 즉시 리턴
+                            trend_data["개인"] = f"{ind}억"
+                            trend_data["외국인"] = f"{forgn}억"
+                            trend_data["기관"] = f"{inst}억"
+                            return trend_data
+        else:
+            trend_data["개인"] = f"접속오류({res.status_code})"
+            trend_data["외국인"] = "오류"
+            trend_data["기관"] = "오류"
+            
     except Exception as e:
-        trend_data["외국인"] = f"텍스트에러:{str(e)[:10]}"
-
-    # 3. 최후 방어선: 데이터 수집 실패 이유를 에러 메시지로 넘겨 화면에 표기
-    if trend_data["개인"] == "수집대기":
-        trend_data["개인"] = "차단됨/서버거부"
-        trend_data["외국인"] = "차단됨/서버거부"
-        trend_data["기관"] = "차단됨/서버거부"
-
+        trend_data["개인"] = "크롤링 실패"
+        trend_data["외국인"] = "오류"
+        trend_data["기관"] = "오류"
+        print(f"[{market_code} 수급 에러] {e}")
+        
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -544,7 +508,7 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-# 카카오톡 텍스트 파싱을 유연하게 처리
+# 카카오톡 문자열 파싱 (에러 메시지는 그대로 출력)
 def format_kakao_trend(val):
     val_str = str(val).strip()
     if not val_str.endswith("억"):
@@ -644,7 +608,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    # [수정] 수급 데이터 숫자를 예외처리하여 0억으로 덮어씌우는 것을 방지
+    # [버그 수정 완료] 에러 메시지가 들어오면 0억으로 숨기지 않고 빨간 글씨로 띄워줍니다.
     def format_trend(val):
         val_str = str(val).strip()
         if not val_str.endswith("억"):
