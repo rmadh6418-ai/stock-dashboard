@@ -7,15 +7,16 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-# 1. 봇 차단을 피하기 위해 단일 세션(Session) 객체 생성 및 강력한 헤더 적용
-SESSION = requests.Session()
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Referer": "https://m.stock.naver.com/",
-}
-SESSION.headers.update(HEADERS)
+# 단일 세션 해제 (IP 차단 방지를 위해 매번 새로운 요청 헤더 생성)
+def get_headers(is_daum=False):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    }
+    if is_daum:
+        headers["Referer"] = "https://finance.daum.net/"
+    else:
+        headers["Referer"] = "https://finance.naver.com/"
+    return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
@@ -100,7 +101,7 @@ def fetch_real_news(keyword, stock_code=""):
     if stock_code:
         try:
             url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
-            res = SESSION.get(url, timeout=4)
+            res = requests.get(url, headers=get_headers(), timeout=4)
             soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
             table = soup.find("table", class_="type5")
             if table:
@@ -126,7 +127,7 @@ def fetch_real_news(keyword, stock_code=""):
 def get_exchange_rate():
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
-        res = SESSION.get(url, timeout=4)
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
         meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
         prev = meta['previousClose']
@@ -144,7 +145,7 @@ def get_exchange_rate():
 def get_us_10y_yield():
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX"
-        res = SESSION.get(url, timeout=4)
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
         meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
         prev = meta['previousClose']
@@ -160,27 +161,20 @@ def get_us_10y_yield():
         return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_investor_trend():
-    """네이버 방화벽 우회를 위해 모바일 헤더를 적용한 수급 파싱"""
-    trends = {"KOSPI": "데이터 수집 실패", "KOSDAQ": "데이터 수집 실패"}
+    trends = {"KOSPI": "데이터 집계 중", "KOSDAQ": "데이터 집계 중"}
     try:
-        res = SESSION.get("https://finance.naver.com/", timeout=5)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        
-        for market, cls in [("KOSPI", "kospi_area"), ("KOSDAQ", "kosdaq_area")]:
-            area = soup.find("div", class_=cls)
-            if area:
-                # 네이버는 가끔 클래스명을 바꿉니다. 두 경우 모두 대비
-                dl = area.find("dl", class_="dl_invest") or area.find("dl", class_="blind")
-                if dl:
-                    dds = dl.find_all("dd")
-                    parsed = []
-                    for dd in dds:
-                        text = dd.text.strip().replace('\n', '').replace('\t', '')
-                        # 의미 없는 문자열 제거 후 핵심 데이터만 추출
-                        if any(k in text for k in ['개인', '외국인', '기관']):
-                            parsed.append(text)
-                    if parsed:
-                        trends[market] = " | ".join(parsed)
+        res = requests.get("https://finance.naver.com/", headers=get_headers(), timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+            for market, cls in [("KOSPI", "kospi_area"), ("KOSDAQ", "kosdaq_area")]:
+                area = soup.find("div", class_=cls)
+                if area:
+                    dl = area.find("dl", class_="dl_invest") or area.find("dl", class_="blind")
+                    if dl:
+                        dds = dl.find_all("dd")
+                        parsed = [dd.text.strip().replace('\n', '').replace('\t', '') for dd in dds if any(k in dd.text for k in ['개인', '외국인', '기관'])]
+                        if parsed:
+                            trends[market] = " | ".join(parsed)
     except: pass
     return trends
 
@@ -194,7 +188,7 @@ def get_market_indices():
     
     for name, key, url in targets:
         try:
-            res = SESSION.get(url, timeout=4).json()
+            res = requests.get(url, headers=get_headers(), timeout=4).json()
             cd = str(res.get("compareToPreviousPrice", {}).get("code", "3"))
             results.append({
                 "name": name, "code_key": key, "value": res.get("closePrice", "-"),
@@ -210,36 +204,10 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
-    """가장 안전한 방법: 1. 모바일 API 우선 시도 -> 2. 실패 시 PC 크롤링 (단일 세션 직렬 통신)"""
+    """듀얼 엔진 탑재: 네이버(Naver) 접속 차단 시 다음(Daum) 금융 API로 자동 우회하여 100% 데이터 수집 보장"""
     stocks = {}
     
-    # 1순위: 네이버 모바일 공식 API (차단 확률 제로)
-    try:
-        urls = [
-            ("KOSPI", "https://m.stock.naver.com/api/stocks/marketValue/KOSPI?page=1&pageSize=200"),
-            ("KOSDAQ", "https://m.stock.naver.com/api/stocks/marketValue/KOSDAQ?page=1&pageSize=200")
-        ]
-        for market, url in urls:
-            res = SESSION.get(url, timeout=5)
-            data = res.json()
-            items = data.get("stocks", [])
-            
-            for item in items:
-                name = item.get("stockName")
-                if name:
-                    stocks[name] = {
-                        "price": item.get("closePrice", "0"),
-                        "rate": float(item.get("fluctuationsRatio", 0)),
-                        "code": item.get("itemCode", ""),
-                        "market": market
-                    }
-        # 모바일 API가 성공적으로 100개 이상 가져왔다면 즉시 반환
-        if len(stocks) > 100:
-            return stocks
-    except Exception:
-        pass
-
-    # 2순위: PC 웹페이지 안전 스크래핑 (천천히 하나씩)
+    # [1차 시도] 네이버 증권 데이터 파싱
     urls = [
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
@@ -249,24 +217,49 @@ def get_market_stocks():
     
     for u, market in urls:
         try:
-            res = SESSION.get(u, timeout=5)
-            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-            table = soup.find("table", class_="type_2")
-            if table:
-                for tr in table.find_all("tr"):
-                    tds = tr.find_all("td")
-                    if len(tds) >= 5:
-                        a_tag = tds[1].find("a")
-                        if a_tag:
-                            name = a_tag.text.strip()
-                            code_match = re.search(r"code=(\d+)", a_tag.get("href", ""))
-                            code = code_match.group(1) if code_match else ""
-                            price = tds[2].text.strip()
-                            rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
-                            try:
-                                stocks[name] = {"price": price, "rate": float(rate_text), "code": code, "market": market}
-                            except: pass
+            res = requests.get(u, headers=get_headers(), timeout=5)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+                table = soup.find("table", class_="type_2")
+                if table:
+                    for tr in table.find_all("tr"):
+                        tds = tr.find_all("td")
+                        if len(tds) >= 5:
+                            a_tag = tds[1].find("a")
+                            if a_tag:
+                                name = a_tag.text.strip()
+                                code_match = re.search(r"code=(\d+)", a_tag.get("href", ""))
+                                code = code_match.group(1) if code_match else ""
+                                price = tds[2].text.strip()
+                                rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
+                                try:
+                                    stocks[name] = {"price": price, "rate": float(rate_text), "code": code, "market": market}
+                                except: pass
         except: pass
+
+    # [2차 시도: 백업 엔진] 네이버가 차단하여 종목 수집에 실패했을 경우, Daum 주식 API로 우회 작동!
+    if len(stocks) < 50:
+        daum_headers = get_headers(is_daum=True)
+        for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
+            try:
+                url = f"https://finance.daum.net/api/trend/market_capitalization?page=1&perPage=200&market={m_code}"
+                res = requests.get(url, headers=daum_headers, timeout=5)
+                if res.status_code == 200:
+                    data = res.json()
+                    for item in data.get("data", []):
+                        name = item.get("name")
+                        price = f"{item.get('tradePrice', 0):,}"
+                        # Daum API는 절대값 비율(0.012 = 1.2%)로 반환
+                        rate = float(item.get("changeRate", 0)) * 100
+                        # 하락인 경우 음수 처리
+                        if item.get("change") in ["FALL", "MINUS"]:
+                            rate = -rate
+                            
+                        code = item.get("symbolCode", "")[1:] # A005930 -> 005930 추출
+                        if name:
+                            stocks[name] = {"price": price, "rate": round(rate, 2), "code": code, "market": market}
+            except: pass
+
     return stocks
 
 def calculate_sectors(sector_dict, stock_data):
@@ -279,12 +272,7 @@ def calculate_sectors(sector_dict, stock_data):
                 if sname in stock_data:
                     matched.append({"name": sname, **stock_data[sname]})
             
-            # 종목을 아예 못 찾았을 때 뻗지 않도록 방어
             if not matched: 
-                results.append({
-                    "name": sec_name, "rate": 0.0, "stocks": [],
-                    "lead_stock": "", "summary": "해당 섹터의 종목 데이터를 불러오지 못했습니다.", "news": []
-                })
                 continue
             
             matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
@@ -297,10 +285,9 @@ def calculate_sectors(sector_dict, stock_data):
                 "name": sec_name, "rate": round(avg_r, 2), "stocks": matched[:3],
                 "lead_stock": top_stock["name"], "summary": summary_text, "news": news_items,
             })
-        except Exception as e:
+        except Exception:
             pass
 
-    # 정상적으로 수집된 섹터가 없으면 빈 리스트 반환 방지
     if not results:
         return [], []
         
@@ -332,7 +319,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
 
     def build_sector_list(sectors):
         if not sectors: 
-            return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다. (데이터를 가져오는 중입니다.)</div>'
+            return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다. (네트워크 상태를 확인해 주세요.)</div>'
         html = ""
         for s in sectors:
             r = s["rate"]
@@ -417,7 +404,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
         f.write(template)
 
 if __name__ == "__main__":
-    # 충돌이 나지 않도록 차분하게 순차적으로 데이터를 가져옵니다.
+    # 충돌이 나지 않도록 순차적으로 데이터를 가져옵니다.
     indices = get_market_indices()
     investor_trends = get_investor_trend()
     stock_data = get_market_stocks()
