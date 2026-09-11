@@ -18,7 +18,7 @@ HEADERS = {
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화 (환경 변수에 GEMINI_API_KEY 등록 필요)
+# Gemini API 초기화 (환경 변수에 GEMINI_API_KEY가 정상 등록되어 있어야 AI 분석이 표출됩니다)
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -53,11 +53,10 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
-    """Gemini API를 활용한 섹터 심층 분석"""
+    """Gemini 1.5 Flash 모델을 활용한 실제 섹터 심층 분석"""
     if not API_KEY:
-        # 구문 오류 수정됨: `for s in matched_stocks[:2]`
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-        return f"{stock_str} 등 주요 종목을 중심으로 섹터 전반이 {rate:+.2f}% 변동했습니다. (AI 분석기 비활성화)"
+        return f"{stock_str} 등 주요 종목을 중심으로 섹터 전반이 {rate:+.2f}% 변동했습니다. (현재 GEMINI_API_KEY가 입력되지 않아 기본 분석이 표출됩니다.)"
     
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
@@ -70,7 +69,7 @@ def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
         - 섹터 내 주요 변동 종목: {stock_info}
         - 관련 주요 언론 보도: {news_info}
         
-        위 데이터를 바탕으로 해당 섹터의 당일 주가 움직임 원인과 핵심 모멘텀을 펀드매니저 시각에서 2~3문장으로 분석하라.
+        위 데이터를 바탕으로 해당 섹터의 당일 주가 움직임 원인과 핵심 모멘텀을 전문 펀드매니저 시각에서 2~3문장으로 분석하라.
         마크다운이나 특수문자를 제외하고 단답형 평문으로만 작성하라.
         """
         response = model.generate_content(prompt)
@@ -99,7 +98,7 @@ def fetch_real_news(keyword, stock_code=""):
     if stock_code:
         try:
             url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
-            res = requests.get(url, headers=HEADERS, timeout=3)
+            res = requests.get(url, headers=HEADERS, timeout=4)
             soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
             table = soup.find("table", class_="type5")
             if table:
@@ -123,7 +122,6 @@ def fetch_real_news(keyword, stock_code=""):
     return candidates[:2]
 
 def get_exchange_rate():
-    """야후 파이낸스를 이용한 원/달러 환율 수집 (스크래핑 차단 우회)"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -160,19 +158,22 @@ def get_us_10y_yield():
         return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_investor_trend():
-    """수급 데이터 예외 처리 강화"""
-    trends = {"KOSPI": "집계 지연 (일시적 오류)", "KOSDAQ": "집계 지연 (일시적 오류)"}
+    """네이버 금융 메인 페이지에서 투자자(개인,외국인,기관) 매매동향 추출 로직 복원"""
+    trends = {"KOSPI": "데이터 집계 불가", "KOSDAQ": "데이터 집계 불가"}
     try:
-        res = requests.get("https://finance.naver.com/", headers=HEADERS, timeout=4)
+        res = requests.get("https://finance.naver.com/", headers=HEADERS, timeout=5)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        for market in ["KOSPI", "KOSDAQ"]:
-            cls_name = "kospi_area" if market == "KOSPI" else "kosdaq_area"
-            area = soup.find("div", class_=cls_name)
+        
+        for market, cls in [("KOSPI", "kospi_area"), ("KOSDAQ", "kosdaq_area")]:
+            area = soup.find("div", class_=cls)
             if area:
-                dl = area.find("dl", class_="dl_invest")
-                if dl:
-                    dds = [dd.text.strip().replace('\n', '') for dd in dl.find_all("dd")]
-                    trends[market] = " | ".join(dds)
+                blind_dl = area.find("dl", class_="blind")
+                if blind_dl:
+                    dds = blind_dl.find_all("dd")
+                    # "개인 +100", "외국인 -50", "기관 +30" 형태의 정확한 텍스트만 추출
+                    parsed = [dd.text.strip().replace(' ', '') for dd in dds if '개인' in dd.text or '외국인' in dd.text or '기관' in dd.text]
+                    if parsed:
+                        trends[market] = " | ".join(parsed)
     except: pass
     return trends
 
@@ -205,30 +206,43 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
-    """BeautifulSoup 대신 네이버 모바일 공식 JSON API 사용 (안정성 및 속도 극대화)"""
+    """안정성이 가장 높은 기존 HTML 크롤링 방식으로 완벽 복구 (멀티스레딩 유지)"""
     stocks = {}
-    targets = [
-        ("KOSPI", "https://m.stock.naver.com/api/stocks/marketValue/KOSPI?page=1&pageSize=200"),
-        ("KOSDAQ", "https://m.stock.naver.com/api/stocks/marketValue/KOSDAQ?page=1&pageSize=200")
+    urls = [
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
+        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
     ]
     
-    def fetch_api(target):
-        market, url = target
+    def fetch_page(url_info):
+        u, market = url_info
         local_stocks = {}
         try:
-            res = requests.get(url, headers=HEADERS, timeout=5)
-            for item in res.json().get("stocks", []):
-                name = item.get("stockName")
-                code = item.get("itemCode")
-                price = item.get("closePrice", "0")
-                rate_val = float(item.get("fluctuationsRatio", 0))
-                local_stocks[name] = {"price": price, "rate": rate_val, "code": code, "market": market}
-        except Exception as e:
-            print(f"[WARN] {market} 시총 데이터 수집 실패: {e}")
+            res = requests.get(u, headers=HEADERS, timeout=6)
+            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+            table = soup.find("table", class_="type_2")
+            if table:
+                for tr in table.find_all("tr"):
+                    tds = tr.find_all("td")
+                    if len(tds) >= 5:
+                        a_tag = tds[1].find("a")
+                        if a_tag:
+                            name = a_tag.text.strip()
+                            href = a_tag.get("href", "")
+                            code_match = re.search(r"code=(\d+)", href)
+                            code = code_match.group(1) if code_match else ""
+                            price = tds[2].text.strip()
+                            rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
+                            try:
+                                rate_val = float(rate_text)
+                                local_stocks[name] = {"price": price, "rate": rate_val, "code": code, "market": market}
+                            except: pass
+        except: pass
         return local_stocks
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        for res in executor.map(fetch_api, targets):
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for res in executor.map(fetch_page, urls):
             stocks.update(res)
     return stocks
 
@@ -254,7 +268,6 @@ def calculate_sectors(sector_dict, stock_data):
                 "lead_stock": top_stock["name"], "summary": summary_text, "news": news_items,
             }
         except Exception as e:
-            # 개별 섹터 크래시 방어 로직 추가
             return {
                 "name": sec_name, "rate": 0.0, "stocks": [],
                 "lead_stock": "", "summary": f"섹터 데이터 분석 중 오류 발생: {e}", "news": []
@@ -294,7 +307,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
     """
 
     def build_sector_list(sectors):
-        if not sectors: return '<div class="sector-item">데이터를 집계 중입니다.</div>'
+        if not sectors: return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다.</div>'
         html = ""
         for s in sectors:
             r = s["rate"]
