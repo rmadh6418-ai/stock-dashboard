@@ -9,11 +9,8 @@ import requests
 import google.generativeai as genai
 
 def get_headers(is_daum=False):
-    # 클라우드/깃허브 액션 등에서 차단당하지 않도록 헤더를 브라우저와 완벽히 동일하게 세팅
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
@@ -59,80 +56,81 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [완벽 해결] 날짜를 먼저 추적하여 공백(빈칸) 행을 완벽하게 걸러내는 2중 크롤링 로직
+# [최종 완벽 해결] 이중 안전장치: JSON API 통신 + 특수문자 마이너스 완벽 파싱
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
     
-    # 1. 완벽 방어형: sise_trans_style 직접 파싱 (클래스 무시, 날짜 기반 위치 탐색)
+    # 1. 1차 시도 (Daum JSON API 통신 - 가장 안정적)
+    try:
+        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
+        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        # Daum 방화벽 우회를 위한 특수 헤더
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://finance.daum.net/domestic/investors",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest"
+        }
+        res = requests.get(url, headers=headers, timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            items = data.get("data", [])
+            if items:
+                item = items[0]
+                # 단위가 '원'이므로 1억으로 나눈 뒤 정수로 변환 (// 연산자 버그 방지)
+                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
+                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
+                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
+                
+                if ind != 0 or forgn != 0 or inst != 0:
+                    trend_data["개인"] = f"{ind}억"
+                    trend_data["외국인"] = f"{forgn}억"
+                    trend_data["기관"] = f"{inst}억"
+                    return trend_data
+    except Exception as e:
+        print(f"[{market_code} Daum API Failed] {e}")
+
+    # 2. 2차 시도 (Naver HTML 강제 파싱 - 유니코드 마이너스 및 공백 버그 완벽 해결)
     try:
         sosok = "0" if market_code == "KOSPI" else "1"
         url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-        res = requests.get(url, headers=get_headers(), timeout=5)
+        res = requests.get(url, headers=get_headers(), timeout=4)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
         for tr in soup.find_all("tr"):
             tds = tr.find_all("td")
             if len(tds) >= 4:
                 date_str = tds[0].text.strip()
-                # 빈칸 행을 무시하고, 날짜 형식(예: 2026.09.11)이 맞는 진짜 데이터 행만 추적
+                # 빈 줄을 완벽하게 걸러내고, 날짜 형식이 적힌 줄만 핀포인트로 탐색
                 if re.match(r"^\d{2,4}[\./-]\d{2}[\./-]\d{2}$", date_str):
-                    try:
-                        ind_str = tds[1].text.strip().replace(",", "")
-                        forgn_str = tds[2].text.strip().replace(",", "")
-                        inst_str = tds[3].text.strip().replace(",", "")
-                        
-                        ind = int(ind_str) // 100 if ind_str else 0
-                        forgn = int(forgn_str) // 100 if forgn_str else 0
-                        inst = int(inst_str) // 100 if inst_str else 0
-                        
-                        if ind != 0 or forgn != 0 or inst != 0:
-                            trend_data["개인"] = f"{ind}억"
-                            trend_data["외국인"] = f"{forgn}억"
-                            trend_data["기관"] = f"{inst}억"
-                            return trend_data
-                    except:
-                        pass
-    except Exception as e:
-        print(f"[{market_code} 1차 수급 크롤링 실패] {e}")
-
-    # 2. 강력 우회형 (백업): 네이버 증권 메인 페이지 텍스트 직접 긁기
-    try:
-        url = "https://finance.naver.com/"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
-        area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
-        area = soup.find("div", class_=area_class)
-        if area:
-            for dt in area.find_all("dt"):
-                t = dt.text.strip()
-                if "개인" in t or "외국인" in t or "기관" in t:
-                    dd = dt.find_next_sibling("dd")
-                    if dd:
-                        val_str = dd.text.strip().replace(",", "").replace("억", "").replace("+", "")
+                    
+                    def parse_val(t):
                         try:
-                            v = 0
-                            if "조" in val_str:
-                                parts = val_str.replace(" ", "").split("조")
-                                is_minus = parts[0].startswith("-")
-                                jo = int(parts[0].replace("-", "")) if parts[0] not in ["", "-"] else 0
-                                uk = int(parts[1]) if len(parts) > 1 and parts[1] else 0
-                                v = (jo * 10000 + uk) * (-1 if is_minus else 1)
-                            else:
-                                v = int(val_str)
-                                
-                            if "개인" in t: trend_data["개인"] = f"{v}억"
-                            elif "외국인" in t: trend_data["외국인"] = f"{v}억"
-                            elif "기관" in t: trend_data["기관"] = f"{v}억"
+                            # 1단계: 보이지 않는 공백과 쉼표 등 완벽 제거
+                            clean_t = t.replace(",", "").replace("\xa0", "").strip()
+                            # 2단계: 네이버가 장난친 온갖 종류의 특수문자/유니코드 마이너스 기호를 진짜 '-'로 강제 변환
+                            clean_t = re.sub(r'[−—–‐‑‒—―]', '-', clean_t)
+                            # 3단계: 순수한 숫자와 부호만 추출
+                            m = re.search(r'[-+]?\d+', clean_t)
+                            if m:
+                                # 단위가 '백만원'이므로 100으로 나누어 억원 단위 세팅
+                                return int(int(m.group(0)) / 100)
+                            return 0
                         except:
-                            pass
-            
-            # 값이 하나라도 들어왔으면 성공으로 간주하고 리턴
-            if trend_data["개인"] != "0억" or trend_data["외국인"] != "0억":
-                return trend_data
-    except Exception as e:
-        print(f"[{market_code} 2차 수급 크롤링 실패] {e}")
+                            return 0
 
+                    ind = parse_val(tds[1].text)
+                    forgn = parse_val(tds[2].text)
+                    inst = parse_val(tds[3].text)
+                    
+                    if ind != 0 or forgn != 0 or inst != 0:
+                        trend_data["개인"] = f"{ind}억"
+                        trend_data["외국인"] = f"{forgn}억"
+                        trend_data["기관"] = f"{inst}억"
+                        return trend_data
+    except Exception as e:
+        print(f"[{market_code} Naver HTML Failed] {e}")
+        
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
