@@ -56,13 +56,15 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [신규 추가] 투자자별 매매동향 크롤링 함수
+# [수정] 투자자별 매매동향 크롤링 함수 (div -> dl 태그로 변경)
 def get_investor_trend(market_code="KOSPI"):
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
         res = requests.get(url, headers=get_headers(), timeout=4)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        biztrend = soup.find("div", class_="biztrend")
+        
+        # 핵심 원인 해결: 'div'가 아닌 'dl' 태그로 탐색
+        biztrend = soup.find("dl", class_="biztrend")
         
         trend_data = {}
         if biztrend:
@@ -75,6 +77,13 @@ def get_investor_trend(market_code="KOSPI"):
                 
         # 크롤링 실패나 누락 대비 기본값 세팅
         for key in ["개인", "외국인", "기관"]:
+            if key not in trend_data:
+                trend_data[key] = "0억"
+                
+        return trend_data
+    except Exception as e:
+        print(f"[{market_code} 수급 크롤링 에러] {e}")
+        return {"개인": "-", "외국인": "-", "기관": "-"}
             if key not in trend_data:
                 trend_data[key] = "0억"
                 
