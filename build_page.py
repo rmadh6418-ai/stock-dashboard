@@ -57,9 +57,9 @@ KOSDAQ150_SECTORS = {
 }
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
-    """주식시장 전체 동향 통합 AI 분석 (에러 추적 기능 추가)"""
+    """주식시장 전체 동향 통합 AI 분석 (구버전 라이브러리 완벽 대응)"""
     if not API_KEY:
-        return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (OS 환경변수 'GEMINI_API_KEY'를 확인해주세요.)"
+        return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다. (환경변수 'GEMINI_API_KEY'를 확인해주세요.)"
     
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -84,7 +84,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
     
-    models_to_try = ['gemini-1.5-flash', 'gemini-pro']
+    # 구버전 라이브러리 지원을 위해 gemini-1.0-pro 를 최후의 보루로 배치합니다.
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.0-pro']
     last_error = ""
     
     for model_name in models_to_try:
@@ -97,8 +98,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             last_error = str(e)
             continue
             
-    # 에러가 발생한 이유를 화면에 직접 출력하여 디버깅을 돕습니다.
-    return f"🚨 AI 호출 실패 (원인: {last_error}).\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+    # 에러 안내 및 파이썬 패키지 업데이트 지시 메시지
+    return f"🚨 AI 분석 실패: 파이썬 터미널에서 'pip install -U google-generativeai' 명령어로 라이브러리를 최신 버전으로 꼭 업데이트 해주세요! (에러 내용: {last_error})"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -280,34 +281,40 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
             }
     except: pass
     
-    # 2. 실패 시 네이버 PC 금융에서 직접 스크래핑 (특히 코스닥150은 PC 코드가 201임)
+    # 2. 실패 시 네이버 PC 금융에서 직접 스크래핑 (태그 이름 없이 고유 ID로 100% 탐색)
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
         res = requests.get(url, headers=get_headers(), timeout=4)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        val = soup.find("span", id="now_value").text.strip()
-        change_stat = soup.find("span", id="change_value_and_rate").text.strip()
         
-        is_up = "+" in change_stat or soup.find("span", class_="tah p11 red01") is not None
-        is_down = "-" in change_stat or soup.find("span", class_="tah p11 nv01") is not None
+        # <span>이나 <em> 여부에 관계없이 id="now_value"인 요소 자체를 잡음
+        val_el = soup.find(id="now_value")
+        change_el = soup.find(id="change_value_and_rate")
         
-        parts = change_stat.split()
-        c_val = parts[0].replace("+","").replace("-","")
-        c_rate = parts[1].replace("%","").replace("+","").replace("-","")
-        
-        return {
-            "name": name, "code_key": key, "value": val,
-            "change_val": c_val,
-            "change_rate": abs(float(c_rate)),
-            "is_up": is_up, "is_down": is_down
-        }
+        if val_el and change_el:
+            val = val_el.text.strip()
+            change_stat = change_el.text.strip()
+            
+            is_up = "+" in change_stat or soup.find(class_=lambda c: c and "red01" in c) is not None
+            is_down = "-" in change_stat or soup.find(class_=lambda c: c and "nv01" in c) is not None
+            
+            parts = change_stat.split()
+            c_val = parts[0].replace("+","").replace("-","")
+            c_rate = parts[1].replace("%","").replace("+","").replace("-","")
+            
+            return {
+                "name": name, "code_key": key, "value": val,
+                "change_val": c_val,
+                "change_rate": abs(float(c_rate)),
+                "is_up": is_up, "is_down": is_down
+            }
     except: pass
     
     return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_market_indices():
     results = []
-    # 코스닥 150의 PC 웹페이지 코드는 KOSDAQ150이 아니라 201입니다. 이것을 적용하여 완벽하게 가져옵니다.
+    # 코스닥 150의 PC 웹페이지 코드는 KOSDAQ150이 아니라 201입니다.
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
@@ -581,7 +588,7 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
-    # 1. AI 주식시장 전체 시황 분석 (에러 추적 포함)
+    # 1. AI 주식시장 전체 시황 분석 (에러 추적 및 구버전 완벽 대응)
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
     # 2. HTML 화면 그리기
