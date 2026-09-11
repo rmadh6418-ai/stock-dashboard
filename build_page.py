@@ -2,6 +2,7 @@ import json
 import os
 import re
 import urllib.parse
+import time  # AI API 속도 조절을 위해 추가
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -61,6 +62,9 @@ def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
         return f"{stock_str} 등 주요 종목을 중심으로 섹터가 변동했습니다. (현재 GEMINI_API_KEY 미입력 상태)"
     
     try:
+        # API 단기간 요청 제한(429 에러) 방지를 위해 요청 전 2초 대기
+        time.sleep(2) 
+        
         model = genai.GenerativeModel("gemini-1.5-flash")
         stock_info = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:3]])
         news_info = ", ".join([n['title'] for n in news_items]) if news_items else "특이 뉴스 없음"
@@ -76,9 +80,10 @@ def generate_ai_sector_summary(sec_name, rate, matched_stocks, news_items):
         """
         response = model.generate_content(prompt)
         return response.text.strip().replace('\n', ' ')
-    except Exception:
+    except Exception as e:
         stock_str = ", ".join([f"{s['name']}({s['rate']:+.2f}%)" for s in matched_stocks[:2]])
-        return f"{stock_str} 등 핵심 종목이 변동을 주도했습니다. (AI 서버 일시 지연)"
+        # 에러 발생 시 원인을 구체적으로 표시하여 디버깅을 돕습니다.
+        return f"{stock_str} 등 핵심 종목이 변동을 주도했습니다. (AI 분석 에러: {str(e)})"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -161,6 +166,7 @@ def get_us_10y_yield():
         return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_investor_trend():
+    """dt(주체)와 dd(금액)를 짝지어 정확하게 파싱하도록 수정"""
     trends = {"KOSPI": "데이터 집계 중", "KOSDAQ": "데이터 집계 중"}
     try:
         res = requests.get("https://finance.naver.com/", headers=get_headers(), timeout=5)
@@ -171,11 +177,18 @@ def get_investor_trend():
                 if area:
                     dl = area.find("dl", class_="dl_invest") or area.find("dl", class_="blind")
                     if dl:
-                        dds = dl.find_all("dd")
-                        parsed = [dd.text.strip().replace('\n', '').replace('\t', '') for dd in dds if any(k in dd.text for k in ['개인', '외국인', '기관'])]
+                        parsed = []
+                        # dt와 dd를 1:1로 묶어서 처리
+                        for dt, dd in zip(dl.find_all("dt"), dl.find_all("dd")):
+                            actor = dt.text.strip()
+                            val = dd.text.strip()
+                            # 정확한 투자 주체일 경우에만 추가
+                            if actor in ["개인", "외국인", "기관"]:
+                                parsed.append(f"{actor} {val}")
                         if parsed:
                             trends[market] = " | ".join(parsed)
-    except: pass
+    except Exception as e:
+        print(f"수급 동향 수집 오류: {e}")
     return trends
 
 def get_market_indices():
@@ -204,7 +217,7 @@ def get_market_indices():
     return results
 
 def get_market_stocks():
-    """듀얼 엔진 탑재: 네이버(Naver) 접속 차단 시 다음(Daum) 금융 API로 자동 우회하여 100% 데이터 수집 보장"""
+    """듀얼 엔진 탑재: 네이버(Naver) 접속 차단 시 다음(Daum) 금융 API로 자동 우회"""
     stocks = {}
     
     # [1차 시도] 네이버 증권 데이터 파싱
@@ -237,7 +250,7 @@ def get_market_stocks():
                                 except: pass
         except: pass
 
-    # [2차 시도: 백업 엔진] 네이버가 차단하여 종목 수집에 실패했을 경우, Daum 주식 API로 우회 작동!
+    # [2차 시도] 네이버가 차단하여 종목 수집에 실패했을 경우, Daum 주식 API로 우회 작동!
     if len(stocks) < 50:
         daum_headers = get_headers(is_daum=True)
         for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
@@ -249,13 +262,10 @@ def get_market_stocks():
                     for item in data.get("data", []):
                         name = item.get("name")
                         price = f"{item.get('tradePrice', 0):,}"
-                        # Daum API는 절대값 비율(0.012 = 1.2%)로 반환
                         rate = float(item.get("changeRate", 0)) * 100
-                        # 하락인 경우 음수 처리
                         if item.get("change") in ["FALL", "MINUS"]:
                             rate = -rate
-                            
-                        code = item.get("symbolCode", "")[1:] # A005930 -> 005930 추출
+                        code = item.get("symbolCode", "")[1:] 
                         if name:
                             stocks[name] = {"price": price, "rate": round(rate, 2), "code": code, "market": market}
             except: pass
@@ -404,7 +414,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, investor_trends
         f.write(template)
 
 if __name__ == "__main__":
-    # 충돌이 나지 않도록 순차적으로 데이터를 가져옵니다.
     indices = get_market_indices()
     investor_trends = get_investor_trend()
     stock_data = get_market_stocks()
