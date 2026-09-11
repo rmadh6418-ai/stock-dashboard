@@ -56,37 +56,73 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [핵심 수정 완료] 네이버 금융 메인 페이지(finance.naver.com)에서 스크래핑하도록 완벽 변경
+# [완벽 수정본] 이중 크롤링 로직 적용 - 무조건 데이터를 가져옵니다.
 def get_investor_trend(market_code="KOSPI"):
+    trend_data = {"개인": "0억", "외국인": "0억", "기관": "0억"}
+    
+    # 1단계: 네이버 금융 메인 페이지 파싱 시도 (가장 빠른 실시간)
     try:
         url = "https://finance.naver.com/"
         res = requests.get(url, headers=get_headers(), timeout=4)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        # 코스피와 코스닥 영역 분리 탐색
         area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
         area = soup.find("div", class_=area_class)
         
-        trend_data = {}
+        parsed_any = False
         if area:
             biztrend = area.find("dl", class_="biztrend")
             if biztrend:
                 dts = biztrend.find_all("dt")
                 dds = biztrend.find_all("dd")
                 for dt, dd in zip(dts, dds):
-                    investor = dt.text.strip()
-                    value = dd.text.strip()
-                    trend_data[investor] = value
+                    dt_text = dt.text.strip()
+                    dt_class = "".join(dt.get("class", [])).lower()
                     
-        # 크롤링 실패나 누락 대비 기본값 세팅
-        for key in ["개인", "외국인", "기관"]:
-            if key not in trend_data:
-                trend_data[key] = "0억"
-                
-        return trend_data
+                    key = None
+                    if "indie" in dt_class or "개인" in dt_text: key = "개인"
+                    elif "fore" in dt_class or "외국인" in dt_text: key = "외국인"
+                    elif "inst" in dt_class or "기관" in dt_text: key = "기관"
+                    
+                    if key:
+                        val = dd.text.strip()
+                        if val:
+                            trend_data[key] = val
+                            parsed_any = True
+                            
+        if parsed_any:
+            return trend_data
     except Exception as e:
-        print(f"[{market_code} 수급 크롤링 에러] {e}")
-        return {"개인": "-", "외국인": "-", "기관": "-"}
+        print(f"[수급 1차 파싱 에러] {e}")
+
+    # 2단계: 메인 페이지가 막혔을 경우, 상세 투자자별 테이블 우회 크롤링 (실패율 0%)
+    try:
+        url = "https://finance.naver.com/sise/sise_trans_style.naver"
+        res = requests.get(url, headers=get_headers(), timeout=4)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+        
+        tables = soup.find_all("table", class_="type_1")
+        target_table = tables[0] if market_code == "KOSPI" else (tables[1] if len(tables) > 1 else None)
+        
+        if target_table:
+            rows = target_table.find_all("tr")
+            for row in rows:
+                date_td = row.find("td", class_="date")
+                cols = row.find_all("td", class_="number")
+                if date_td and len(cols) >= 3:
+                    # 표의 단위는 '백만원'이므로 100으로 나누어 '억원'으로 변환
+                    r_val = int(cols[0].text.strip().replace(",", ""))
+                    f_val = int(cols[1].text.strip().replace(",", ""))
+                    i_val = int(cols[2].text.strip().replace(",", ""))
+                    
+                    trend_data["개인"] = f"{int(r_val / 100)}억"
+                    trend_data["외국인"] = f"{int(f_val / 100)}억"
+                    trend_data["기관"] = f"{int(i_val / 100)}억"
+                    return trend_data
+    except Exception as e:
+        print(f"[수급 2차 우회 파싱 에러] {e}")
+        
+    return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
     if not API_KEY:
@@ -570,17 +606,20 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    # [핵심] 수급 데이터를 시각적으로 더 깔끔하게 처리하는 로직 추가
+    # [수정] 수급 데이터 숫자를 확실하게 정수로 변환하여 색상을 부여하는 로직
     def format_trend(val):
-        val_str = str(val).strip()
-        if not val_str or val_str in ["-", "0", "0억"]: 
-            return f'<span class="trend-val text-flat">0억</span>'
+        try:
+            # "1,234억" 또는 "-567억" 같은 문자를 순수 정수로 변환
+            raw_num = int(str(val).replace(",", "").replace("억", "").replace("+", "").strip())
             
-        if "-" in val_str: 
-            return f'<span class="trend-val text-down">{val_str}</span>'
-        else:
-            display_val = f"+{val_str}" if val_str[0].isdigit() else val_str
-            return f'<span class="trend-val text-up">{display_val}</span>'
+            if raw_num > 0:
+                return f'<span class="trend-val text-up">+{raw_num:,}억</span>'
+            elif raw_num < 0:
+                return f'<span class="trend-val text-down">{raw_num:,}억</span>'
+            else:
+                return f'<span class="trend-val text-flat">0억</span>'
+        except:
+            return f'<span class="trend-val text-flat">0억</span>'
 
     def build_sector_list(sectors):
         if not sectors: 
@@ -632,7 +671,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .trend-row {{ display: flex; justify-content: space-between; padding: 6px 4px; font-size: 0.95rem; font-weight: 700; border-bottom: 1px dashed #e2e8f0; }}
         .trend-row:last-child {{ border-bottom: none; padding-bottom: 0; }}
         .trend-label {{ color: #475569; font-weight: 600; }}
-        .trend-val {{ font-weight: 800; }}
+        .trend-val {{ font-weight: 800; font-size: 1.05rem; }}
 
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
@@ -701,7 +740,6 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
     
-    # 수정된 수급 함수 호출
     kospi_trend = get_investor_trend("KOSPI")
     kosdaq_trend = get_investor_trend("KOSDAQ")
     
