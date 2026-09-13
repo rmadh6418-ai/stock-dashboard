@@ -9,14 +9,15 @@ import requests
 import google.generativeai as genai
 
 def get_headers(is_daum=False):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    }
     if is_daum:
-        headers["Referer"] = "https://finance.daum.net/"
-    else:
-        headers["Referer"] = "https://finance.naver.com/"
-    return headers
+        return {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36",
+            "Referer": "https://m.finance.daum.net/",
+        }
+    return {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36",
+        "Referer": "https://m.stock.naver.com/",
+    }
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
@@ -56,58 +57,57 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아"],
 }
 
-# [궁극의 해결책] 차단당하는 API를 완전히 버리고, 가장 안정적인 네이버 표 데이터를 정밀 타격하여 긁어옵니다.
+# [월요일 적용본] 네이버 모바일 API 직결 통신으로 100% 방화벽 우회
 def get_investor_trend(market_code="KOSPI"):
-    trend_data = {"개인": "불러오는중", "외국인": "불러오는중", "기관": "불러오는중"}
+    trend_data = {"개인": "데이터없음", "외국인": "데이터없음", "기관": "데이터없음"}
+    
+    # 1. 네이버 모바일 공식 API (JSON 반환)
     try:
-        # KOSPI는 0, KOSDAQ은 1
-        sosok = "0" if market_code == "KOSPI" else "1"
-        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-        
-        res = requests.get(url, headers=get_headers(), timeout=5)
+        url = f"https://m.stock.naver.com/api/index/{market_code}/trend"
+        headers = get_headers()
+        res = requests.get(url, headers=headers, timeout=5)
         
         if res.status_code == 200:
-            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-            
-            # 페이지 내 모든 행(tr)을 뒤집니다.
-            for tr in soup.find_all("tr"):
-                # 날짜가 적힌 칸(td class="date")을 찾습니다.
-                date_td = tr.find("td", class_="date")
+            data = res.json()
+            if isinstance(data, list) and len(data) > 0:
+                recent = data[0]  # 가장 최근 일자 데이터
+                # API는 '백만원' 단위를 반환하므로 100으로 나누어 '억원' 변환
+                ind = int(recent.get("indvPureBuyPrc", 0)) // 100
+                frgn = int(recent.get("frgnPureBuyPrc", 0)) // 100
+                inst = int(recent.get("instPureBuyPrc", 0)) // 100
                 
-                if date_td:
-                    date_text = date_td.text.strip()
-                    # 정규식: "24.05.10" 혹은 "2024.05.10" 같이 진짜 날짜가 쓰여진 줄만 통과! (빈 줄 완벽 차단)
-                    if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
-                        num_tds = tr.find_all("td", class_="number")
-                        
-                        # 개인, 외국인, 기관 3칸이 정상적으로 존재하면 데이터 추출
-                        if len(num_tds) >= 3:
-                            def parse_num(txt):
-                                # 네이버 특유의 가짜 마이너스, 쉼표, 공백을 모두 날리고 진짜 숫자만 추출
-                                clean = re.sub(r'[^\d\-]', '', txt.replace(',', '').replace('−', '-').replace('—', '-'))
-                                if not clean or clean == '-': return 0
-                                return int(clean) // 100  # 원본 단위가 '백만원'이므로 100으로 나눠 '억원'으로 변환
-                            
-                            ind = parse_num(num_tds[0].text)
-                            forgn = parse_num(num_tds[1].text)
-                            inst = parse_num(num_tds[2].text)
-                            
-                            # 데이터가 무사히 뽑혔으면 저장 후 즉시 리턴
-                            trend_data["개인"] = f"{ind}억"
-                            trend_data["외국인"] = f"{forgn}억"
-                            trend_data["기관"] = f"{inst}억"
-                            return trend_data
-        else:
-            trend_data["개인"] = f"접속오류({res.status_code})"
-            trend_data["외국인"] = "오류"
-            trend_data["기관"] = "오류"
-            
+                trend_data["개인"] = f"{ind}억"
+                trend_data["외국인"] = f"{frgn}억"
+                trend_data["기관"] = f"{inst}억"
+                return trend_data
     except Exception as e:
-        trend_data["개인"] = "크롤링 실패"
-        trend_data["외국인"] = "오류"
-        trend_data["기관"] = "오류"
-        print(f"[{market_code} 수급 에러] {e}")
+        print(f"[{market_code} 네이버 모바일 API 에러] {e}")
+
+    # 2. 다음(Daum) 모바일 API 우회 통신 (백업)
+    try:
+        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
+        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        headers = get_headers(is_daum=True)
+        headers["Accept"] = "application/json"
         
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            items = data.get("data", [])
+            if items:
+                item = items[0]
+                # 단위가 '원'이므로 1억(100,000,000)으로 나눔
+                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
+                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
+                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
+                
+                trend_data["개인"] = f"{ind}억"
+                trend_data["외국인"] = f"{forgn}억"
+                trend_data["기관"] = f"{inst}억"
+                return trend_data
+    except Exception as e:
+        print(f"[{market_code} 다음 모바일 API 에러] {e}")
+
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -120,6 +120,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
     
+    # [수정] 수급 데이터가 없더라도 AI가 에러를 내지 않도록 프롬프트 강화
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
     오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
@@ -134,7 +135,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     
     [작성 지침 - 엄격하게 준수할 것]
     1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
+    2. 만약 제공된 수급 데이터에 "데이터없음" 혹은 "에러"가 섞여있다면 수급 이야기는 자연스럽게 생략하고 지수 변동과 주도 섹터 위주로 논리를 전개할 것.
     3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
@@ -508,16 +509,15 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-# 카카오톡 문자열 파싱 (에러 메시지는 그대로 출력)
 def format_kakao_trend(val):
     val_str = str(val).strip()
     if not val_str.endswith("억"):
-        return val_str
+        return "데이터없음"
     try:
         num = int(val_str.replace(",", "").replace("억", "").replace("+", "").strip())
         return f"+{num:,}억" if num > 0 else f"{num:,}억"
     except:
-        return val_str
+        return "데이터없음"
 
 def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
@@ -608,7 +608,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    # [버그 수정 완료] 에러 메시지가 들어오면 0억으로 숨기지 않고 빨간 글씨로 띄워줍니다.
     def format_trend(val):
         val_str = str(val).strip()
         if not val_str.endswith("억"):
