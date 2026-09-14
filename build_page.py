@@ -17,7 +17,6 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -55,98 +54,94 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [궁극의 해결책] 방화벽 없는 모바일 서버 내부 데이터를 강제 추출하는 4단계 안전망
+# 텍스트에서 금액(억)을 완벽하게 추출하는 함수
+def parse_trend_amt(text):
+    if not text: return "0"
+    # 부호 판별 (마이너스와 관련된 모든 특수기호/단어 색출)
+    is_minus = bool(re.search(r'[-−—‐–▼]', text))
+    
+    # 숫자와 '조'만 남김
+    clean = re.sub(r'[^\d조]', '', text)
+    if not clean: return "0"
+    
+    jo, eok = 0, 0
+    if "조" in clean:
+        parts = clean.split("조")
+        jo = int(parts[0]) if parts[0] else 0
+        eok = int(parts[1]) if len(parts)>1 and parts[1] else 0
+    else:
+        eok = int(clean)
+        
+    total = (jo * 10000) + eok
+    return str(-total if is_minus else total)
+
+# 확실한 HTML 클래스 추적 방식으로 수급 데이터 추출
 def get_investor_trend(market_code="KOSPI"):
-    trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
-
-    # 1단계: 모바일 HTML 내부 SSR JSON 문자열 정밀 추적 (가장 확실함)
+    trend_data = {"개인": "데이터추출불가", "외국인": "데이터추출불가", "기관": "데이터추출불가"}
+    
+    # 1. 네이버 메인 페이지 직접 타격 (가장 직관적인 HTML 구조)
     try:
-        url = f"https://m.stock.naver.com/domestic/index/{market_code}/total"
+        url = "https://finance.naver.com/"
         res = requests.get(url, headers=get_headers(), timeout=5)
-        text = res.text
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+        area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
+        area = soup.find("div", class_=area_class)
         
-        ind_m = re.search(r'"indvPureBuy[^"]*"\s*:\s*"?([-+]?\d+)"?', text, re.IGNORECASE)
-        frgn_m = re.search(r'"frgnPureBuy[^"]*"\s*:\s*"?([-+]?\d+)"?', text, re.IGNORECASE)
-        inst_m = re.search(r'"instPureBuy[^"]*"\s*:\s*"?([-+]?\d+)"?', text, re.IGNORECASE)
-        
-        if ind_m and frgn_m and inst_m:
-            # int(float()) 처리로 파이썬의 음수 나눗셈 내림 버그 완벽 해결
-            trend_data["개인"] = str(int(float(ind_m.group(1)) / 100))
-            trend_data["외국인"] = str(int(float(frgn_m.group(1)) / 100))
-            trend_data["기관"] = str(int(float(inst_m.group(1)) / 100))
-            return trend_data
+        if area:
+            parsed = False
+            dd_k = area.find("dd", class_="korea")
+            if dd_k:
+                trend_data["개인"] = parse_trend_amt(dd_k.text)
+                parsed = True
+            dd_f = area.find("dd", class_="foreigner")
+            if dd_f:
+                trend_data["외국인"] = parse_trend_amt(dd_f.text)
+                parsed = True
+            dd_i = area.find("dd", class_="institution")
+            if dd_i:
+                trend_data["기관"] = parse_trend_amt(dd_i.text)
+                parsed = True
+            if parsed and trend_data["개인"] != "데이터추출불가":
+                return trend_data
     except: pass
 
-    # 2단계: 모바일 통신용 Trend API 호출
-    try:
-        url = f"https://m.stock.naver.com/api/index/{market_code}/trend"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        text = res.text
-        
-        ind_m = re.search(r'"indvPureBuy[^"]*"\s*:\s*"?([-+]?\d+)"?', text, re.IGNORECASE)
-        frgn_m = re.search(r'"frgnPureBuy[^"]*"\s*:\s*"?([-+]?\d+)"?', text, re.IGNORECASE)
-        inst_m = re.search(r'"instPureBuy[^"]*"\s*:\s*"?([-+]?\d+)"?', text, re.IGNORECASE)
-        
-        if ind_m and frgn_m and inst_m:
-            trend_data["개인"] = str(int(float(ind_m.group(1)) / 100))
-            trend_data["외국인"] = str(int(float(frgn_m.group(1)) / 100))
-            trend_data["기관"] = str(int(float(inst_m.group(1)) / 100))
-            return trend_data
-    except: pass
-
-    # 3단계: Daum 금융 API (우회 헤더 적용)
-    try:
-        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
-        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
-        res = requests.get(url, headers=get_headers(is_daum=True), timeout=5)
-        text = res.text
-        
-        ind_m = re.search(r'"individualStraightPurchasePrice"\s*:\s*([-+]?\d+)', text)
-        frgn_m = re.search(r'"foreignStraightPurchasePrice"\s*:\s*([-+]?\d+)', text)
-        inst_m = re.search(r'"institutionStraightPurchasePrice"\s*:\s*([-+]?\d+)', text)
-        
-        if ind_m and frgn_m and inst_m:
-            trend_data["개인"] = str(int(float(ind_m.group(1)) / 100000000))
-            trend_data["외국인"] = str(int(float(frgn_m.group(1)) / 100000000))
-            trend_data["기관"] = str(int(float(inst_m.group(1)) / 100000000))
-            return trend_data
-    except: pass
-
-    # 4단계: PC 증권 메인 페이지 강제 크롤링 (특수문자 마이너스 & 조 단위 완벽 변환기 포함)
+    # 2. 네이버 개별 지수 페이지 백업
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
         res = requests.get(url, headers=get_headers(), timeout=5)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
-        biztrend = soup.find(class_="biztrend")
-        if biztrend:
+        biz = soup.find("dl", class_="biztrend")
+        if biz:
+            dts = biz.find_all("dt")
+            dds = biz.find_all("dd")
             parsed = False
-            for dt in biztrend.find_all("dt"):
+            for dt, dd in zip(dts, dds):
                 inv = dt.text.strip()
-                dd = dt.find_next_sibling("dd")
-                if dd:
-                    clean = dd.text.replace(",", "").replace("억", "").replace("+", "").strip()
-                    is_minus = clean.startswith('-') or clean.startswith('▼') or clean.startswith('−') or clean.startswith('—')
-                    clean = re.sub(r'[^\d조]', '', clean)
-                    if not clean: continue
-                    
-                    jo = int(clean.split('조')[0]) if '조' in clean else 0
-                    eok = int(clean.split('조')[1]) if '조' in clean and clean.split('조')[1] else (int(clean) if '조' not in clean else 0)
-                    val = jo * 10000 + eok
-                    val = -val if is_minus else val
-                    
-                    if "개인" in inv: trend_data["개인"] = str(val); parsed = True
-                    elif "외국인" in inv: trend_data["외국인"] = str(val); parsed = True
-                    elif "기관" in inv: trend_data["기관"] = str(val); parsed = True
-            
-            if parsed and trend_data["개인"] != "0":
+                amt = parse_trend_amt(dd.text)
+                if "개인" in inv: trend_data["개인"] = amt; parsed = True
+                elif "외국인" in inv: trend_data["외국인"] = amt; parsed = True
+                elif "기관" in inv: trend_data["기관"] = amt; parsed = True
+            if parsed and trend_data["개인"] != "데이터추출불가":
                 return trend_data
     except: pass
 
-    # 모든 방어가 뚫릴 경우에만 명확한 에러 노출
-    trend_data["개인"] = "데이터추출불가"
-    trend_data["외국인"] = "데이터추출불가"
-    trend_data["기관"] = "데이터추출불가"
+    # 3. 네이버 증권 모바일 API 백업
+    try:
+        url = f"https://m.stock.naver.com/api/index/{market_code}/trend"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        data_str = res.text
+        
+        ind_m = re.search(r'"(?:person|indv)[^"]*"\s*:\s*"?([-+]?\d+)"?', data_str, re.IGNORECASE)
+        frgn_m = re.search(r'"(?:foreigner|frgn)[^"]*"\s*:\s*"?([-+]?\d+)"?', data_str, re.IGNORECASE)
+        inst_m = re.search(r'"(?:institution|inst)[^"]*"\s*:\s*"?([-+]?\d+)"?', data_str, re.IGNORECASE)
+        
+        if ind_m and frgn_m and inst_m:
+            trend_data["개인"] = str(int(float(ind_m.group(1))) // 100)
+            trend_data["외국인"] = str(int(float(frgn_m.group(1))) // 100)
+            trend_data["기관"] = str(int(float(inst_m.group(1))) // 100)
+            return trend_data
+    except: pass
+
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -173,7 +168,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     
     [작성 지침 - 엄격하게 준수할 것]
     1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것. (수급이 숫자가 아닌 문자로 표기된 경우 생략 가능)
+    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것. (수급이 문자로 표기된 경우 생략 가능)
     3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
@@ -556,14 +551,14 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
         return
 
     try:
-        def format_kakao_trend(val):
+        def format_kakao_trend(val_str):
             try:
-                num = int(val)
+                num = int(val_str)
                 if num > 0: return f"+{num:,}억"
                 elif num < 0: return f"{num:,}억"
                 else: return "0억"
             except:
-                return str(val)
+                return str(val_str)
 
         token_url = "https://kauth.kakao.com/oauth/token"
         token_data = {
@@ -645,8 +640,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    def format_trend(val):
-        val_str = str(val).strip()
+    def format_trend(val_str):
         try:
             num = int(val_str)
             if num > 0:
