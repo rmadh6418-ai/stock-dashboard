@@ -1,11 +1,10 @@
 import json
 import os
 import re
-import time
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
-import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
@@ -21,13 +20,11 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
+# GitHub Actions 환경변수에서 API 키 획득
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
-BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
+BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔 문", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사", "한화솔루션", "금호석유", "OCI홀딩스", "대한유화"],
@@ -59,29 +56,61 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [핵심] 네이버 차단을 완전히 회피하기 위해 다음(Daum) 금융 데이터 전격 채택
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
-    d_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
     
-    url = f"https://finance.daum.net/api/trend/investor_trends?market={d_market}"
-    
+    # 1. 다음(Daum) 금융 API 우선 호출 (차단 없음, 100% 깔끔한 JSON 반환)
     try:
-        res = requests.get(url, headers=get_headers(is_daum=True), timeout=8)
+        d_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
+        daum_url = f"https://finance.daum.net/api/trend/investor_trends?market={d_market}"
+        res = requests.get(daum_url, headers=get_headers(is_daum=True), timeout=5)
+        
         if res.status_code == 200:
             data = res.json()
             if "data" in data and len(data["data"]) > 0:
                 latest = data["data"][0]
-                
-                # 다음 API는 데이터를 '원' 단위로 제공하므로 1억(100,000,000)으로 나눔
-                # 음수 처리 시 오차 방지를 위해 int() 내에서 직접 나눗셈 수행
-                ind = int(float(latest.get("individual", 0)) / 100000000)
-                forgn = int(float(latest.get("foreign", 0)) / 100000000)
-                inst = int(float(latest.get("institution", 0)) / 100000000)
+                # 다음은 원 단위이므로 1억 단위로 깔끔하게 절사
+                ind = int(latest.get("individual", 0)) // 100000000
+                forgn = int(latest.get("foreign", 0)) // 100000000
+                inst = int(latest.get("institution", 0)) // 100000000
                 
                 trend_data["개인"] = str(ind)
                 trend_data["외국인"] = str(forgn)
                 trend_data["기관"] = str(inst)
+                return trend_data
+    except Exception:
+        pass
+
+    # 2. 다음 API 실패 시 네이버 프록시 우회로 백업 호출
+    try:
+        sosok = "0" if market_code == "KOSPI" else "1"
+        naver_url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+        proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(naver_url)}"
+        
+        res = requests.get(proxy_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            try:
+                html = res.content.decode("euc-kr")
+            except:
+                html = res.content.decode("utf-8", "ignore")
+            
+            soup = BeautifulSoup(html, "html.parser")
+            for tr in soup.find_all("tr"):
+                date_td = tr.find("td", class_="date")
+                if date_td and "." in date_td.text:  # 날짜 행 탐색
+                    tds = tr.find_all("td", class_="number")
+                    if len(tds) >= 3:
+                        def extract_억(txt):
+                            txt = txt.replace(",", "").replace("\xa0", "").strip()
+                            is_minus = "-" in txt or "▼" in txt
+                            num = re.sub(r'[^\d]', '', txt)
+                            if not num: return 0
+                            return (-int(num) if is_minus else int(num)) // 100  # 백만 원 -> 억 원
+                            
+                        trend_data["개인"] = str(extract_억(tds[0].text))
+                        trend_data["외국인"] = str(extract_억(tds[1].text))
+                        trend_data["기관"] = str(extract_억(tds[2].text))
+                        return trend_data
     except Exception:
         pass
 
@@ -120,19 +149,22 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     3. 전체 분량은 5~7문장 분량으로 매끄러운 단일 평문으로 작성할 것. (마크다운 기호 금지)
     """
 
+    # 라이브러리 충돌을 100% 막기 위한 다이렉트 REST API 통신
     try:
-        # 공식 라이브러리로 복귀하여 1.5-flash 안전하게 호출
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        if response and hasattr(response, 'text') and response.text:
-            return response.text.strip().replace('\n', ' ')
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        res = requests.post(url, headers=headers, json=data, timeout=15)
+        
+        if res.status_code == 200:
+            result = res.json()
+            return result['candidates'][0]['content']['parts'][0]['text'].strip().replace('\n', ' ')
         else:
-            return f"🚨 AI 응답 오류<br><br>{fallback_text}"
+            return f"🚨 <b>AI 분석 통신 에러 (상태코드: {res.status_code})</b><br>API 키가 제한되었거나 사용량이 초과되었습니다.<br><br>{fallback_text}"
     except Exception as e:
-        error_str = str(e)
-        if "404" in error_str:
-            return f"🚨 <b>AI 호출 에러 (404 Not Found)</b><br>해당 API 키로는 gemini-1.5-flash 모델 접근이 제한되어 있습니다. Google AI Studio에서 새로 키를 발급받으세요.<br><br>{fallback_text}"
-        return f"🚨 <b>AI 호출 실패</b> (사유: {error_str})<br><br>{fallback_text}"
+        return f"🚨 <b>AI 호출 실패</b> (사유: {str(e)})<br><br>{fallback_text}"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
