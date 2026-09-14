@@ -5,25 +5,22 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
-import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     }
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
     else:
-        headers["Referer"] = "https://m.stock.naver.com/"
+        headers["Referer"] = "https://finance.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# 환경변수에서 키 가져오기 및 초기화
+# GitHub Actions 환경변수에서 키 가져오기
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
@@ -58,48 +55,55 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
+# [핵심 1] 깨진 글자 무시하고 날짜 옆의 '숫자'만 100% 긁어오는 무적의 함수
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
-    
-    # [해결책 1] 네이버 모바일 전용 JSON API (차단 확률 제로, 빠르고 정확함)
-    try:
-        url = f"https://m.stock.naver.com/api/index/{market_code}/trend"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            ant = data.get("ant", 0)
-            forgn = data.get("foreigner", 0)
-            inst = data.get("institutional", 0)
-            
-            if ant != 0 or forgn != 0 or inst != 0:
-                trend_data["개인"] = str(ant)
-                trend_data["외국인"] = str(forgn)
-                trend_data["기관"] = str(inst)
-                return trend_data
-    except: pass
-    
-    # [해결책 2] 네이버가 혹시 막히면 다음(Daum) 금융 API로 즉시 우회
-    try:
-        d_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
-        url = f"https://finance.daum.net/api/trend/investor_trends?market={d_market}"
-        res = requests.get(url, headers=get_headers(is_daum=True), timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            latest = data.get("data", [])[0]
-            if latest:
-                # 다음 API는 원 단위이므로 1억(100,000,000)으로 나누어 억 단위로 맞춤
-                ind = int(latest.get("individual", 0)) // 100000000
-                forgn = int(latest.get("foreign", 0)) // 100000000
-                inst = int(latest.get("institution", 0)) // 100000000
+    sosok = "0" if market_code == "KOSPI" else "1"
+    url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+
+    urls_to_try = [
+        f"https://api.allorigins.win/get?url={urllib.parse.quote(url)}",
+        url
+    ]
+
+    for u in urls_to_try:
+        try:
+            res = requests.get(u, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+            if res.status_code == 200:
+                if "allorigins" in u:
+                    html = res.json().get("contents", "")
+                else:
+                    html = res.content.decode("euc-kr", "replace")
+
+                soup = BeautifulSoup(html, "html.parser")
                 
-                trend_data["개인"] = str(ind)
-                trend_data["외국인"] = str(forgn)
-                trend_data["기관"] = str(inst)
-                return trend_data
-    except: pass
+                for tr in soup.find_all("tr"):
+                    date_td = tr.find("td", class_="date")
+                    # 정규식으로 '24.09.11' 같은 날짜 포맷이 있는 줄만 정확히 캡처
+                    if date_td and re.search(r'\d{2,4}\.\d{2}\.\d{2}', date_td.text):
+                        num_tds = tr.find_all("td", class_="number")
+                        if len(num_tds) >= 3:
+                            def parse_val(txt):
+                                txt = txt.strip().replace(",", "")
+                                if not txt: return 0
+                                try: return int(txt) // 100 # 억 단위 변환
+                                except: return 0
+                            
+                            ind = parse_val(num_tds[0].text)
+                            forgn = parse_val(num_tds[1].text)
+                            inst = parse_val(num_tds[2].text)
+
+                            if ind != 0 or forgn != 0 or inst != 0:
+                                trend_data["개인"] = str(ind)
+                                trend_data["외국인"] = str(forgn)
+                                trend_data["기관"] = str(inst)
+                                return trend_data
+        except:
+            continue
 
     return trend_data
 
+# [핵심 2] 파이썬 라이브러리(SDK) 충돌을 피해 다이렉트 REST API로 1.5 플래시 모델 강제 호출
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -134,13 +138,22 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     """
 
     try:
-        # 404 에러 원천 차단: 모든 API 키에서 100% 호환되는 'gemini-pro' 모델로 고정
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
-        if response and hasattr(response, 'text') and response.text:
-            return response.text.strip().replace('\n', ' ')
+        # SDK를 안 쓰고 구글 서버에 직접 통신합니다. (가장 안정적임)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        res = requests.post(url, headers=headers, json=data, timeout=15)
+        
+        if res.status_code == 200:
+            result = res.json()
+            return result['candidates'][0]['content']['parts'][0]['text'].strip().replace('\n', ' ')
         else:
-            return f"🚨 AI 모델이 빈 응답을 반환했습니다.<br><br>{fallback_text}"
+            return (
+                f"🚨 <b>AI 분석 에러 (상태코드: {res.status_code})</b><br>"
+                f"API 키가 Google Cloud 전용이거나 제한되었습니다. 반드시 <b>aistudio.google.com</b>에서 발급받은 키를 사용해주세요.<br><br>{fallback_text}"
+            )
     except Exception as e:
         return f"🚨 <b>AI 호출 실패</b> (사유: {str(e)})<br><br>{fallback_text}"
 
