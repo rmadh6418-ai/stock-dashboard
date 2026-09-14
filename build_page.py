@@ -59,28 +59,6 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-def parse_korean_money(val_str):
-    clean = val_str.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
-    is_minus = False
-
-    if clean and clean[0] in ['-', '−', '—', '‐', '–', '▼']:
-        is_minus = True
-        clean = clean[1:]
-
-    clean = re.sub(r'[^\d조]', '', clean)
-    if not clean: return 0
-
-    jo, eok = 0, 0
-    if "조" in clean:
-        parts = clean.split("조")
-        jo = int(parts[0]) if parts[0] else 0
-        eok = int(parts[1]) if len(parts) > 1 and parts[1] else 0
-    else:
-        eok = int(clean)
-
-    total = (jo * 10000) + eok
-    return -total if is_minus else total
-
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
     sosok = "0" if market_code == "KOSPI" else "1"
@@ -88,6 +66,7 @@ def get_investor_trend(market_code="KOSPI"):
 
     urls_to_try = [
         target_url,
+        f"https://api.codetabs.com/v1/proxy?quest={urllib.parse.quote(target_url)}",
         f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}"
     ]
 
@@ -95,22 +74,34 @@ def get_investor_trend(market_code="KOSPI"):
         try:
             res = requests.get(url, headers=get_headers(), timeout=8)
             if res.status_code == 200:
-                soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+                # 프록시 우회 시 한글 인코딩이 깨지더라도 숫자와 - 부호만 추출하도록 강력한 파싱 로직 적용
+                try:
+                    html_content = res.content.decode("euc-kr")
+                except:
+                    html_content = res.content.decode("utf-8", "ignore")
+                    
+                soup = BeautifulSoup(html_content, "html.parser")
                 for tr in soup.find_all("tr"):
-                    date_td = tr.find("td", class_="date")
-                    if date_td:
-                        date_text = date_td.text.strip()
-                        if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
-                            num_tds = tr.find_all("td", class_="number")
-                            if len(num_tds) >= 3:
-                                ind = parse_korean_money(num_tds[0].text) // 100
-                                forgn = parse_korean_money(num_tds[1].text) // 100
-                                inst = parse_korean_money(num_tds[2].text) // 100
+                    num_tds = tr.find_all("td", class_="number")
+                    if len(num_tds) >= 3:
+                        def extract_eok(td):
+                            txt = td.text.strip()
+                            is_minus = "-" in txt or "▼" in txt
+                            num_str = re.sub(r'[^\d]', '', txt)
+                            if not num_str: return 0
+                            val = int(num_str)
+                            return (-val if is_minus else val) // 100
 
-                                trend_data["개인"] = str(ind)
-                                trend_data["외국인"] = str(forgn)
-                                trend_data["기관"] = str(inst)
-                                return trend_data
+                        ind = extract_eok(num_tds[0])
+                        forgn = extract_eok(num_tds[1])
+                        inst = extract_eok(num_tds[2])
+                        
+                        # 깨진 데이터가 아닌 정상 숫자가 하나라도 잡히면 성공 처리
+                        if ind != 0 or forgn != 0 or inst != 0:
+                            trend_data["개인"] = str(ind)
+                            trend_data["외국인"] = str(forgn)
+                            trend_data["기관"] = str(inst)
+                            return trend_data
         except Exception:
             continue
 
@@ -138,11 +129,10 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
 
-    [작성 지침 - 엄격하게 준수할 것]
-    1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
-    3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
-    4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
+    [작성 지침]
+    1. "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
+    2. 외국인과 기관의 수급 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 핵심 자금 이동을 설명할 것.
+    3. 전체 분량은 5~7문장 분량으로 매끄러운 단일 평문으로 작성할 것. (마크다운 기호 금지)
     """
 
     try:
@@ -153,7 +143,10 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
         else:
             return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 새로고침 해주세요."
     except Exception as e:
-        return f"🚨 AI 호출 실패.\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+        error_msg = str(e)
+        if "404" in error_msg:
+            return f"🚨 <b>AI 호출 실패 (API 키 권한 오류)</b><br><br>Google Cloud Console에서 만든 키를 사용 중이시거나 권한이 없는 키입니다.<br>반드시 <b>Google AI Studio (aistudio.google.com)</b>에서 무료 API 키를 새로 발급받아 교체해주세요.<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+        return f"🚨 AI 호출 실패 ({error_msg})<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
