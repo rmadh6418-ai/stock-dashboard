@@ -46,25 +46,20 @@ KOSDAQ150_SECTORS = {
     "제약·바이오": ["알테오젠", "HLB", "삼천당제약", "리가켐바이오", "에스티팜", "HK이노엔", "동국제약", "지투지바이오", "디엔디파마텍", "올릭스", "에이비엘바이오", "펩트론", "오스코텍", "엘앤씨바이오", "셀트리온제약", "차바이오텍", "메디톡스", "보로노이", "지노믹트리"],
     "미용의료·화장품": ["휴젤", "클래시스", "실리콘투", "파마리서치", "제이시스메디칼", "원텍", "브이티", "아이패밀리에스씨", "마녀공장", "코스메카코리아"],
     "이차전지·소재": ["에코프로비엠", "에코프로", "엔켐", "대주전자재료", "서진시스템", "나노신소재", "피엔티", "동화기업", "한중엔시에스", "에코프로에이치엔", "성일하이텍", "더블유씨피", "윤성에프앤씨", "새빗켐"],
-    "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "테크윙", "파크시스템스", "두산테스나", "필옵틱스", "씨엠티엑스", "원익QnC", "고영", "이녹스첨단소재", "에프에스티", "동운아나텍", "넥스틴", "가온칩스"],
+    "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "테크윙", "파크시스템스", "두산테스나", "필옵틱스", "씨엠티엑스", "원익QnC", "고영", "이녹스첨단소재", "에프에스티", "동운아나텍", "넥ስ틴", "가온칩스"],
     "엔터·미디어": ["JYP Ent.", "에스엠", "스튜디오드래곤", "CJ ENM", "와이지엔터테인먼트", "디어유", "초록뱀미디어", "삼화네트웍스"],
     "게임·소프트웨어": ["펄어비스", "카카오게임즈", "위메이드", "넥슨게임즈", "컴투스", "네오위즈", "웹젠", "엠게임", "안랩"],
     "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱스", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션"],
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-def get_investor_trend(market_code="KOSPI"):
-    # 외부 API 차단 시 대시보드가 깨지지 않도록 0으로 안전 방어
-    return {"개인": "0", "외국인": "0", "기관": "0"}
-
-def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
+def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
 
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
     
-    # API 키 에러 없이 깔끔하게 출력되는 시장 요약 브리핑 문구
     return (
         f"오늘 국내 증시는 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})이 각각 변동성을 보인 가운데, "
         f"상승 주도 업종으로는 {k200_strong} 및 {k150_strong} 섹터가 두각을 나타냈습니다. "
@@ -430,7 +425,7 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
+def send_kakao_alert(indices, k200_top, k150_top):
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
     refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
 
@@ -439,15 +434,6 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
         return
 
     try:
-        def format_kakao_trend(val):
-            try:
-                num = int(val)
-                if num > 0: return f"+{num:,}억"
-                elif num < 0: return f"{num:,}억"
-                else: return "0억"
-            except:
-                return str(val)
-
         token_url = "https://kauth.kakao.com/oauth/token"
         token_data = {
             "grant_type": "refresh_token",
@@ -475,17 +461,10 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
         k200_lead = k200_top[0]["name"] if k200_top else "집계중"
         k150_lead = k150_top[0]["name"] if k150_top else "집계중"
 
-        k_fore = format_kakao_trend(kospi_trend.get('외국인', "0"))
-        k_inst = format_kakao_trend(kospi_trend.get('기관', "0"))
-        kq_fore = format_kakao_trend(kosdaq_trend.get('외국인', "0"))
-        kq_inst = format_kakao_trend(kosdaq_trend.get('기관', "0"))
-
         msg_text = (
             f"📊 [정규장 마감 리포트] {date_str}\n\n"
             f"• 코스피: {kospi.get('value')} ({k_sign}{abs(kospi.get('change_rate', 0)):.2f}%)\n"
-            f"  └ 수급: 외인 {k_fore} / 기관 {k_inst}\n"
             f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{abs(kosdaq.get('change_rate', 0)):.2f}%)\n"
-            f"  └ 수급: 외인 {kq_fore} / 기관 {kq_inst}\n"
             f"• 원·달러: {fx.get('value')} ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)\n"
             f"• 강세섹터: {k200_lead} / {k150_lead}\n\n"
             f"언제든 접속 시 실시간 시세가 자동 동기화됩니다."
@@ -512,7 +491,7 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, kospi_trend, kosdaq_trend):
+def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary):
     index_cards = ""
     for idx in indices:
         sign = "▲ +" if idx["is_up"] else ("▼ -" if idx["is_down"] else "― ")
@@ -527,18 +506,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
         </div>
         """
-
-    def format_trend(val):
-        try:
-            num = int(val)
-            if num > 0:
-                return f'<span class="trend-val text-up">+{num:,}억</span>'
-            elif num < 0:
-                return f'<span class="trend-val text-down">{num:,}억</span>'
-            else:
-                return f'<span class="trend-val text-flat">0억</span>'
-        except:
-            return f'<span class="trend-val text-flat" style="font-size:0.85rem; color:#ef4444;">{val}</span>'
 
     def build_sector_list(sectors):
         if not sectors: 
@@ -584,14 +551,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }}
         .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }}
 
-        .trend-wrap {{ display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }}
-        .trend-box {{ flex: 1; min-width: 280px; background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        .trend-title {{ font-weight: 800; font-size: 1.05rem; margin-bottom: 12px; text-align: center; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; }}
-        .trend-row {{ display: flex; justify-content: space-between; padding: 6px 4px; font-size: 0.95rem; font-weight: 700; border-bottom: 1px dashed #e2e8f0; }}
-        .trend-row:last-child {{ border-bottom: none; padding-bottom: 0; }}
-        .trend-label {{ color: #475569; font-weight: 600; }}
-        .trend-val {{ font-weight: 800; font-size: 1.05rem; }}
-
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }}
@@ -623,21 +582,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div class="market-ai-content">{ai_market_summary}</div>
     </div>
 
-    <div class="trend-wrap">
-        <div class="trend-box">
-            <div class="trend-title">🏦 코스피 투자자별 매매동향</div>
-            <div class="trend-row"><span class="trend-label">개인</span> {format_trend(kospi_trend.get('개인', '0'))}</div>
-            <div class="trend-row"><span class="trend-label">외국인</span> {format_trend(kospi_trend.get('외국인', '0'))}</div>
-            <div class="trend-row"><span class="trend-label">기관</span> {format_trend(kospi_trend.get('기관', '0'))}</div>
-        </div>
-        <div class="trend-box">
-            <div class="trend-title">🚀 코스닥 투자자별 매매동향</div>
-            <div class="trend-row"><span class="trend-label">개인</span> {format_trend(kosdaq_trend.get('개인', '0'))}</div>
-            <div class="trend-row"><span class="trend-label">외국인</span> {format_trend(kosdaq_trend.get('외국인', '0'))}</div>
-            <div class="trend-row"><span class="trend-label">기관</span> {format_trend(kosdaq_trend.get('기관', '0'))}</div>
-        </div>
-    </div>
-
     <div class="group-title">🏢 코스피 200 업종 동향</div>
     <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
     <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
@@ -659,11 +603,8 @@ if __name__ == "__main__":
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
-    kospi_trend = get_investor_trend("KOSPI")
-    kosdaq_trend = get_investor_trend("KOSDAQ")
+    ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
 
-    ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend)
+    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
 
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, kospi_trend, kosdaq_trend)
-
-    send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend)
+    send_kakao_alert(indices, k200_top, k150_top)
