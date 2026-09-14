@@ -8,9 +8,9 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-# 브라우저와 100% 동일하게 위장하여 차단을 막는 헤더
-def get_headers():
-    return {
+# 방화벽 우회 및 Daum 옵션 충돌 해결
+def get_headers(is_daum=False):
+    headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -19,6 +19,11 @@ def get_headers():
         "Upgrade-Insecure-Requests": "1",
         "Cache-Control": "max-age=0",
     }
+    if is_daum:
+        headers["Referer"] = "https://finance.daum.net/"
+    else:
+        headers["Referer"] = "https://finance.naver.com/"
+    return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
@@ -60,12 +65,10 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [핵심] 조 단위 텍스트 및 유니코드 마이너스 완벽 변환기
 def parse_korean_money(text):
     clean = text.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
     
     is_minus = False
-    # 네이버가 숨겨놓은 온갖 마이너스 특수기호 완벽 색출
     if clean and clean[0] in ['-', '−', '—', '‐', '–', '▼']:
         is_minus = True
         clean = clean[1:]
@@ -87,7 +90,6 @@ def parse_korean_money(text):
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "불러오는중", "외국인": "불러오는중", "기관": "불러오는중"}
     
-    # 1. 가장 빠르고 정확한 네이버 금융 메인 페이지 파싱
     try:
         url = "https://finance.naver.com/"
         res = requests.get(url, headers=get_headers(), timeout=5)
@@ -125,7 +127,6 @@ def get_investor_trend(market_code="KOSPI"):
     except Exception:
         pass
 
-    # 2. 메인이 막히면 우회하는 투자자별 매매동향 표 파싱 (백업)
     try:
         sosok = "0" if market_code == "KOSPI" else "1"
         url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
@@ -150,7 +151,6 @@ def get_investor_trend(market_code="KOSPI"):
     except Exception:
         pass
 
-    # 3. 최후의 보루 Daum JSON API 호출
     try:
         daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
         url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
@@ -176,7 +176,6 @@ def get_investor_trend(market_code="KOSPI"):
     except:
         pass
 
-    # 모든 곳에서 거부당했을 경우 에러 메시지 반환
     trend_data["개인"] = "서버차단(방화벽)"
     trend_data["외국인"] = "서버차단(방화벽)"
     trend_data["기관"] = "서버차단(방화벽)"
@@ -678,7 +677,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    # [핵심 버그 수정 완료] 숫자가 아니면 0억으로 바꾸지 않고 에러 내용을 그대로 빨간색으로 출력합니다.
     def format_trend(val):
         try:
             num = int(val)
