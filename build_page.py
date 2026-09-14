@@ -62,14 +62,14 @@ KOSDAQ150_SECTORS = {
 def parse_korean_money(val_str):
     clean = val_str.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
     is_minus = False
-    
+
     if clean and clean[0] in ['-', '−', '—', '‐', '–', '▼']:
         is_minus = True
         clean = clean[1:]
-        
+
     clean = re.sub(r'[^\d조]', '', clean)
     if not clean: return 0
-    
+
     jo, eok = 0, 0
     if "조" in clean:
         parts = clean.split("조")
@@ -77,7 +77,7 @@ def parse_korean_money(val_str):
         eok = int(parts[1]) if len(parts) > 1 and parts[1] else 0
     else:
         eok = int(clean)
-        
+
     total = (jo * 10000) + eok
     return -total if is_minus else total
 
@@ -85,32 +85,33 @@ def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
     sosok = "0" if market_code == "KOSPI" else "1"
     target_url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-    
+
     urls_to_try = [
         target_url,
         f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}"
     ]
-    
+
     for url in urls_to_try:
         try:
             res = requests.get(url, headers=get_headers(), timeout=8)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+                
                 for tr in soup.find_all("tr"):
-                    date_td = tr.find("td", class_="date")
-                    if date_td:
-                        date_text = date_td.text.strip()
-                        if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
-                            num_tds = tr.find_all("td", class_="number")
-                            if len(num_tds) >= 3:
-                                ind = parse_korean_money(num_tds[0].text) // 100
-                                forgn = parse_korean_money(num_tds[1].text) // 100
-                                inst = parse_korean_money(num_tds[2].text) // 100
-                                
-                                trend_data["개인"] = str(ind)
-                                trend_data["외국인"] = str(forgn)
-                                trend_data["기관"] = str(inst)
-                                return trend_data
+                    tds = tr.find_all("td")
+                    
+                    if len(tds) >= 4:
+                        date_text = tds[0].text.strip()
+                        
+                        if re.match(r'^\d{2,4}\.\d{2}\.\d{2}$', date_text):
+                            ind_val = parse_korean_money(tds[1].text)
+                            forgn_val = parse_korean_money(tds[2].text)
+                            inst_val = parse_korean_money(tds[3].text)
+
+                            trend_data["개인"] = str(int(ind_val / 100))
+                            trend_data["외국인"] = str(int(forgn_val / 100))
+                            trend_data["기관"] = str(int(inst_val / 100))
+                            return trend_data
         except Exception:
             continue
 
@@ -119,13 +120,13 @@ def get_investor_trend(market_code="KOSPI"):
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
     if not API_KEY:
         return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다."
-    
+
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
-    
+
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
-    
+
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
     오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
@@ -137,14 +138,14 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}억, 외국인 {kosdaq_trend.get('외국인')}억, 기관 {kosdaq_trend.get('기관')}억
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
-    
+
     [작성 지침 - 엄격하게 준수할 것]
     1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
     2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
     3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
-    
+
     try:
         model = genai.GenerativeModel('gemini-3.6-flash')
         response = model.generate_content(prompt)
@@ -162,10 +163,10 @@ def get_news_score(title, stock_name):
     aliases = [stock_name]
     if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
     elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
-    
+
     has_stock = any(alias in title for alias in aliases if len(alias) >= 2)
     has_biz = any(biz in title for biz in BUSINESS_NEWS_KEYWORDS)
-    
+
     if has_stock: score += 5
     if has_biz: score += 4
     if not has_stock and not has_biz: return -1
@@ -197,7 +198,7 @@ def fetch_real_news(keyword, stock_code=""):
                                 final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
                             else:
                                 final_link = "https://finance.naver.com" + href
-                            
+
                             candidates.append({
                                 "title": raw_title,
                                 "press": td_info.text.strip() if td_info else "증권뉴스",
@@ -205,22 +206,22 @@ def fetch_real_news(keyword, stock_code=""):
                                 "score": score,
                             })
         except: pass
-    
+
     candidates.sort(key=lambda x: x["score"], reverse=True)
-    
+
     unique_news = []
     seen_titles = set()
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]', '', item['title'])
         clean_title = re.sub(r'\(.*?\)', '', clean_title)
         clean_title = re.sub(r'\W+', '', clean_title)
-        
+
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
             if len(unique_news) == 3:
                 break
-                
+
     return unique_news
 
 def get_exchange_rate():
@@ -385,26 +386,26 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
                 "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
             }
     except: pass
-    
+
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
         res = requests.get(url, headers=get_headers(), timeout=3)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
+
         val_el = soup.find(id="now_value")
         change_el = soup.find(id="change_value_and_rate")
-        
+
         if val_el and change_el:
             val = val_el.text.strip()
             change_text = change_el.text.strip()
-            
+
             is_up = "red01" in str(change_el) or "+" in change_text
             is_down = "nv01" in str(change_el) or "-" in change_text
-            
+
             nums = re.findall(r'[\d\.]+', change_text)
             c_val = nums[0] if len(nums) > 0 else "0"
             c_rate = nums[1] if len(nums) > 1 else "0"
-            
+
             return {
                 "name": name, "code_key": key, "value": val,
                 "change_val": c_val,
@@ -412,7 +413,7 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
                 "is_up": is_up, "is_down": is_down
             }
     except: pass
-    
+
     return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_market_indices():
@@ -420,7 +421,7 @@ def get_market_indices():
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
-    
+
     results.append(get_exchange_rate())         # 4번째 자리
     results.append(get_jpy_krw_rate())          # 5번째 자리 
     results.append(get_us_10y_yield())          # 6번째 자리
@@ -439,7 +440,7 @@ def get_market_stocks():
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
         ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
     ]
-    
+
     for u, market in urls:
         try:
             res = requests.get(u, headers=get_headers(), timeout=5)
@@ -491,16 +492,16 @@ def calculate_sectors(sector_dict, stock_data):
             for sname in stock_names:
                 if sname in stock_data:
                     matched.append({"name": sname, **stock_data[sname]})
-            
+
             if not matched: 
                 continue
-            
+
             matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
             top_stock = matched[0]
             news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
-            
+
             avg_r = sum(s["rate"] for s in matched) / len(matched)
-            
+
             results.append({
                 "name": sec_name, "rate": round(avg_r, 2), "stocks": matched[:3],
                 "lead_stock": top_stock["name"], "news": news_items,
@@ -510,7 +511,7 @@ def calculate_sectors(sector_dict, stock_data):
 
     if not results:
         return [], []
-        
+
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
@@ -558,7 +559,7 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
 
         k200_lead = k200_top[0]["name"] if k200_top else "집계중"
         k150_lead = k150_top[0]["name"] if k150_top else "집계중"
-        
+
         k_fore = format_kakao_trend(kospi_trend.get('외국인', "0"))
         k_inst = format_kakao_trend(kospi_trend.get('기관', "0"))
         kq_fore = format_kakao_trend(kosdaq_trend.get('외국인', "0"))
@@ -603,7 +604,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         color_class = "text-up" if idx["is_up"] else ("text-down" if idx["is_down"] else "text-flat")
         badge_bg = "bg-up-light" if idx["is_up"] else ("bg-down-light" if idx["is_down"] else "bg-gray-100")
         diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
-        
+
         index_cards += f"""
         <div class="card" data-index-target="{idx['code_key']}">
             <div class="card-title">{idx['name']}</div>
@@ -611,7 +612,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
         </div>
         """
-        
+
     def format_trend(val):
         try:
             num = int(val)
@@ -632,9 +633,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
-            
+
             news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" rel="noopener noreferrer" class="news-link">{n["title"]}</a></div>' for n in s.get("news", [])])
-            
+
             html += f"""
             <div class="sector-item">
                 <div class="sector-header">
@@ -682,14 +683,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; }}
         .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
         .sector-name {{ font-weight: 800; font-size: 1.02rem; }}
-        
+
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; }}
-        
+
         .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }}
         .news-link {{ color: #1d4ed8; text-decoration: none; }}
         .news-link:hover {{ text-decoration: underline; }}
-        
+
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
         .text-down {{ color: #2563eb !important; font-weight: 700; }}
         .text-flat {{ color: #64748b !important; font-weight: 700; }}
@@ -701,12 +702,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 <body>
     <header><h1>📊 실시간 국내 증시 대시보드</h1></header>
     <div class="grid-indices">{index_cards}</div>
-    
+
     <div class="market-ai-box">
         <div class="market-ai-header">🤖 주식시장 전체 AI 시황 분석</div>
         <div class="market-ai-content">{ai_market_summary}</div>
     </div>
-    
+
     <div class="trend-wrap">
         <div class="trend-box">
             <div class="trend-title">🏦 코스피 투자자별 매매동향</div>
@@ -721,7 +722,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <div class="trend-row"><span class="trend-label">기관</span> {format_trend(kosdaq_trend.get('기관', '0'))}</div>
         </div>
     </div>
-    
+
     <div class="group-title">🏢 코스피 200 업종 동향</div>
     <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
     <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
@@ -742,12 +743,12 @@ if __name__ == "__main__":
 
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
-    
+
     kospi_trend = get_investor_trend("KOSPI")
     kosdaq_trend = get_investor_trend("KOSDAQ")
-    
+
     ai_market_summary = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend)
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, kospi_trend, kosdaq_trend)
-    
+
     send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend)
