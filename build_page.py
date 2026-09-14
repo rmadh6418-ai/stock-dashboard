@@ -6,7 +6,6 @@ import time
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
-import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
@@ -21,10 +20,8 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
+# Gemini API KEY
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
@@ -86,32 +83,35 @@ def get_investor_trend(market_code="KOSPI"):
     sosok = "0" if market_code == "KOSPI" else "1"
     target_url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
 
+    # 한글 인코딩 깨짐 방지를 위해 allorigins의 JSON 반환 방식(/get) 사용
     urls_to_try = [
         target_url,
-        f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}",
-        f"https://corsproxy.io/?{urllib.parse.quote(target_url)}"
+        f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
     ]
 
     for url in urls_to_try:
         try:
             res = requests.get(url, headers=get_headers(), timeout=8)
             if res.status_code == 200:
-                soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+                if "allorigins" in url:
+                    html_content = res.json().get('contents', '')
+                else:
+                    html_content = res.content.decode("euc-kr", "replace")
+                
+                soup = BeautifulSoup(html_content, "html.parser")
                 for tr in soup.find_all("tr"):
-                    num_tds = tr.find_all("td", class_="number")
-                    # 날짜 형식 검사를 생략하고 가장 먼저 발견되는 데이터행(숫자 열이 3개 이상)을 강제 추출
-                    if len(num_tds) >= 3:
-                        ind_str = num_tds[0].text.strip()
-                        for_str = num_tds[1].text.strip()
-                        inst_str = num_tds[2].text.strip()
-                        
-                        if ind_str and for_str and inst_str:
-                            trend_data["개인"] = str(parse_korean_money(ind_str) // 100)
-                            trend_data["외국인"] = str(parse_korean_money(for_str) // 100)
-                            trend_data["기관"] = str(parse_korean_money(inst_str) // 100)
+                    date_td = tr.find("td", class_="date")
+                    if date_td and "." in date_td.text:
+                        num_tds = tr.find_all("td", class_="number")
+                        if len(num_tds) >= 3:
+                            ind = parse_korean_money(num_tds[0].text) // 100
+                            forgn = parse_korean_money(num_tds[1].text) // 100
+                            inst = parse_korean_money(num_tds[2].text) // 100
                             
-                            # 빈 데이터가 아니면 즉시 반환하여 오류 방지
-                            if trend_data["개인"] != "0" or trend_data["외국인"] != "0":
+                            if ind != 0 or forgn != 0:
+                                trend_data["개인"] = str(ind)
+                                trend_data["외국인"] = str(forgn)
+                                trend_data["기관"] = str(inst)
                                 return trend_data
         except Exception:
             continue
@@ -146,16 +146,22 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     3. 전체 분량은 5~7문장 분량으로 매끄러운 단일 평문으로 작성할 것. (마크다운 기호 금지)
     """
 
+    # 라이브러리 버전 에러 방지를 위해 REST API 방식으로 다이렉트 호출
     try:
-        # 모델 버전에 의한 404 에러 방지를 위해 가장 범용적인 gemini-pro 모델로 변경
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
-        if response and hasattr(response, 'text') and response.text:
-            return response.text.strip().replace('\n', ' ')
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        res = requests.post(url, headers=headers, json=data, timeout=15)
+        
+        if res.status_code == 200:
+            result = res.json()
+            return result['candidates'][0]['content']['parts'][0]['text'].strip().replace('\n', ' ')
         else:
-            return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 새로고침 해주세요."
+            return f"🚨 AI 분석 API 오류 (상태코드: {res.status_code})<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
     except Exception as e:
-        return f"🚨 AI 호출 실패 (사유: {str(e)})<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+        return f"🚨 AI 호출 실패 ({str(e)})<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
