@@ -11,11 +11,12 @@ import google.generativeai as genai
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     }
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
     else:
-        headers["Referer"] = "https://finance.naver.com/"
+        headers["Referer"] = "https://m.stock.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
@@ -54,42 +55,31 @@ KOSDAQ150_SECTORS = {
     "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "테크윙", "파크시스템스", "두산테스나", "필옵틱스", "씨엠티엑스", "원익QnC", "고영", "이녹스첨단소재", "에프에스티", "동운아나텍", "넥스틴", "가온칩스"],
     "엔터·미디어": ["JYP Ent.", "에스엠", "스튜디오드래곤", "CJ ENM", "와이지엔터테인먼트", "디어유", "초록뱀미디어", "삼화네트웍스"],
     "게임·소프트웨어": ["펄어비스", "카카오게임즈", "위메이드", "넥슨게임즈", "컴투스", "네오위즈", "웹젠", "엠게임", "안랩"],
-    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "EFS", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱스", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션"],
+    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱스", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션"],
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [궁극의 해결책] 야후 파이낸스 API를 통한 수급 대체 데이터 가져오기 (절대 차단 안 됨)
+# [최종 확정] 네이버 증권 모바일 API를 통한 수급 데이터 연동 함수
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
     try:
-        # 야후 파이낸스에서 코스피(^KS11) 또는 코스닥(^KQ11) 지수 정보와 연동된 거래 대금 트렌드 활용
-        symbol = "^KS11" if market_code == "KOSPI" else "^KQ11"
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        url = f"https://m.stock.naver.com/api/index/{market_code}/trend"
+        res = requests.get(url, headers=get_headers(), timeout=5)
         if res.status_code == 200:
             data = res.json()
-            meta = data['chart']['result'][0]['meta']
-            regular_price = meta.get('regularMarketPrice', 0)
-            prev_close = meta.get('previousClose', regular_price)
-            diff_pct = (regular_price - prev_close) / prev_close if prev_close else 0
-            
-            # 장 마감 후 시장 전체 변동률(diff_pct)과 거래대금을 연동하여 현실적인 추정 수급(억 단위) 자동 산출
-            # (차단 당하지 않고 대시보드가 항상 완벽하게 채워지도록 보장하는 스마트 로직)
-            base_scale = 2500 if market_code == "KOSPI" else 1200
-            market_mood = int(diff_pct * 100000)
-            
-            if market_code == "KOSPI":
-                trend_data["외국인"] = str(market_mood - 1420)
-                trend_data["기관"] = str(-market_mood + 850)
-                trend_data["개인"] = str(-market_mood + 570)
-            else:
-                trend_data["외국인"] = str(market_mood - 610)
-                trend_data["기관"] = str(-market_mood + 420)
-                trend_data["개인"] = str(-market_mood + 190)
+            if isinstance(data, list) and len(data) > 0:
+                recent = data[0]
+                # 네이버 모바일 API의 원본 단위는 '백만원'이므로 10,000으로 나누어 '억원'으로 변환
+                ind = int(float(recent.get("indvPureBuyPrc", 0)) / 10000)
+                frgn = int(float(recent.get("frgnPureBuyPrc", 0)) / 10000)
+                inst = int(float(recent.get("instPureBuyPrc", 0)) / 10000)
                 
-            return trend_data
+                trend_data["개인"] = str(ind)
+                trend_data["외국인"] = str(frgn)
+                trend_data["기관"] = str(inst)
+                return trend_data
     except Exception as e:
-        print(f"[야후 API 수급 연동 에러] {e}")
+        print(f"[{market_code} 모바일 API 수급 에러] {e}")
         
     return trend_data
 
@@ -110,8 +100,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
-    - 코스피 수급(추정): 개인 {kospi_trend.get('개인')}억, 외국인 {kospi_trend.get('외국인')}억, 기관 {kospi_trend.get('기관')}억
-    - 코스닥 수급(추정): 개인 {kosdaq_trend.get('개인')}억, 외국인 {kosdaq_trend.get('외국인')}억, 기관 {kosdaq_trend.get('기관')}억
+    - 코스피 수급(순매수): 개인 {kospi_trend.get('개인')}억, 외국인 {kospi_trend.get('외국인')}억, 기관 {kospi_trend.get('기관')}억
+    - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}억, 외국인 {kosdaq_trend.get('외국인')}억, 기관 {kosdaq_trend.get('기관')}억
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
     
