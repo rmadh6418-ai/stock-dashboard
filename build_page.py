@@ -88,7 +88,8 @@ def get_investor_trend(market_code="KOSPI"):
 
     urls_to_try = [
         target_url,
-        f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}"
+        f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}",
+        f"https://corsproxy.io/?{urllib.parse.quote(target_url)}"
     ]
 
     for url in urls_to_try:
@@ -98,19 +99,13 @@ def get_investor_trend(market_code="KOSPI"):
                 soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
                 for tr in soup.find_all("tr"):
                     date_td = tr.find("td", class_="date")
-                    if date_td:
-                        date_text = date_td.text.strip()
-                        if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
-                            num_tds = tr.find_all("td", class_="number")
-                            if len(num_tds) >= 3:
-                                ind = parse_korean_money(num_tds[0].text) // 100
-                                forgn = parse_korean_money(num_tds[1].text) // 100
-                                inst = parse_korean_money(num_tds[2].text) // 100
-
-                                trend_data["개인"] = str(ind)
-                                trend_data["외국인"] = str(forgn)
-                                trend_data["기관"] = str(inst)
-                                return trend_data
+                    if date_td and re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_td.text.strip()):
+                        num_tds = tr.find_all("td", class_="number")
+                        if len(num_tds) >= 3:
+                            trend_data["개인"] = str(parse_korean_money(num_tds[0].text) // 100)
+                            trend_data["외국인"] = str(parse_korean_money(num_tds[1].text) // 100)
+                            trend_data["기관"] = str(parse_korean_money(num_tds[2].text) // 100)
+                            return trend_data
         except Exception:
             continue
 
@@ -138,11 +133,10 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
 
-    [작성 지침 - 엄격하게 준수할 것]
-    1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
-    3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
-    4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
+    [작성 지침]
+    1. "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
+    2. 외국인과 기관의 수급 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 핵심 자금 이동을 설명할 것.
+    3. 전체 분량은 5~7문장 분량으로 매끄러운 단일 평문으로 작성할 것. (마크다운 기호 금지)
     """
 
     try:
@@ -153,7 +147,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
         else:
             return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 새로고침 해주세요."
     except Exception as e:
-        return f"🚨 AI 호출 실패.\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+        return f"🚨 AI 호출 실패 (사유: {str(e)})<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
