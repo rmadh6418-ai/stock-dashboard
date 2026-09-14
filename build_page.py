@@ -9,15 +9,14 @@ import requests
 import google.generativeai as genai
 
 def get_headers(is_daum=False):
-    if is_daum:
-        return {
-            "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36",
-            "Referer": "https://m.finance.daum.net/",
-        }
-    return {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36",
-        "Referer": "https://m.stock.naver.com/",
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     }
+    if is_daum:
+        headers["Referer"] = "https://finance.daum.net/"
+    else:
+        headers["Referer"] = "https://finance.naver.com/"
+    return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
@@ -59,57 +58,63 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [월요일 적용본] 네이버 모바일 API 직결 통신으로 100% 방화벽 우회
+# [최종본] 네이버 개별 지수 페이지의 고정 HTML 태그 정밀 추적
 def get_investor_trend(market_code="KOSPI"):
-    trend_data = {"개인": "데이터없음", "외국인": "데이터없음", "기관": "데이터없음"}
+    trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
     
-    # 1. 네이버 모바일 공식 API (JSON 반환)
-    try:
-        url = f"https://m.stock.naver.com/api/index/{market_code}/trend"
-        headers = get_headers()
-        res = requests.get(url, headers=headers, timeout=5)
+    def parse_trend_amount(text):
+        text = text.replace(',', '').replace(' ', '').replace('+', '').strip()
+        if not text: return "0"
         
-        if res.status_code == 200:
-            data = res.json()
-            if isinstance(data, list) and len(data) > 0:
-                recent = data[0]  # 가장 최근 일자 데이터
-                # API는 '백만원' 단위를 반환하므로 100으로 나누어 '억원' 변환
-                ind = int(recent.get("indvPureBuyPrc", 0)) // 100
-                frgn = int(recent.get("frgnPureBuyPrc", 0)) // 100
-                inst = int(recent.get("instPureBuyPrc", 0)) // 100
+        # 네이버 특유의 가짜 마이너스 기호 완벽 호환
+        is_minus = False
+        if text.startswith('-') or text.startswith('−') or text.startswith('—') or '▼' in text:
+            is_minus = True
+            
+        nums_only = re.sub(r'[^\d조]', '', text)
+        
+        jo, eok = 0, 0
+        if '조' in nums_only:
+            parts = nums_only.split('조')
+            jo = int(parts[0]) if parts[0].isdigit() else 0
+            eok = int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 0
+        else:
+            eok = int(nums_only) if nums_only.isdigit() else 0
+            
+        total = jo * 10000 + eok
+        if is_minus: total = -total
+        return str(total)
+
+    try:
+        url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+        
+        biztrend = soup.find('dl', class_='biztrend')
+        if biztrend:
+            parsed = False
+            dts = biztrend.find_all('dt')
+            dds = biztrend.find_all('dd')
+            for dt, dd in zip(dts, dds):
+                investor = dt.text.strip()
+                val_str = dd.text.strip()
                 
-                trend_data["개인"] = f"{ind}억"
-                trend_data["외국인"] = f"{frgn}억"
-                trend_data["기관"] = f"{inst}억"
+                amt = parse_trend_amount(val_str)
+                if '개인' in investor: 
+                    trend_data['개인'] = amt
+                    parsed = True
+                elif '외국인' in investor: 
+                    trend_data['외국인'] = amt
+                    parsed = True
+                elif '기관' in investor: 
+                    trend_data['기관'] = amt
+                    parsed = True
+                    
+            if parsed and trend_data['개인'] != "0":
                 return trend_data
     except Exception as e:
-        print(f"[{market_code} 네이버 모바일 API 에러] {e}")
-
-    # 2. 다음(Daum) 모바일 API 우회 통신 (백업)
-    try:
-        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
-        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
-        headers = get_headers(is_daum=True)
-        headers["Accept"] = "application/json"
+        print(f"[{market_code} 수급 파싱 에러] {e}")
         
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get("data", [])
-            if items:
-                item = items[0]
-                # 단위가 '원'이므로 1억(100,000,000)으로 나눔
-                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
-                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
-                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
-                
-                trend_data["개인"] = f"{ind}억"
-                trend_data["외국인"] = f"{forgn}억"
-                trend_data["기관"] = f"{inst}억"
-                return trend_data
-    except Exception as e:
-        print(f"[{market_code} 다음 모바일 API 에러] {e}")
-
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -122,7 +127,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
     
-    # [수정] 수급 데이터가 없더라도 AI가 에러를 내지 않도록 프롬프트 강화
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
     오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
@@ -130,14 +134,14 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
-    - 코스피 수급(순매수): 개인 {kospi_trend.get('개인')}, 외국인 {kospi_trend.get('외국인')}, 기관 {kospi_trend.get('기관')}
-    - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}, 외국인 {kosdaq_trend.get('외국인')}, 기관 {kosdaq_trend.get('기관')}
+    - 코스피 수급(순매수): 개인 {kospi_trend.get('개인')}억, 외국인 {kospi_trend.get('외국인')}억, 기관 {kospi_trend.get('기관')}억
+    - 코스닥 수급(순매수): 개인 {kosdaq_trend.get('개인')}억, 외국인 {kosdaq_trend.get('외국인')}억, 기관 {kosdaq_trend.get('기관')}억
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
     
     [작성 지침 - 엄격하게 준수할 것]
     1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 만약 제공된 수급 데이터에 "데이터없음" 혹은 "에러"가 섞여있다면 수급 이야기는 자연스럽게 생략하고 지수 변동과 주도 섹터 위주로 논리를 전개할 것.
+    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
     3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
@@ -511,16 +515,6 @@ def calculate_sectors(sector_dict, stock_data):
     results.sort(key=lambda x: x["rate"], reverse=True)
     return results[:3], results[-3:][::-1]
 
-def format_kakao_trend(val):
-    val_str = str(val).strip()
-    if not val_str.endswith("억"):
-        return "데이터없음"
-    try:
-        num = int(val_str.replace(",", "").replace("억", "").replace("+", "").strip())
-        return f"+{num:,}억" if num > 0 else f"{num:,}억"
-    except:
-        return "데이터없음"
-
 def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
     refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
@@ -530,6 +524,15 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
         return
 
     try:
+        def format_kakao_trend(val_str):
+            try:
+                num = int(val_str)
+                if num > 0: return f"+{num:,}억"
+                elif num < 0: return f"{num:,}억"
+                else: return "0억"
+            except:
+                return "0억"
+
         token_url = "https://kauth.kakao.com/oauth/token"
         token_data = {
             "grant_type": "refresh_token",
@@ -557,10 +560,10 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
         k200_lead = k200_top[0]["name"] if k200_top else "집계중"
         k150_lead = k150_top[0]["name"] if k150_top else "집계중"
         
-        k_fore = format_kakao_trend(kospi_trend.get('외국인'))
-        k_inst = format_kakao_trend(kospi_trend.get('기관'))
-        kq_fore = format_kakao_trend(kosdaq_trend.get('외국인'))
-        kq_inst = format_kakao_trend(kosdaq_trend.get('기관'))
+        k_fore = format_kakao_trend(kospi_trend.get('외국인', "0"))
+        k_inst = format_kakao_trend(kospi_trend.get('기관', "0"))
+        kq_fore = format_kakao_trend(kosdaq_trend.get('외국인', "0"))
+        kq_inst = format_kakao_trend(kosdaq_trend.get('기관', "0"))
 
         msg_text = (
             f"📊 [정규장 마감 리포트] {date_str}\n\n"
@@ -610,21 +613,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    def format_trend(val):
-        val_str = str(val).strip()
-        if not val_str.endswith("억"):
-            return f'<span class="trend-val text-flat" style="font-size:0.85rem; color:#ef4444;">{val_str}</span>'
-            
+    def format_trend(val_str):
         try:
-            raw_num = int(val_str.replace(",", "").replace("억", "").replace("+", "").strip())
-            if raw_num > 0:
-                return f'<span class="trend-val text-up">+{raw_num:,}억</span>'
-            elif raw_num < 0:
-                return f'<span class="trend-val text-down">{raw_num:,}억</span>'
+            num = int(val_str)
+            if num > 0:
+                return f'<span class="trend-val text-up">+{num:,}억</span>'
+            elif num < 0:
+                return f'<span class="trend-val text-down">{num:,}억</span>'
             else:
                 return f'<span class="trend-val text-flat">0억</span>'
         except:
-            return f'<span class="trend-val text-flat">{val_str}</span>'
+            return f'<span class="trend-val text-flat">0억</span>'
 
     def build_sector_list(sectors):
         if not sectors: 
@@ -712,15 +711,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <div class="trend-wrap">
         <div class="trend-box">
             <div class="trend-title">🏦 코스피 투자자별 매매동향</div>
-            <div class="trend-row"><span class="trend-label">개인</span> {format_trend(kospi_trend.get('개인', '-'))}</div>
-            <div class="trend-row"><span class="trend-label">외국인</span> {format_trend(kospi_trend.get('외국인', '-'))}</div>
-            <div class="trend-row"><span class="trend-label">기관</span> {format_trend(kospi_trend.get('기관', '-'))}</div>
+            <div class="trend-row"><span class="trend-label">개인</span> {format_trend(kospi_trend.get('개인', '0'))}</div>
+            <div class="trend-row"><span class="trend-label">외국인</span> {format_trend(kospi_trend.get('외국인', '0'))}</div>
+            <div class="trend-row"><span class="trend-label">기관</span> {format_trend(kospi_trend.get('기관', '0'))}</div>
         </div>
         <div class="trend-box">
             <div class="trend-title">🚀 코스닥 투자자별 매매동향</div>
-            <div class="trend-row"><span class="trend-label">개인</span> {format_trend(kosdaq_trend.get('개인', '-'))}</div>
-            <div class="trend-row"><span class="trend-label">외국인</span> {format_trend(kosdaq_trend.get('외국인', '-'))}</div>
-            <div class="trend-row"><span class="trend-label">기관</span> {format_trend(kosdaq_trend.get('기관', '-'))}</div>
+            <div class="trend-row"><span class="trend-label">개인</span> {format_trend(kosdaq_trend.get('개인', '0'))}</div>
+            <div class="trend-row"><span class="trend-label">외국인</span> {format_trend(kosdaq_trend.get('외국인', '0'))}</div>
+            <div class="trend-row"><span class="trend-label">기관</span> {format_trend(kosdaq_trend.get('기관', '0'))}</div>
         </div>
     </div>
     
