@@ -8,22 +8,12 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-# 방화벽 우회 및 Daum 옵션 충돌 해결
 def get_headers(is_daum=False):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Cache-Control": "max-age=0",
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Referer": "https://finance.naver.com/"
     }
-    if is_daum:
-        headers["Referer"] = "https://finance.daum.net/"
-    else:
-        headers["Referer"] = "https://finance.naver.com/"
-    return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
@@ -65,14 +55,16 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-def parse_korean_money(text):
-    clean = text.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
-    
+# [궁극의 파싱 함수] 조 단위, 억 단위, 온갖 특수기호 마이너스까지 모두 숫자로 치환
+def parse_korean_money(val_str):
+    clean = val_str.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
     is_minus = False
+    
+    # 네이버가 몰래 숨겨둔 유니코드 마이너스 완벽 색출
     if clean and clean[0] in ['-', '−', '—', '‐', '–', '▼']:
         is_minus = True
         clean = clean[1:]
-    
+        
     clean = re.sub(r'[^\d조]', '', clean)
     if not clean: return 0
     
@@ -87,98 +79,65 @@ def parse_korean_money(text):
     total = (jo * 10000) + eok
     return -total if is_minus else total
 
+# [궁극의 해결책] HTML 태그에 의존하지 않고 텍스트에서 정규식으로 직접 꽂아서 추출
 def get_investor_trend(market_code="KOSPI"):
-    trend_data = {"개인": "불러오는중", "외국인": "불러오는중", "기관": "불러오는중"}
+    trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
     
+    def extract_from_text(keyword, raw_text):
+        # "개인" 글자 뒤에 나오는 숫자(부호, 조, 억 포함)를 완벽하게 추적
+        pattern = keyword + r'[^\d+\-−—▼]*([+\-−—▼]?\s*\d+(?:,\d+)*(?:\s*조\s*\d+(?:,\d+)*)?\s*억?)'
+        match = re.search(pattern, raw_text)
+        if match:
+            return parse_korean_money(match.group(1))
+        return 0
+
+    # 1단계: 개별 지수 페이지 텍스트 스캔 (태그가 깨져도 무적)
+    try:
+        url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+        
+        biztrend = soup.find(class_="biztrend")
+        if biztrend:
+            text = biztrend.get_text(separator=" ")
+            ind = extract_from_text("개인", text)
+            forgn = extract_from_text("외국인", text)
+            inst = extract_from_text("기관", text)
+            
+            if ind != 0 or forgn != 0 or inst != 0:
+                trend_data["개인"] = str(ind)
+                trend_data["외국인"] = str(forgn)
+                trend_data["기관"] = str(inst)
+                return trend_data
+    except Exception:
+        pass
+
+    # 2단계: 네이버 증권 메인 페이지 텍스트 스캔 (백업망)
     try:
         url = "https://finance.naver.com/"
         res = requests.get(url, headers=get_headers(), timeout=5)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
         area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
-        area = soup.find("div", class_=area_class)
-        
+        area = soup.find(class_=area_class)
         if area:
-            biztrend = area.find("dl", class_="biztrend")
-            if biztrend:
-                parsed_any = False
-                for dt in biztrend.find_all("dt"):
-                    investor = dt.text.strip()
-                    dd = dt.find_next_sibling("dd")
-                    if not dd: continue
-                    val_text = dd.text.strip()
-                    
-                    try:
-                        num = parse_korean_money(val_text)
-                        if "개인" in investor: 
-                            trend_data["개인"] = num
-                            parsed_any = True
-                        elif "외국인" in investor: 
-                            trend_data["외국인"] = num
-                            parsed_any = True
-                        elif "기관" in investor: 
-                            trend_data["기관"] = num
-                            parsed_any = True
-                    except:
-                        pass
-                
-                if parsed_any and trend_data["개인"] != "불러오는중":
-                    return trend_data
-    except Exception:
-        pass
-
-    try:
-        sosok = "0" if market_code == "KOSPI" else "1"
-        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-        
-        for tr in soup.find_all("tr"):
-            date_td = tr.find("td", class_="date")
-            if date_td:
-                date_text = date_td.text.strip()
-                if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
-                    num_tds = tr.find_all("td", class_="number")
-                    if len(num_tds) >= 3:
-                        ind = parse_korean_money(num_tds[0].text) // 100
-                        forgn = parse_korean_money(num_tds[1].text) // 100
-                        inst = parse_korean_money(num_tds[2].text) // 100
-                        
-                        trend_data["개인"] = ind
-                        trend_data["외국인"] = forgn
-                        trend_data["기관"] = inst
-                        return trend_data
-    except Exception:
-        pass
-
-    try:
-        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
-        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
-        daum_headers = get_headers()
-        daum_headers["Referer"] = "https://finance.daum.net/domestic/investors"
-        daum_headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
-        daum_headers["X-Requested-With"] = "XMLHttpRequest"
-        
-        res = requests.get(url, headers=daum_headers, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get("data", [])
-            if items:
-                item = items[0]
-                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
-                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
-                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
-                
-                trend_data["개인"] = ind
-                trend_data["외국인"] = forgn
-                trend_data["기관"] = inst
+            text = area.get_text(separator=" ")
+            ind = extract_from_text("개인", text)
+            forgn = extract_from_text("외국인", text)
+            inst = extract_from_text("기관", text)
+            
+            if ind != 0 or forgn != 0 or inst != 0:
+                trend_data["개인"] = str(ind)
+                trend_data["외국인"] = str(forgn)
+                trend_data["기관"] = str(inst)
                 return trend_data
-    except:
+    except Exception:
         pass
 
-    trend_data["개인"] = "서버차단(방화벽)"
-    trend_data["외국인"] = "서버차단(방화벽)"
-    trend_data["기관"] = "서버차단(방화벽)"
+    # 위 두 방법이 모두 실패했을 때만 에러 메시지 출력
+    trend_data["개인"] = "데이터추출불가"
+    trend_data["외국인"] = "데이터추출불가"
+    trend_data["기관"] = "데이터추출불가"
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
