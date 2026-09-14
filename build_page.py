@@ -1,26 +1,30 @@
 import json
 import os
 import re
-import urllib.parse
+import time
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
+import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     }
     if is_daum:
+        headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
         headers["Referer"] = "https://finance.daum.net/"
     else:
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
         headers["Referer"] = "https://finance.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# GitHub Actions 환경변수에서 키 가져오기
+# Gemini API 초기화
 API_KEY = os.environ.get("GEMINI_API_KEY")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
@@ -55,55 +59,34 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [핵심 1] 깨진 글자 무시하고 날짜 옆의 '숫자'만 100% 긁어오는 무적의 함수
+# [핵심] 네이버 차단을 완전히 회피하기 위해 다음(Daum) 금융 데이터 전격 채택
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
-    sosok = "0" if market_code == "KOSPI" else "1"
-    url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
-
-    urls_to_try = [
-        f"https://api.allorigins.win/get?url={urllib.parse.quote(url)}",
-        url
-    ]
-
-    for u in urls_to_try:
-        try:
-            res = requests.get(u, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-            if res.status_code == 200:
-                if "allorigins" in u:
-                    html = res.json().get("contents", "")
-                else:
-                    html = res.content.decode("euc-kr", "replace")
-
-                soup = BeautifulSoup(html, "html.parser")
+    d_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
+    
+    url = f"https://finance.daum.net/api/trend/investor_trends?market={d_market}"
+    
+    try:
+        res = requests.get(url, headers=get_headers(is_daum=True), timeout=8)
+        if res.status_code == 200:
+            data = res.json()
+            if "data" in data and len(data["data"]) > 0:
+                latest = data["data"][0]
                 
-                for tr in soup.find_all("tr"):
-                    date_td = tr.find("td", class_="date")
-                    # 정규식으로 '24.09.11' 같은 날짜 포맷이 있는 줄만 정확히 캡처
-                    if date_td and re.search(r'\d{2,4}\.\d{2}\.\d{2}', date_td.text):
-                        num_tds = tr.find_all("td", class_="number")
-                        if len(num_tds) >= 3:
-                            def parse_val(txt):
-                                txt = txt.strip().replace(",", "")
-                                if not txt: return 0
-                                try: return int(txt) // 100 # 억 단위 변환
-                                except: return 0
-                            
-                            ind = parse_val(num_tds[0].text)
-                            forgn = parse_val(num_tds[1].text)
-                            inst = parse_val(num_tds[2].text)
-
-                            if ind != 0 or forgn != 0 or inst != 0:
-                                trend_data["개인"] = str(ind)
-                                trend_data["외국인"] = str(forgn)
-                                trend_data["기관"] = str(inst)
-                                return trend_data
-        except:
-            continue
+                # 다음 API는 데이터를 '원' 단위로 제공하므로 1억(100,000,000)으로 나눔
+                # 음수 처리 시 오차 방지를 위해 int() 내에서 직접 나눗셈 수행
+                ind = int(float(latest.get("individual", 0)) / 100000000)
+                forgn = int(float(latest.get("foreign", 0)) / 100000000)
+                inst = int(float(latest.get("institution", 0)) / 100000000)
+                
+                trend_data["개인"] = str(ind)
+                trend_data["외국인"] = str(forgn)
+                trend_data["기관"] = str(inst)
+    except Exception:
+        pass
 
     return trend_data
 
-# [핵심 2] 파이썬 라이브러리(SDK) 충돌을 피해 다이렉트 REST API로 1.5 플래시 모델 강제 호출
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -138,24 +121,18 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     """
 
     try:
-        # SDK를 안 쓰고 구글 서버에 직접 통신합니다. (가장 안정적임)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
-        headers = {'Content-Type': 'application/json'}
-        data = {
-            "contents": [{"parts": [{"text": prompt}]}]
-        }
-        res = requests.post(url, headers=headers, json=data, timeout=15)
-        
-        if res.status_code == 200:
-            result = res.json()
-            return result['candidates'][0]['content']['parts'][0]['text'].strip().replace('\n', ' ')
+        # 공식 라이브러리로 복귀하여 1.5-flash 안전하게 호출
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        if response and hasattr(response, 'text') and response.text:
+            return response.text.strip().replace('\n', ' ')
         else:
-            return (
-                f"🚨 <b>AI 분석 에러 (상태코드: {res.status_code})</b><br>"
-                f"API 키가 Google Cloud 전용이거나 제한되었습니다. 반드시 <b>aistudio.google.com</b>에서 발급받은 키를 사용해주세요.<br><br>{fallback_text}"
-            )
+            return f"🚨 AI 응답 오류<br><br>{fallback_text}"
     except Exception as e:
-        return f"🚨 <b>AI 호출 실패</b> (사유: {str(e)})<br><br>{fallback_text}"
+        error_str = str(e)
+        if "404" in error_str:
+            return f"🚨 <b>AI 호출 에러 (404 Not Found)</b><br>해당 API 키로는 gemini-1.5-flash 모델 접근이 제한되어 있습니다. Google AI Studio에서 새로 키를 발급받으세요.<br><br>{fallback_text}"
+        return f"🚨 <b>AI 호출 실패</b> (사유: {error_str})<br><br>{fallback_text}"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -178,8 +155,7 @@ def fetch_real_news(keyword, stock_code=""):
     if stock_code:
         try:
             url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            res = requests.get(url, headers=headers, timeout=4)
+            res = requests.get(url, headers=get_headers(), timeout=4)
             soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
             table = soup.find("table", class_="type5")
             if table:
@@ -377,8 +353,7 @@ def get_jpy_krw_rate():
 def get_index_data_robust(name, key, mobile_code, pc_code):
     try:
         url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=3)
+        res = requests.get(url, headers=get_headers(), timeout=3)
         if res.status_code == 200:
             data = res.json()
             cd = str(data.get("compareToPreviousPrice", {}).get("code", "3"))
@@ -392,8 +367,7 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
 
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=3)
+        res = requests.get(url, headers=get_headers(), timeout=3)
         soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
 
         val_el = soup.find(id="now_value")
@@ -447,8 +421,7 @@ def get_market_stocks():
 
     for u, market in urls:
         try:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            res = requests.get(u, headers=headers, timeout=5)
+            res = requests.get(u, headers=get_headers(), timeout=5)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
                 table = soup.find("table", class_="type_2")
