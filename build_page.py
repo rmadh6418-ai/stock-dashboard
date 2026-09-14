@@ -97,17 +97,21 @@ def get_investor_trend(market_code="KOSPI"):
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
                 
+                # 테이블 로우(tr)를 순회하며 데이터 추출
                 for tr in soup.find_all("tr"):
                     tds = tr.find_all("td")
                     
+                    # 매매동향 테이블은 보통 10개 이상의 td로 구성됨 (날짜, 개인, 외국인, 기관계 순서)
                     if len(tds) >= 4:
                         date_text = tds[0].text.strip()
                         
+                        # 첫 번째 칸이 날짜 형식(예: 24.10.25)인지 정규식으로 엄격하게 검증
                         if re.match(r'^\d{2,4}\.\d{2}\.\d{2}$', date_text):
                             ind_val = parse_korean_money(tds[1].text)
                             forgn_val = parse_korean_money(tds[2].text)
                             inst_val = parse_korean_money(tds[3].text)
 
+                            # 네이버 금융 매매동향의 기본 단위는 '백만 원'이므로 100으로 나누어 '억 원' 단위로 변환
                             trend_data["개인"] = str(int(ind_val / 100))
                             trend_data["외국인"] = str(int(forgn_val / 100))
                             trend_data["기관"] = str(int(inst_val / 100))
@@ -148,13 +152,24 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
 
     try:
         model = genai.GenerativeModel('gemini-3.6-flash')
-        response = model.generate_content(prompt)
-        if response and hasattr(response, 'text') and response.text:
+        
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+        
+        response = model.generate_content(prompt, safety_settings=safety_settings)
+        
+        if response.parts:
             return response.text.strip().replace('\n', ' ')
         else:
-            return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 새로고침 해주세요."
+            return "🚨 AI 응답이 비어있습니다. (API 서버 응답 지연)"
+            
     except Exception as e:
-        return f"🚨 AI 호출 실패.\n[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+        error_msg = str(e).replace('\n', ' ')
+        return f"🚨 AI 호출 실패 (원인: {error_msg})<br><br>[요약] 코스피와 코스닥은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
