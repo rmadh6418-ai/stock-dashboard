@@ -98,14 +98,21 @@ def get_investor_trend(market_code="KOSPI"):
             if res.status_code == 200:
                 soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
                 for tr in soup.find_all("tr"):
-                    date_td = tr.find("td", class_="date")
-                    if date_td and re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_td.text.strip()):
-                        num_tds = tr.find_all("td", class_="number")
-                        if len(num_tds) >= 3:
-                            trend_data["개인"] = str(parse_korean_money(num_tds[0].text) // 100)
-                            trend_data["외국인"] = str(parse_korean_money(num_tds[1].text) // 100)
-                            trend_data["기관"] = str(parse_korean_money(num_tds[2].text) // 100)
-                            return trend_data
+                    num_tds = tr.find_all("td", class_="number")
+                    # 날짜 형식 검사를 생략하고 가장 먼저 발견되는 데이터행(숫자 열이 3개 이상)을 강제 추출
+                    if len(num_tds) >= 3:
+                        ind_str = num_tds[0].text.strip()
+                        for_str = num_tds[1].text.strip()
+                        inst_str = num_tds[2].text.strip()
+                        
+                        if ind_str and for_str and inst_str:
+                            trend_data["개인"] = str(parse_korean_money(ind_str) // 100)
+                            trend_data["외국인"] = str(parse_korean_money(for_str) // 100)
+                            trend_data["기관"] = str(parse_korean_money(inst_str) // 100)
+                            
+                            # 빈 데이터가 아니면 즉시 반환하여 오류 방지
+                            if trend_data["개인"] != "0" or trend_data["외국인"] != "0":
+                                return trend_data
         except Exception:
             continue
 
@@ -140,7 +147,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     """
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 모델 버전에 의한 404 에러 방지를 위해 가장 범용적인 gemini-pro 모델로 변경
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
         if response and hasattr(response, 'text') and response.text:
             return response.text.strip().replace('\n', ' ')
