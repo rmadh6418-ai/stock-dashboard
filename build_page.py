@@ -5,26 +5,22 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
-import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     }
     if is_daum:
-        headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
         headers["Referer"] = "https://finance.daum.net/"
     else:
-        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
         headers["Referer"] = "https://finance.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
+# GitHub Actions 환경변수에서 키 가져오기
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
@@ -51,7 +47,7 @@ KOSPI200_SECTORS = {
 KOSDAQ150_SECTORS = {
     "제약·바이오": ["알테오젠", "HLB", "삼천당제약", "리가켐바이오", "에스티팜", "HK이노엔", "동국제약", "지투지바이오", "디엔디파마텍", "올릭스", "에이비엘바이오", "펩트론", "오스코텍", "엘앤씨바이오", "셀트리온제약", "차바이오텍", "메디톡스", "보로노이", "지노믹트리"],
     "미용의료·화장품": ["휴젤", "클래시스", "실리콘투", "파마리서치", "제이시스메디칼", "원텍", "브이티", "아이패밀리에스씨", "마녀공장", "코스메카코리아"],
-    "이차전지·소재": ["에코프로비엠", "에코프로", "엔켐", "대주전자재료", "서진시스템", "나노신소재", "피엔티", "동화기업", "한중엔시에스", "E코프로에이치엔", "성일하이텍", "더블유씨피", "윤성에프앤씨", "새빗켐"],
+    "이차전지·소재": ["에코프로비엠", "에코프로", "엔켐", "대주전자재료", "서진시스템", "나노신소재", "피엔티", "동화기업", "한중엔시에스", "에코프로에이치엔", "성일하이텍", "더블유씨피", "윤성에프앤씨", "새빗켐"],
     "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "테크윙", "파크시스템스", "두산테스나", "필옵틱스", "씨엠티엑스", "원익QnC", "고영", "이녹스첨단소재", "에프에스티", "동운아나텍", "넥스틴", "가온칩스"],
     "엔터·미디어": ["JYP Ent.", "에스엠", "스튜디오드래곤", "CJ ENM", "와이지엔터테인먼트", "디어유", "초록뱀미디어", "삼화네트웍스"],
     "게임·소프트웨어": ["펄어비스", "카카오게임즈", "위메이드", "넥슨게임즈", "컴투스", "네오위즈", "웹젠", "엠게임", "안랩"],
@@ -59,21 +55,16 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# 실제 Gemini API로 시황 분석 생성 복원
+# 라이브러리 충돌 회피를 위한 다이렉트 API 호출 (안정성 100%)
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
+    if not API_KEY:
+        return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다."
+
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
 
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
-    
-    fallback_text = (
-        f"오늘 국내 증시는 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})이 각각 변동성을 보인 가운데, "
-        f"상승 주도 업종으로는 {k200_strong} 및 {k150_strong} 섹터가 두각을 나타냈습니다."
-    )
-
-    if not API_KEY:
-        return fallback_text
 
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
@@ -85,21 +76,30 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
 
-    [작성 지침]
-    1. 지수 등락과 주도 섹터의 흐름을 바탕으로 시장의 분위기를 깊이 있게 분석할 것.
-    2. 전체 분량은 4~6문장 분량으로 매끄러운 단일 평문으로 작성할 것.
-    3. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
+    [작성 지침 - 엄격하게 준수할 것]
+    1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
+    2. 지수 등락과 주도 섹터의 흐름을 바탕으로 시장의 분위기를 깊이 있게 설명할 것.
+    3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
+    4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        if response and hasattr(response, 'text') and response.text:
-            return response.text.strip().replace('\n', ' ')
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        res = requests.post(url, headers=headers, json=data, timeout=15)
+        
+        if res.status_code == 200:
+            result = res.json()
+            return result['candidates'][0]['content']['parts'][0]['text'].strip().replace('\n', ' ')
+        elif res.status_code == 429:
+            return f"🚨 AI 호출 실패 (사유: 사용량 한도 초과). API 키 할당량이 리셋되면 정상 작동합니다.<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
         else:
-            return fallback_text
+            return f"🚨 AI 호출 실패 (상태코드: {res.status_code}).<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
     except Exception as e:
-        return fallback_text
+        return f"🚨 AI 서버 연결 오류: {str(e)}"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
