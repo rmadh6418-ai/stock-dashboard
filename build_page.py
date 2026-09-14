@@ -8,12 +8,16 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-def get_headers():
-    return {
+def get_headers(is_daum=False):
+    headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Referer": "https://finance.naver.com/"
     }
+    if is_daum:
+        headers["Referer"] = "https://finance.daum.net/"
+    else:
+        headers["Referer"] = "https://finance.naver.com/"
+    return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
@@ -77,13 +81,11 @@ def parse_korean_money(val_str):
     total = (jo * 10000) + eok
     return -total if is_minus else total
 
-# [궁극의 해결책] 깃허브 IP 차단을 우회하는 글로벌 프록시 시스템 도입
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
     sosok = "0" if market_code == "KOSPI" else "1"
     target_url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
     
-    # 1. 다이렉트 통신 시도 -> 2. 실패 시 allorigins 무료 프록시 서버로 우회 접속 시도
     urls_to_try = [
         target_url,
         f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}"
@@ -98,7 +100,6 @@ def get_investor_trend(market_code="KOSPI"):
                     date_td = tr.find("td", class_="date")
                     if date_td:
                         date_text = date_td.text.strip()
-                        # 정확한 날짜가 박혀있는 진짜 데이터 열만 타겟팅
                         if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
                             num_tds = tr.find_all("td", class_="number")
                             if len(num_tds) >= 3:
@@ -113,9 +114,6 @@ def get_investor_trend(market_code="KOSPI"):
         except Exception:
             continue
 
-    trend_data["개인"] = "데이터추출불가"
-    trend_data["외국인"] = "데이터추출불가"
-    trend_data["기관"] = "데이터추출불가"
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -142,7 +140,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     
     [작성 지침 - 엄격하게 준수할 것]
     1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것. (수급이 숫자가 아닌 문자로 표기된 경우 생략 가능)
+    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
     3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
@@ -525,14 +523,14 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
         return
 
     try:
-        def format_kakao_trend(val_str):
+        def format_kakao_trend(val):
             try:
-                num = int(val_str)
+                num = int(val)
                 if num > 0: return f"+{num:,}억"
                 elif num < 0: return f"{num:,}억"
                 else: return "0억"
             except:
-                return str(val_str)
+                return str(val)
 
         token_url = "https://kauth.kakao.com/oauth/token"
         token_data = {
@@ -615,9 +613,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         """
         
     def format_trend(val):
-        val_str = str(val).strip()
         try:
-            num = int(val_str)
+            num = int(val)
             if num > 0:
                 return f'<span class="trend-val text-up">+{num:,}억</span>'
             elif num < 0:
@@ -625,7 +622,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             else:
                 return f'<span class="trend-val text-flat">0억</span>'
         except:
-            return f'<span class="trend-val text-flat" style="font-size:0.85rem; color:#ef4444;">{val_str}</span>'
+            return f'<span class="trend-val text-flat" style="font-size:0.85rem; color:#ef4444;">{val}</span>'
 
     def build_sector_list(sectors):
         if not sectors: 
