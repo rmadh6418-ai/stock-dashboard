@@ -19,7 +19,7 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# 환경변수에서 키 가져오기 (GitHub Actions yml 파일에 env: GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 가 필수)
+# GitHub Actions 환경변수에서 키 가져오기
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
@@ -57,19 +57,13 @@ KOSDAQ150_SECTORS = {
 
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
-    
-    # 잦은 차단을 피하기 위해 증시 메인 요약 페이지에서 직독직해하는 로직
+    # 인덱스 페이지에서 안정적으로 구조화된 데이터 추출
     url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
     
     urls_to_try = [
         url,
         f"https://api.allorigins.win/get?url={urllib.parse.quote(url)}"
     ]
-
-    def extract_money(txt):
-        is_minus = "-" in txt or "▼" in txt or "매도" in txt
-        num_str = re.sub(r'[^\d]', '', txt)
-        return f"-{num_str}" if is_minus else (num_str if num_str else "0")
 
     for u in urls_to_try:
         try:
@@ -78,18 +72,19 @@ def get_investor_trend(market_code="KOSPI"):
                 html = res.json().get('contents', '') if "allorigins" in u else res.content.decode("euc-kr", "replace")
                 soup = BeautifulSoup(html, "html.parser")
                 
+                # lst_kos_info 안의 투자자별 매매동향을 정확히 타겟팅
                 dl = soup.find("dl", class_="lst_kos_info")
                 if dl:
                     for dd in dl.find_all("dd"):
-                        txt = dd.text.strip()
-                        if "개인" in txt:
-                            trend_data["개인"] = extract_money(txt)
-                        elif "외국인" in txt:
-                            trend_data["외국인"] = extract_money(txt)
-                        elif "기관" in txt:
-                            trend_data["기관"] = extract_money(txt)
+                        spans = dd.find_all("span")
+                        if len(spans) >= 2:
+                            name = spans[0].text.strip()
+                            # 억 단위, 콤마 제거 후 숫자만 남기기
+                            val_str = spans[1].text.strip().replace(",", "").replace("+", "").replace("억", "")
+                            if name in ["개인", "외국인", "기관"]:
+                                trend_data[name] = val_str
                     
-                    if trend_data["개인"] != "0" or trend_data["외국인"] != "0":
+                    if trend_data["개인"] != "0" or trend_data["외국인"] != "0" or trend_data["기관"] != "0":
                         return trend_data
         except:
             continue
@@ -105,9 +100,9 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     
     if not API_KEY or API_KEY.strip() == "":
         return (
-            f"💡 <b>API 환경변수 누락 안내</b><br><br>"
-            f"GitHub Secrets에 키를 등록했더라도, GitHub Actions <b>yml 설정 파일(.github/workflows/파일이름.yml)</b>의 <code>env:</code> 항목에 키가 선언되어 있지 않습니다.<br>"
-            f"yml 파일 안의 파이썬 실행 step 아래에 <code>GEMINI_API_KEY: ${{{{ secrets.GEMINI_API_KEY }}}}</code> 구문을 반드시 추가해 주세요.<br><br>"
+            f"💡 <b>API 환경변수 연결 오류 안내</b><br><br>"
+            f"GitHub Repository Settings -> Secrets and variables -> Actions 에 들어간 뒤<br>"
+            f"반드시 <b>'Repository secrets'</b> 항목에 <code>GEMINI_API_KEY</code> 이름으로 키가 저장되어 있는지 다시 한번 확인해주세요.<br><br>"
             f"<b>[현재 시장 요약]</b> 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 "
             f"{k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
         )
@@ -144,7 +139,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
         else:
             return (
                 f"🚨 <b>AI 분석 통신 에러 (상태코드: {res.status_code})</b><br>"
-                f"API 키가 잘못되었거나 사용량이 초과되었습니다. 에러내용: {res.text}<br><br>"
+                f"저장된 API 키가 잘못되었거나 사용량이 초과되었습니다. 에러내용: {res.text}<br><br>"
                 f"<b>[요약]</b> 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
             )
     except Exception as e:
