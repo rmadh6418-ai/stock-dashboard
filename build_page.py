@@ -16,7 +16,7 @@ def get_headers(is_daum=False):
     if is_daum:
         headers["Referer"] = "https://finance.daum.net/"
     else:
-        headers["Referer"] = "https://m.stock.naver.com/"
+        headers["Referer"] = "https://finance.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
@@ -59,28 +59,61 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [최종 확정] 네이버 증권 모바일 API를 통한 수급 데이터 연동 함수
+def parse_korean_money(val_str):
+    clean = val_str.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
+    is_minus = False
+    
+    if clean and clean[0] in ['-', '−', '—', '‐', '–', '▼']:
+        is_minus = True
+        clean = clean[1:]
+        
+    clean = re.sub(r'[^\d조]', '', clean)
+    if not clean: return 0
+    
+    jo, eok = 0, 0
+    if "조" in clean:
+        parts = clean.split("조")
+        jo = int(parts[0]) if parts[0] else 0
+        eok = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+    else:
+        eok = int(clean)
+        
+    total = (jo * 10000) + eok
+    return -total if is_minus else total
+
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
-    try:
-        url = f"https://m.stock.naver.com/api/index/{market_code}/trend"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            if isinstance(data, list) and len(data) > 0:
-                recent = data[0]
-                # 네이버 모바일 API의 원본 단위는 '백만원'이므로 10,000으로 나누어 '억원'으로 변환
-                ind = int(float(recent.get("indvPureBuyPrc", 0)) / 10000)
-                frgn = int(float(recent.get("frgnPureBuyPrc", 0)) / 10000)
-                inst = int(float(recent.get("instPureBuyPrc", 0)) / 10000)
-                
-                trend_data["개인"] = str(ind)
-                trend_data["외국인"] = str(frgn)
-                trend_data["기관"] = str(inst)
-                return trend_data
-    except Exception as e:
-        print(f"[{market_code} 모바일 API 수급 에러] {e}")
-        
+    sosok = "0" if market_code == "KOSPI" else "1"
+    target_url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+    
+    urls_to_try = [
+        target_url,
+        f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}"
+    ]
+    
+    for url in urls_to_try:
+        try:
+            res = requests.get(url, headers=get_headers(), timeout=8)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
+                for tr in soup.find_all("tr"):
+                    date_td = tr.find("td", class_="date")
+                    if date_td:
+                        date_text = date_td.text.strip()
+                        if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
+                            num_tds = tr.find_all("td", class_="number")
+                            if len(num_tds) >= 3:
+                                ind = parse_korean_money(num_tds[0].text) // 100
+                                forgn = parse_korean_money(num_tds[1].text) // 100
+                                inst = parse_korean_money(num_tds[2].text) // 100
+                                
+                                trend_data["개인"] = str(ind)
+                                trend_data["외국인"] = str(forgn)
+                                trend_data["기관"] = str(inst)
+                                return trend_data
+        except Exception:
+            continue
+
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -107,7 +140,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     
     [작성 지침 - 엄격하게 준수할 것]
     1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 외국인과 기관의 수급 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
+    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
     3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
