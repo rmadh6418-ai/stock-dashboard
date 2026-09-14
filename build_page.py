@@ -8,15 +8,17 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-def get_headers(is_daum=False):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+# 브라우저와 100% 동일하게 위장하여 차단을 막는 헤더
+def get_headers():
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Cache-Control": "max-age=0",
     }
-    if is_daum:
-        headers["Referer"] = "https://finance.daum.net/"
-    else:
-        headers["Referer"] = "https://finance.naver.com/"
-    return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
@@ -58,63 +60,126 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# [최종본] 네이버 개별 지수 페이지의 고정 HTML 태그 정밀 추적
-def get_investor_trend(market_code="KOSPI"):
-    trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
+# [핵심] 조 단위 텍스트 및 유니코드 마이너스 완벽 변환기
+def parse_korean_money(text):
+    clean = text.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
     
-    def parse_trend_amount(text):
-        text = text.replace(',', '').replace(' ', '').replace('+', '').strip()
-        if not text: return "0"
+    is_minus = False
+    # 네이버가 숨겨놓은 온갖 마이너스 특수기호 완벽 색출
+    if clean and clean[0] in ['-', '−', '—', '‐', '–', '▼']:
+        is_minus = True
+        clean = clean[1:]
+    
+    clean = re.sub(r'[^\d조]', '', clean)
+    if not clean: return 0
+    
+    jo, eok = 0, 0
+    if "조" in clean:
+        parts = clean.split("조")
+        jo = int(parts[0]) if parts[0] else 0
+        eok = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+    else:
+        eok = int(clean)
         
-        # 네이버 특유의 가짜 마이너스 기호 완벽 호환
-        is_minus = False
-        if text.startswith('-') or text.startswith('−') or text.startswith('—') or '▼' in text:
-            is_minus = True
-            
-        nums_only = re.sub(r'[^\d조]', '', text)
-        
-        jo, eok = 0, 0
-        if '조' in nums_only:
-            parts = nums_only.split('조')
-            jo = int(parts[0]) if parts[0].isdigit() else 0
-            eok = int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 0
-        else:
-            eok = int(nums_only) if nums_only.isdigit() else 0
-            
-        total = jo * 10000 + eok
-        if is_minus: total = -total
-        return str(total)
+    total = (jo * 10000) + eok
+    return -total if is_minus else total
 
+def get_investor_trend(market_code="KOSPI"):
+    trend_data = {"개인": "불러오는중", "외국인": "불러오는중", "기관": "불러오는중"}
+    
+    # 1. 가장 빠르고 정확한 네이버 금융 메인 페이지 파싱
     try:
-        url = f"https://finance.naver.com/sise/sise_index.naver?code={market_code}"
+        url = "https://finance.naver.com/"
         res = requests.get(url, headers=get_headers(), timeout=5)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
-        biztrend = soup.find('dl', class_='biztrend')
-        if biztrend:
-            parsed = False
-            dts = biztrend.find_all('dt')
-            dds = biztrend.find_all('dd')
-            for dt, dd in zip(dts, dds):
-                investor = dt.text.strip()
-                val_str = dd.text.strip()
-                
-                amt = parse_trend_amount(val_str)
-                if '개인' in investor: 
-                    trend_data['개인'] = amt
-                    parsed = True
-                elif '외국인' in investor: 
-                    trend_data['외국인'] = amt
-                    parsed = True
-                elif '기관' in investor: 
-                    trend_data['기관'] = amt
-                    parsed = True
+        area_class = "kospi_area" if market_code == "KOSPI" else "kosdaq_area"
+        area = soup.find("div", class_=area_class)
+        
+        if area:
+            biztrend = area.find("dl", class_="biztrend")
+            if biztrend:
+                parsed_any = False
+                for dt in biztrend.find_all("dt"):
+                    investor = dt.text.strip()
+                    dd = dt.find_next_sibling("dd")
+                    if not dd: continue
+                    val_text = dd.text.strip()
                     
-            if parsed and trend_data['개인'] != "0":
-                return trend_data
-    except Exception as e:
-        print(f"[{market_code} 수급 파싱 에러] {e}")
+                    try:
+                        num = parse_korean_money(val_text)
+                        if "개인" in investor: 
+                            trend_data["개인"] = num
+                            parsed_any = True
+                        elif "외국인" in investor: 
+                            trend_data["외국인"] = num
+                            parsed_any = True
+                        elif "기관" in investor: 
+                            trend_data["기관"] = num
+                            parsed_any = True
+                    except:
+                        pass
+                
+                if parsed_any and trend_data["개인"] != "불러오는중":
+                    return trend_data
+    except Exception:
+        pass
+
+    # 2. 메인이 막히면 우회하는 투자자별 매매동향 표 파싱 (백업)
+    try:
+        sosok = "0" if market_code == "KOSPI" else "1"
+        url = f"https://finance.naver.com/sise/sise_trans_style.naver?sosok={sosok}"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
         
+        for tr in soup.find_all("tr"):
+            date_td = tr.find("td", class_="date")
+            if date_td:
+                date_text = date_td.text.strip()
+                if re.match(r'\d{2,4}\.\d{2}\.\d{2}', date_text):
+                    num_tds = tr.find_all("td", class_="number")
+                    if len(num_tds) >= 3:
+                        ind = parse_korean_money(num_tds[0].text) // 100
+                        forgn = parse_korean_money(num_tds[1].text) // 100
+                        inst = parse_korean_money(num_tds[2].text) // 100
+                        
+                        trend_data["개인"] = ind
+                        trend_data["외국인"] = forgn
+                        trend_data["기관"] = inst
+                        return trend_data
+    except Exception:
+        pass
+
+    # 3. 최후의 보루 Daum JSON API 호출
+    try:
+        daum_market = "KOSPI" if market_code == "KOSPI" else "KOSDAQ"
+        url = f"https://finance.daum.net/api/investor/days?page=1&perPage=1&market={daum_market}"
+        daum_headers = get_headers()
+        daum_headers["Referer"] = "https://finance.daum.net/domestic/investors"
+        daum_headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
+        daum_headers["X-Requested-With"] = "XMLHttpRequest"
+        
+        res = requests.get(url, headers=daum_headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            items = data.get("data", [])
+            if items:
+                item = items[0]
+                ind = int(item.get("individualStraightPurchasePrice", 0) / 100000000)
+                forgn = int(item.get("foreignStraightPurchasePrice", 0) / 100000000)
+                inst = int(item.get("institutionStraightPurchasePrice", 0) / 100000000)
+                
+                trend_data["개인"] = ind
+                trend_data["외국인"] = forgn
+                trend_data["기관"] = inst
+                return trend_data
+    except:
+        pass
+
+    # 모든 곳에서 거부당했을 경우 에러 메시지 반환
+    trend_data["개인"] = "서버차단(방화벽)"
+    trend_data["외국인"] = "서버차단(방화벽)"
+    trend_data["기관"] = "서버차단(방화벽)"
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
@@ -141,7 +206,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     
     [작성 지침 - 엄격하게 준수할 것]
     1. 단순한 수치 나열은 절대 피하고, "왜 이런 흐름이 나왔는지" 시장의 배경(매크로 환경, 투심 변화 등)을 깊이 있게 분석할 것.
-    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것.
+    2. 외국인과 기관의 수급(자금 유출입) 흐름과 주도 섹터 상승의 연관성을 엮어서 시장의 '핵심 자금 이동'을 설명할 것. (수급이 문자로 표기된 경우 생략 가능)
     3. 전체 분량은 5~7문장 분량으로 아주 상세하고 풍부하게 작성할 것.
     4. 마크다운 기호(*, # 등)를 일절 쓰지 말고, 한 편의 완성된 전문가 칼럼처럼 매끄러운 단일 평문으로 작성할 것.
     """
@@ -524,14 +589,14 @@ def send_kakao_alert(indices, k200_top, k150_top, kospi_trend, kosdaq_trend):
         return
 
     try:
-        def format_kakao_trend(val_str):
+        def format_kakao_trend(val):
             try:
-                num = int(val_str)
+                num = int(val)
                 if num > 0: return f"+{num:,}억"
                 elif num < 0: return f"{num:,}억"
                 else: return "0억"
             except:
-                return "0억"
+                return str(val)
 
         token_url = "https://kauth.kakao.com/oauth/token"
         token_data = {
@@ -613,9 +678,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
         
-    def format_trend(val_str):
+    # [핵심 버그 수정 완료] 숫자가 아니면 0억으로 바꾸지 않고 에러 내용을 그대로 빨간색으로 출력합니다.
+    def format_trend(val):
         try:
-            num = int(val_str)
+            num = int(val)
             if num > 0:
                 return f'<span class="trend-val text-up">+{num:,}억</span>'
             elif num < 0:
@@ -623,7 +689,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             else:
                 return f'<span class="trend-val text-flat">0억</span>'
         except:
-            return f'<span class="trend-val text-flat">0억</span>'
+            return f'<span class="trend-val text-flat" style="font-size:0.85rem; color:#ef4444;">{val}</span>'
 
     def build_sector_list(sectors):
         if not sectors: 
