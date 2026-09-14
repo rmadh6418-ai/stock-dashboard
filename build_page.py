@@ -2,11 +2,9 @@ import json
 import os
 import re
 import urllib.parse
-import time
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
-import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
@@ -21,10 +19,8 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
+# Gemini API KEY
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
@@ -59,6 +55,28 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
+def parse_korean_money(val_str):
+    clean = val_str.replace(",", "").replace(" ", "").replace("+", "").replace("억", "").strip()
+    is_minus = False
+
+    if clean and clean[0] in ['-', '−', '—', '‐', '–', '▼']:
+        is_minus = True
+        clean = clean[1:]
+
+    clean = re.sub(r'[^\d조]', '', clean)
+    if not clean: return 0
+
+    jo, eok = 0, 0
+    if "조" in clean:
+        parts = clean.split("조")
+        jo = int(parts[0]) if parts[0] else 0
+        eok = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+    else:
+        eok = int(clean)
+
+    total = (jo * 10000) + eok
+    return -total if is_minus else total
+
 def get_investor_trend(market_code="KOSPI"):
     trend_data = {"개인": "0", "외국인": "0", "기관": "0"}
     sosok = "0" if market_code == "KOSPI" else "1"
@@ -66,56 +84,63 @@ def get_investor_trend(market_code="KOSPI"):
 
     urls_to_try = [
         target_url,
-        f"https://api.codetabs.com/v1/proxy?quest={urllib.parse.quote(target_url)}",
-        f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}"
+        f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}",
+        f"https://api.codetabs.com/v1/proxy?quest={urllib.parse.quote(target_url)}"
     ]
 
     for url in urls_to_try:
         try:
             res = requests.get(url, headers=get_headers(), timeout=8)
             if res.status_code == 200:
-                # 프록시 우회 시 한글 인코딩이 깨지더라도 숫자와 - 부호만 추출하도록 강력한 파싱 로직 적용
-                try:
-                    html_content = res.content.decode("euc-kr")
-                except:
-                    html_content = res.content.decode("utf-8", "ignore")
-                    
+                if "allorigins" in url:
+                    html_content = res.json().get('contents', '')
+                else:
+                    try:
+                        html_content = res.content.decode("euc-kr")
+                    except:
+                        html_content = res.content.decode("utf-8", "ignore")
+                
                 soup = BeautifulSoup(html_content, "html.parser")
+                
+                # HTML 클래스에 의존하지 않고 표 구조 자체(td 개수)를 읽어내는 초강력 로직
                 for tr in soup.find_all("tr"):
-                    num_tds = tr.find_all("td", class_="number")
-                    if len(num_tds) >= 3:
-                        def extract_eok(td):
-                            txt = td.text.strip()
-                            is_minus = "-" in txt or "▼" in txt
-                            num_str = re.sub(r'[^\d]', '', txt)
-                            if not num_str: return 0
-                            val = int(num_str)
-                            return (-val if is_minus else val) // 100
-
-                        ind = extract_eok(num_tds[0])
-                        forgn = extract_eok(num_tds[1])
-                        inst = extract_eok(num_tds[2])
-                        
-                        # 깨진 데이터가 아닌 정상 숫자가 하나라도 잡히면 성공 처리
-                        if ind != 0 or forgn != 0 or inst != 0:
-                            trend_data["개인"] = str(ind)
-                            trend_data["외국인"] = str(forgn)
-                            trend_data["기관"] = str(inst)
-                            return trend_data
-        except Exception:
+                    tds = tr.find_all("td")
+                    if len(tds) >= 4:
+                        date_text = tds[0].text.strip()
+                        # '24.09.11' 또는 '2024.09.11' 같은 날짜 형식이 첫칸에 있는지 확인
+                        if re.match(r'^\d{2,4}\.\d{2}\.\d{2}$', date_text):
+                            ind = parse_korean_money(tds[1].text) // 100
+                            forgn = parse_korean_money(tds[2].text) // 100
+                            inst = parse_korean_money(tds[3].text) // 100
+                            
+                            # 0이 아닌 숫자가 하나라도 잡히면 정상 추출 완료
+                            if ind != 0 or forgn != 0 or inst != 0:
+                                trend_data["개인"] = str(ind)
+                                trend_data["외국인"] = str(forgn)
+                                trend_data["기관"] = str(inst)
+                                return trend_data
+        except Exception as e:
             continue
 
     return trend_data
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, kospi_trend, kosdaq_trend):
-    if not API_KEY:
-        return "💡 API 키가 설정되지 않아 AI 시황 분석을 제공할 수 없습니다."
-
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
 
     k200_strong = ", ".join([s['name'] for s in k200_top]) if k200_top else "특이사항 없음"
     k150_strong = ", ".join([s['name'] for s in k150_top]) if k150_top else "특이사항 없음"
+    
+    fallback_text = (
+        f"💡 <b>AI 시황 분석 대기 중 (API 키 확인 필요)</b><br><br>"
+        f"현재 GitHub Secrets에 등록된 GEMINI_API_KEY가 유효하지 않거나 만료되었습니다.<br>"
+        f"<b>aistudio.google.com</b>에 접속하여 무료 API 키를 새로 발급받아 업데이트해주세요.<br><br>"
+        f"<b>[현재 시장 요약]</b> 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 "
+        f"{k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+    )
+
+    if not API_KEY or API_KEY.strip() == "":
+        return fallback_text
 
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
@@ -136,17 +161,20 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot, 
     """
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        if response and hasattr(response, 'text') and response.text:
-            return response.text.strip().replace('\n', ' ')
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        res = requests.post(url, headers=headers, json=data, timeout=15)
+        
+        if res.status_code == 200:
+            result = res.json()
+            return result['candidates'][0]['content']['parts'][0]['text'].strip().replace('\n', ' ')
         else:
-            return "AI 모델이 빈 응답을 반환했습니다. 잠시 후 새로고침 해주세요."
-    except Exception as e:
-        error_msg = str(e)
-        if "404" in error_msg:
-            return f"🚨 <b>AI 호출 실패 (API 키 권한 오류)</b><br><br>Google Cloud Console에서 만든 키를 사용 중이시거나 권한이 없는 키입니다.<br>반드시 <b>Google AI Studio (aistudio.google.com)</b>에서 무료 API 키를 새로 발급받아 교체해주세요.<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
-        return f"🚨 AI 호출 실패 ({error_msg})<br><br>[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 {k200_strong} 및 {k150_strong} 섹터를 중심으로 변동성을 보였습니다."
+            return fallback_text
+    except Exception:
+        return fallback_text
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -414,13 +442,13 @@ def get_market_indices():
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
 
-    results.append(get_exchange_rate())         # 4번째 자리
-    results.append(get_jpy_krw_rate())          # 5번째 자리 
-    results.append(get_us_10y_yield())          # 6번째 자리
-    results.append(get_us_30y_yield())          # 7번째 자리
-    results.append(get_gold_price())            # 8번째 자리
-    results.append(get_silver_price())          # 9번째 자리
-    results.append(get_oil_price())             # 10번째 자리
+    results.append(get_exchange_rate())         
+    results.append(get_jpy_krw_rate())          
+    results.append(get_us_10y_yield())          
+    results.append(get_us_30y_yield())          
+    results.append(get_gold_price())            
+    results.append(get_silver_price())          
+    results.append(get_oil_price())             
 
     return results
 
