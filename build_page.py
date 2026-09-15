@@ -621,33 +621,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
 <script>
     // 💡 여기에 원하는 비밀번호를 설정하세요! (현재는 1234)
-    const SECRET_PASSWORD = "4203";
+    const SECRET_PASSWORD = "1234";
 
-    function checkPassword() {
+    // 파이썬 에러 방지를 위해 자바스크립트 중괄호를 두 번({{ }}) 겹쳐서 작성했습니다.
+    function checkPassword() {{
         const input = document.getElementById('pw-input').value;
-        if (input === SECRET_PASSWORD) {
-            // 비밀번호가 맞으면 잠금 화면을 숨김
+        if (input === SECRET_PASSWORD) {{
             document.getElementById('lock-screen').style.display = 'none';
-            // 창을 닫기 전까지 로그인 상태 유지
             sessionStorage.setItem('isUnlocked', 'true');
-        } else {
-            // 비밀번호가 틀리면 에러 메시지 표시
+        }} else {{
             document.getElementById('pw-error').style.display = 'block';
-        }
-    }
+        }}
+    }}
 
-    // 페이지 접속 시 로그인 상태인지 확인
-    window.onload = function() {
-        if (sessionStorage.getItem('isUnlocked') === 'true') {
+    window.onload = function() {{
+        if (sessionStorage.getItem('isUnlocked') === 'true') {{
             document.getElementById('lock-screen').style.display = 'none';
-        }
-        // 엔터키만 눌러도 확인 버튼이 눌리도록 설정
-        document.getElementById('pw-input').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
+        }}
+        document.getElementById('pw-input').addEventListener('keypress', function (e) {{
+            if (e.key === 'Enter') {{
                 checkPassword();
-            }
-        });
-    }
+            }}
+        }});
+    }}
 </script>
 <!-- 🔐 비밀번호 잠금 화면 끝 -->
     <header><h1>📊 실시간 국내 증시 대시보드</h1></header>
