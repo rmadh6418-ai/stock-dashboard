@@ -621,7 +621,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
 <script>
     // 💡 여기에 원하는 비밀번호를 설정하세요! (현재는 1234)
-    const SECRET_PASSWORD = "1234";
+    const SECRET_PASSWORD = "4203";
 
     // 파이썬 에러 방지를 위해 자바스크립트 중괄호를 두 번({{ }}) 겹쳐서 작성했습니다.
     function checkPassword() {{
