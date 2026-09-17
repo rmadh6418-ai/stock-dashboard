@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -58,7 +59,6 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# 회원님이 초기에 성공하셨던 gemini-3.6-flash 모델 호출 방식으로 100% 원복
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -73,6 +73,20 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
+
+    # 1. 파일 캐싱(Caching) 로직: 1시간(3600초) 동안 캐시 유지
+    cache_file = "ai_summary_cache.json"
+    cache_duration = 3600
+
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+                if time.time() - cache_data.get("timestamp", 0) < cache_duration:
+                    print("[INFO] 최근 1시간 이내의 캐시된 AI 분석 결과를 불러옵니다.")
+                    return cache_data.get("text")
+        except Exception as e:
+            print(f"[WARN] 캐시 파일 읽기 오류: {e}")
 
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
@@ -95,11 +109,33 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
         model = genai.GenerativeModel('gemini-3.6-flash')
         response = model.generate_content(prompt)
         if response and hasattr(response, 'text') and response.text:
-            return response.text.strip().replace('\n', ' ')
+            result_text = response.text.strip().replace('\n', ' ')
+            # 캐시 파일 저장
+            try:
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
+            except Exception as e:
+                print(f"[WARN] 캐시 저장 오류: {e}")
+            return result_text
         else:
             return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
     except Exception as e:
         error_str = str(e)
+        
+        # 2. 429 에러 발생 시 대기 후 1회 재시도 로직
+        if "429" in error_str:
+            print("[WARN] 429 에러 발생. 60초 대기 후 1회 재시도합니다...")
+            time.sleep(60)
+            try:
+                response = model.generate_content(prompt)
+                if response and hasattr(response, 'text') and response.text:
+                    result_text = response.text.strip().replace('\n', ' ')
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
+                    return result_text
+            except Exception as retry_e:
+                return f"🚨 <b>AI 호출 재시도 실패</b> (사유: {str(retry_e)})<br><br>{fallback_text}"
+                
         return f"🚨 <b>AI 호출 실패</b> (사유: {error_str})<br><br>{fallback_text}"
 
 def get_news_score(title, stock_name):
@@ -621,7 +657,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    // 💡 여기에 원하는 비밀번호를 설정하세요! (현재는 1234)
+    // 💡 여기에 원하는 비밀번호를 설정하세요! (현재는 4203)
     const SECRET_PASSWORD = "4203";
 
     // 파이썬 에러 방지를 위해 자바스크립트 중괄호를 두 번({{ }}) 겹쳐서 작성했습니다.
