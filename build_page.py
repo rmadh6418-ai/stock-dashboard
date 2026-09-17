@@ -74,9 +74,9 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
 
-    # 1. 파일 캐싱(Caching) 로직: 1시간(3600초) 동안 캐시 유지
+    # 1. 파일 캐싱(Caching) 로직: 30분(1800초) 동안 캐시 유지
     cache_file = "ai_summary_cache.json"
-    cache_duration = 3600
+    cache_duration = 1800
 
     if os.path.exists(cache_file):
         try:
