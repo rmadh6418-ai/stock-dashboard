@@ -60,6 +60,20 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
+# 💡 라이브 서버에서 기존 AI 텍스트 긁어오기 (에러 방어용)
+def get_live_ai_summary():
+    try:
+        res = requests.get(f"{DASHBOARD_URL}?t={int(time.time())}", timeout=3)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            ai_div = soup.find("div", class_="market-ai-content")
+            if ai_div:
+                text = ai_div.get_text(strip=True)
+                if not text.startswith("🚨") and not text.startswith("💡"):
+                    return ai_div.decode_contents() + " <span style='font-size:0.8em; color:#94a3b8; margin-left:6px;'>(이전 분석 유지)</span>"
+    except: pass
+    return None
+
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -75,18 +89,32 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
 
-    cache_file = "ai_summary_cache.json"
+    os.makedirs("public", exist_ok=True)
+    cache_file = "public/ai_summary_cache.json"
+    cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
     cache_duration = 1800
 
+    # 1. 라이브 웹페이지에서 기존 캐시 원격 다운로드 (깃허브 액션 초기화 방어)
+    try:
+        res = requests.get(f"{cache_url}?t={int(time.time())}", timeout=3)
+        if res.status_code == 200:
+            cache_data = res.json()
+            if time.time() - cache_data.get("timestamp", 0) < cache_duration:
+                print("[INFO] 라이브 서버에서 30분 이내의 AI 분석 캐시를 불러옵니다.")
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(cache_data, f, ensure_ascii=False)
+                return cache_data.get("text")
+    except Exception as e:
+        print(f"[WARN] 원격 캐시 파일 읽기 오류: {e}")
+
+    # 2. 로컬 캐시 확인 (PC 실행용 보조)
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 if time.time() - cache_data.get("timestamp", 0) < cache_duration:
-                    print("[INFO] 최근 30분 이내의 캐시된 AI 분석 결과를 불러옵니다.")
                     return cache_data.get("text")
-        except Exception as e:
-            print(f"[WARN] 캐시 파일 읽기 오류: {e}")
+        except: pass
 
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
@@ -106,6 +134,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     """
 
     try:
+        # 💡 회원님께서 맞춰두신 3.6-flash 모델로 정확하게 원복했습니다!
         model = genai.GenerativeModel('gemini-3.6-flash')
         response = model.generate_content(prompt)
         if response and hasattr(response, 'text') and response.text:
@@ -113,14 +142,19 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             try:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-            except Exception as e:
-                print(f"[WARN] 캐시 저장 오류: {e}")
+            except: pass
             return result_text
         else:
             return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
     except Exception as e:
         error_str = str(e)
+        
+        # 429 에러 발생 시 절대 에러문구를 띄우지 않고 기존 텍스트 재사용
         if "429" in error_str:
+            live_text = get_live_ai_summary()
+            if live_text:
+                return live_text
+            
             time.sleep(60)
             try:
                 response = model.generate_content(prompt)
@@ -129,8 +163,9 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                     with open(cache_file, "w", encoding="utf-8") as f:
                         json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
                     return result_text
-            except Exception as retry_e:
-                return f"🚨 <b>AI 호출 재시도 실패</b> (사유: {str(retry_e)})<br><br>{fallback_text}"
+            except:
+                live_text2 = get_live_ai_summary()
+                return live_text2 if live_text2 else fallback_text
                 
         return f"🚨 <b>AI 호출 실패</b> (사유: {error_str})<br><br>{fallback_text}"
 
@@ -151,7 +186,6 @@ def get_news_score(title, stock_name):
     
     return score
 
-# 💡 limit 파라미터 추가: 기본 1개만 가져오도록 최적화
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     
@@ -212,7 +246,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            # 💡 limit으로 설정된 개수(1개)만 반환하도록 보장
             if len(unique_news) == limit:
                 break
 
@@ -478,11 +511,9 @@ def get_market_stocks():
 
     return stocks
 
-# 💡 핵심 수정: 모든 섹터를 검색하지 않고, 최종 확정된 6개 섹터에 대해서만 각 종목당 1개씩 총 3개 뉴스를 수집합니다.
 def calculate_sectors(sector_dict, stock_data):
     sector_stats = []
     
-    # 1. 먼저 섹터별 평균 등락률을 계산하고 순위를 매깁니다. (뉴스 검색 안 함)
     for sec_name, stock_names in sector_dict.items():
         try:
             matched = []
@@ -509,16 +540,13 @@ def calculate_sectors(sector_dict, stock_data):
     if not sector_stats:
         return [], []
 
-    # 2. 전체 섹터를 정렬하여 상위 3개, 하위 3개를 뽑아냅니다.
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
     
-    # 3. 선정된 6개 알짜 섹터에 대해서만! 각 상위 3개 종목의 뉴스를 1개씩(총 3개) 불러옵니다.
     for s in top_sectors + bot_sectors:
         news_items = []
         for st in s["stocks"]:
-            # 한 종목당 정확히 1개의 알짜 뉴스만 가져오도록 limit=1 지정
             st_news = fetch_real_news(st["name"], st.get("code", ""), limit=1)
             if st_news:
                 news_items.extend(st_news)
@@ -693,14 +721,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         const input = document.getElementById('pw-input').value;
         if (input === SECRET_PASSWORD) {{
             document.getElementById('lock-screen').style.display = 'none';
-            sessionStorage.setItem('isUnlocked', 'true');
+            // 💡 탭 이동, 뒤로가기 시에도 비밀번호가 풀리지 않도록 영구 보관 (localStorage)
+            localStorage.setItem('isUnlocked', 'true');
         }} else {{
             document.getElementById('pw-error').style.display = 'block';
         }}
     }}
 
     window.onload = function() {{
-        if (sessionStorage.getItem('isUnlocked') === 'true') {{
+        // 💡 localStorage 기반 자동 통과
+        if (localStorage.getItem('isUnlocked') === 'true') {{
             document.getElementById('lock-screen').style.display = 'none';
         }}
         document.getElementById('pw-input').addEventListener('keypress', function (e) {{
