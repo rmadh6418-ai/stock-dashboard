@@ -7,13 +7,17 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-def get_headers(is_daum=False):
+# 💡 수정사항 1: 네이버 API 전용 헤더(is_naver_api)를 추가하여 JSON 데이터를 정상적으로 받아오도록 수정
+def get_headers(is_daum=False, is_naver_api=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     }
     if is_daum:
         headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
         headers["Referer"] = "https://finance.daum.net/"
+    elif is_naver_api:
+        headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
+        headers["Referer"] = "https://m.stock.naver.com/"
     else:
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
         headers["Referer"] = "https://finance.naver.com/"
@@ -26,8 +30,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
-# 💡 수정사항: 경제 뉴스 제목에 자주 붙는 "포토", "영상", "방송" 키워드를 제외 목록에서 빼서 정상 뉴스가 누락되지 않도록 완화했습니다.
-EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
+EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
@@ -75,7 +78,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
 
-    # 파일 캐싱(Caching) 로직: 30분(1800초) 동안 캐시 유지
     cache_file = "ai_summary_cache.json"
     cache_duration = 1800
 
@@ -84,7 +86,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 if time.time() - cache_data.get("timestamp", 0) < cache_duration:
-                    print("[INFO] 최근 1시간 이내의 캐시된 AI 분석 결과를 불러옵니다.")
+                    print("[INFO] 최근 30분 이내의 캐시된 AI 분석 결과를 불러옵니다.")
                     return cache_data.get("text")
         except Exception as e:
             print(f"[WARN] 캐시 파일 읽기 오류: {e}")
@@ -121,6 +123,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
     except Exception as e:
         error_str = str(e)
+        
         if "429" in error_str:
             print("[WARN] 429 에러 발생. 60초 대기 후 1회 재시도합니다...")
             time.sleep(60)
@@ -136,10 +139,13 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 
         return f"🚨 <b>AI 호출 실패</b> (사유: {error_str})<br><br>{fallback_text}"
 
+# 💡 수정사항 2: 검색된 뉴스는 무조건 '기본 1점'을 부여하여, 기사 제목에 종목명이 없더라도 멀쩡한 뉴스가 차단되지 않도록 완화했습니다.
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
         if bad in title: return -1
-    score = 0
+        
+    score = 1 # 해당 종목 코드로 검색된 뉴스이므로 기본 점수 1점 부여
+    
     aliases = [stock_name]
     if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
     elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
@@ -149,87 +155,100 @@ def get_news_score(title, stock_name):
 
     if has_stock: score += 5
     if has_biz: score += 4
-    if not has_stock and not has_biz: return -1
+    
     return score
 
-# 💡 수정사항: 네이버 주식 모바일 전용 API를 우선 사용하여 구조 변경 및 인코딩 깨짐을 원천 차단했습니다.
+# 💡 수정사항 3: 네이버 모바일 API -> 다음(Daum) 금융 API -> 네이버 PC 크롤링의 3중 백업 시스템 적용
 def fetch_real_news(keyword, stock_code=""):
     candidates = []
-    
-    if stock_code:
-        # 1순위: 네이버 모바일 주식 뉴스 API (가장 안정적이고 빠름)
+    if not stock_code:
+        return candidates
+
+    # 1순위: 네이버 모바일 주식 뉴스 API (헤더 is_naver_api=True 적용)
+    try:
+        m_url = f"https://m.stock.naver.com/api/news/stock/{stock_code}?pageSize=10&page=1"
+        m_res = requests.get(m_url, headers=get_headers(is_naver_api=True), timeout=4)
+        if m_res.status_code == 200:
+            data = m_res.json()
+            items = []
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                items = data.get("items", []) or data.get("data", []) or data.get("list", [])
+            
+            for item in items:
+                raw_title = item.get('title', '')
+                oid = item.get('officeId', '')
+                aid = item.get('articleId', '')
+                press = item.get('officeName', '증권뉴스')
+                
+                raw_title = re.sub(r'<[^>]+>', '', raw_title)
+                raw_title = raw_title.replace('&quot;', '"').replace('&amp;', '&')
+                
+                score = get_news_score(raw_title, keyword)
+                if score > 0:
+                    if oid and aid:
+                        final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
+                    else:
+                        final_link = f"https://m.stock.naver.com/item/main.naver#/stocks/{stock_code}/news"
+                    candidates.append({"title": raw_title, "press": press, "link": final_link, "score": score})
+    except: pass
+
+    # 2순위: 다음(Daum) 금융 뉴스 API (네이버 오류 시 긴급 대체용)
+    if not candidates:
         try:
-            m_url = f"https://m.stock.naver.com/api/news/stock/{stock_code}?pageSize=10&page=1"
-            m_res = requests.get(m_url, headers=get_headers(), timeout=4)
-            if m_res.status_code == 200:
-                data = m_res.json()
-                if isinstance(data, list):
-                    for item in data:
-                        raw_title = item.get('title', '')
-                        oid = item.get('officeId', '')
-                        aid = item.get('articleId', '')
-                        press = item.get('officeName', '증권뉴스')
-                        
-                        # API에서 가끔 넘어오는 <b> 태그 등 불필요한 HTML 찌꺼기 제거
-                        raw_title = re.sub(r'<[^>]+>', '', raw_title)
-                        raw_title = raw_title.replace('&quot;', '"').replace('&amp;', '&')
-                        
+            d_url = f"https://finance.daum.net/api/quotes/A{stock_code}/news?page=1&perPage=10"
+            d_res = requests.get(d_url, headers=get_headers(is_daum=True), timeout=4)
+            if d_res.status_code == 200:
+                d_data = d_res.json()
+                for item in d_data.get("data", []):
+                    raw_title = item.get("title", "")
+                    raw_title = re.sub(r'<[^>]+>', '', raw_title)
+                    raw_title = raw_title.replace('&quot;', '"').replace('&amp;', '&')
+                    
+                    score = get_news_score(raw_title, keyword)
+                    if score > 0:
+                        candidates.append({
+                            "title": raw_title,
+                            "press": item.get("cpKorName", "증권뉴스"),
+                            "link": f"https://finance.daum.net/news/{item.get('newsId')}",
+                            "score": score
+                        })
+        except: pass
+
+    # 3순위: 네이버 PC버전 HTML 크롤링 (최후의 수단)
+    if not candidates:
+        try:
+            url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
+            res = requests.get(url, headers=get_headers(), timeout=4)
+            res.encoding = 'euc-kr'
+            soup = BeautifulSoup(res.text, "html.parser")
+            table = soup.find("table", class_="type5")
+            if table:
+                for tr in table.find_all("tr"):
+                    td_title = tr.find("td", class_="title")
+                    td_info = tr.find("td", class_="info")
+                    if td_title and td_title.find("a"):
+                        a_tag = td_title.find("a")
+                        raw_title = a_tag.text.strip()
                         score = get_news_score(raw_title, keyword)
                         if score > 0:
-                            if oid and aid:
+                            href = a_tag["href"]
+                            article_id_match = re.search(r'article_id=([^&]+)', href)
+                            office_id_match = re.search(r'office_id=([^&]+)', href)
+                            if article_id_match and office_id_match:
+                                aid = article_id_match.group(1)
+                                oid = office_id_match.group(1)
                                 final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
                             else:
-                                final_link = f"https://m.stock.naver.com/item/main.naver#/stocks/{stock_code}/news"
-                                
-                            candidates.append({
-                                "title": raw_title,
-                                "press": press,
-                                "link": final_link,
-                                "score": score
-                            })
-        except Exception:
-            pass
+                                final_link = "https://finance.naver.com" + href
+                            candidates.append({"title": raw_title, "press": td_info.text.strip() if td_info else "증권뉴스", "link": final_link, "score": score})
+        except: pass
 
-        # 2순위: 모바일 API 실패 시 기존 HTML 크롤링 방식으로 폴백 (안전망)
-        if not candidates:
-            try:
-                url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
-                res = requests.get(url, headers=get_headers(), timeout=4)
-                res.encoding = 'euc-kr' # 인코딩 강제 지정으로 한글 깨짐 방지
-                soup = BeautifulSoup(res.text, "html.parser")
-                table = soup.find("table", class_="type5")
-                if table:
-                    for tr in table.find_all("tr"):
-                        td_title = tr.find("td", class_="title")
-                        td_info = tr.find("td", class_="info")
-                        if td_title and td_title.find("a"):
-                            a_tag = td_title.find("a")
-                            raw_title = a_tag.text.strip()
-                            score = get_news_score(raw_title, keyword)
-                            if score > 0:
-                                href = a_tag["href"]
-                                article_id_match = re.search(r'article_id=([^&]+)', href)
-                                office_id_match = re.search(r'office_id=([^&]+)', href)
-                                if article_id_match and office_id_match:
-                                    aid = article_id_match.group(1)
-                                    oid = office_id_match.group(1)
-                                    final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
-                                else:
-                                    final_link = "https://finance.naver.com" + href
-
-                                candidates.append({
-                                    "title": raw_title,
-                                    "press": td_info.text.strip() if td_info else "증권뉴스",
-                                    "link": final_link,
-                                    "score": score,
-                                })
-            except: pass
-
-    # 점수순 정렬 및 중복 기사 필터링
+    # 높은 점수순 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
-    
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]', '', item['title'])
         clean_title = re.sub(r'\(.*?\)', '', clean_title)
@@ -697,7 +716,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     // 💡 여기에 원하는 비밀번호를 설정하세요! (현재는 4203)
     const SECRET_PASSWORD = "4203";
 
-    // 파이썬 에러 방지를 위해 자바스크립트 중괄호를 두 번({{ }}) 겹쳐서 작성했습니다.
     function checkPassword() {{
         const input = document.getElementById('pw-input').value;
         if (input === SECRET_PASSWORD) {{
