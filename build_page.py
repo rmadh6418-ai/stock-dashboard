@@ -22,6 +22,7 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
+# Gemini API 초기화
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -74,15 +75,31 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
 
-    cache_file = "ai_summary_cache.json"
-    cache_duration = 1800
+    os.makedirs("public", exist_ok=True)
+    cache_file = "public/ai_summary_cache.json"
+    cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
+    cache_duration = 1800 # 30분 유지
 
+    # 💡 [핵심 해결책] 깃허브 액션 초기화 무효화: 라이브 웹페이지에서 기존 캐시 다운로드
+    try:
+        res = requests.get(f"{cache_url}?t={int(time.time())}", timeout=5)
+        if res.status_code == 200:
+            cache_data = res.json()
+            if time.time() - cache_data.get("timestamp", 0) < cache_duration:
+                print("[INFO] 라이브 서버에서 30분 이내의 AI 분석 캐시를 성공적으로 불러왔습니다.")
+                # 깃허브 배포를 위해 파일 재생성
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(cache_data, f, ensure_ascii=False)
+                return cache_data.get("text")
+    except Exception as e:
+        print(f"[WARN] 원격 캐시 파일 읽기 실패: {e}")
+
+    # 로컬 캐시 확인 (PC 테스트용 보조)
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 if time.time() - cache_data.get("timestamp", 0) < cache_duration:
-                    print("[INFO] 최근 30분 이내의 캐시된 AI 분석 결과를 불러옵니다.")
                     return cache_data.get("text")
         except: pass
 
@@ -148,40 +165,50 @@ def get_news_score(title, stock_name):
     
     return score
 
-# 💡 구글 뉴스(Google News) RSS 엔진 탑재: 깃허브 IP 차단을 100% 무시하고 뉴스를 긁어옵니다.
+# 💡 복구 완료: 네이버 웹 통합 뉴스 검색 엔진 (가장 원하시던 방식)
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     
     try:
         search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
         encoded_query = urllib.parse.quote(search_query)
-        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
-        
-        res = requests.get(url, timeout=5)
+        url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        res = requests.get(url, headers=headers, timeout=4)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        items = soup.find_all("item")
-        for item in items:
-            title_tag = item.find("title")
-            link_tag = item.find("link")
-            source_tag = item.find("source")
-
-            if title_tag and link_tag:
-                raw_title = title_tag.text.strip()
-                # 구글 뉴스는 제목 끝에 ' - 언론사명'이 붙으므로 제거
-                if " - " in raw_title:
-                    raw_title = raw_title.rsplit(" - ", 1)[0]
+        tit_tags = soup.find_all("a", class_="news_tit")
+        for tit_tag in tit_tags:
+            raw_title = tit_tag.text.strip()
+            link = tit_tag.get("href", "")
+            press = "관련뉴스"
+            parent = tit_tag.find_parent("div", class_="news_wrap")
+            if parent:
+                press_tag = parent.find("a", class_="info press")
+                if press_tag: 
+                    press = press_tag.text.replace("언론사 선정", "").strip()
                     
-                link = link_tag.text.strip()
-                press = source_tag.text.strip() if source_tag else "구글뉴스"
+            score = get_news_score(raw_title, keyword)
+            if score > 0: 
+                candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+    except: pass
 
-                score = get_news_score(raw_title, keyword)
-                if score > 0: 
-                    candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
-    except Exception as e:
-        print(f"Google News Fetch Error: {e}")
+    if len(candidates) < limit and stock_code:
+        try:
+            code = str(stock_code).zfill(6)
+            d_url = f"https://finance.daum.net/api/quotes/A{code}/news?page=1&perPage=10"
+            d_headers = {"User-Agent": "Mozilla/5.0", "Referer": f"https://finance.daum.net/quotes/A{code}", "Accept": "application/json"}
+            d_res = requests.get(d_url, headers=d_headers, timeout=4)
+            if d_res.status_code == 200:
+                for item in d_res.json().get("data", []):
+                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
+                    link = f"https://finance.daum.net/news/{item.get('newsId')}"
+                    press = item.get("cpKorName", "증권뉴스")
+                    score = get_news_score(raw_title, keyword)
+                    if score > 0: 
+                        candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+        except: pass
 
-    # 구글 뉴스가 모자랄 경우를 대비한 하단 방어막 (기존 유지)
     if stock_code:
         code = str(stock_code).zfill(6)
         candidates.append({"title": f"[{keyword}] 실시간 주가 분석 및 리포트 바로가기", "press": "다음금융", "link": f"https://finance.daum.net/quotes/A{code}#news/stock", "score": 0.8})
