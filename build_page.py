@@ -2,7 +2,7 @@ import json
 import os
 import re
 import time
-import urllib.parse  # 검색어 인코딩을 위해 필수 추가
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -10,7 +10,7 @@ import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
     if is_daum:
         headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
@@ -27,7 +27,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
-EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
+EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
@@ -140,7 +140,7 @@ def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
         if bad in title: return -1
         
-    score = 1 # 무조건 기본 1점 (안전장치)
+    score = 10 # 💡 진짜 뉴스 기사에는 높은 점수(10점)를 부여하여 백업 링크들보다 무조건 상단에 오도록 보장합니다.
     
     aliases = [stock_name]
     if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
@@ -154,101 +154,71 @@ def get_news_score(title, stock_name):
     
     return score
 
-# 💡 완벽 해결 방안: GitHub Actions 서버 IP 차단을 100% 우회하는 RSS 데이터 수집 로직 적용
 def fetch_real_news(keyword, stock_code=""):
     candidates = []
     
-    # 1순위: 네이버 뉴스 RSS (자동화 봇 차단 정책의 영향을 받지 않는 가장 확실한 방법)
+    # 1순위: 네이버 웹 통합 뉴스 검색 (가장 막강한 스크래핑 엔진)
     try:
-        # 짧은 종목명(SK, GS 등)은 다른 분야 뉴스 혼동 방지를 위해 '특징주' 단어 결합
-        search_query = f"{keyword} 특징주" if len(keyword) < 4 else f"{keyword}"
+        search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
         encoded_query = urllib.parse.quote(search_query)
-        rss_url = f"https://newssearch.naver.com/search.naver?where=rss&query={encoded_query}"
+        url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, "html.parser")
         
-        res = requests.get(rss_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.find_all("item")
-            for item in items:
-                title_tag = item.find("title")
-                link_tag = item.find("link")
-                
-                if title_tag and link_tag:
-                    raw_title = title_tag.text.strip()
-                    # RSS 특유의 CDATA 태그 및 HTML 찌꺼기 깔끔하게 제거
-                    raw_title = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_title)
-                    raw_title = re.sub(r'<[^>]+>', '', raw_title)
+        tit_tags = soup.find_all("a", class_="news_tit")
+        for tit_tag in tit_tags:
+            raw_title = tit_tag.text.strip()
+            link = tit_tag.get("href", "")
+            press = "관련뉴스"
+            parent = tit_tag.find_parent("div", class_="news_wrap")
+            if parent:
+                press_tag = parent.find("a", class_="info press")
+                if press_tag: 
+                    press = press_tag.text.replace("언론사 선정", "").strip()
                     
-                    link = link_tag.text.strip()
-                    
-                    if not raw_title: continue
-                    
-                    score = get_news_score(raw_title, keyword)
-                    if score > 0:
-                        candidates.append({
-                            "title": raw_title,
-                            "press": "관련뉴스",
-                            "link": link,
-                            "score": score
-                        })
-    except Exception as e:
-        print(f"RSS Scrape Error: {e}")
+            score = get_news_score(raw_title, keyword)
+            if score > 0: 
+                candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+    except: pass
 
-    # 2순위: 네이버 금융 PC 종목별 뉴스 (RSS 수집 실패 시 동작하는 2차 백업)
-    if not candidates and stock_code:
+    # 2순위: 다음(Daum) 금융 API 보조 스크래핑
+    if len(candidates) < 3 and stock_code:
         try:
-            code = str(stock_code).zfill(6) # 005930 처럼 6자리 코드로 포맷팅 보장
-            url = f"https://finance.naver.com/item/news_news.naver?code={code}&page=1"
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-            res.encoding = 'euc-kr'
-            soup = BeautifulSoup(res.text, "html.parser")
-            table = soup.find("table", class_="type5")
-            if table:
-                for tr in table.find_all("tr"):
-                    td_title = tr.find("td", class_="title")
-                    td_info = tr.find("td", class_="info")
-                    if td_title and td_title.find("a"):
-                        a_tag = td_title.find("a")
-                        raw_title = a_tag.text.strip()
-                        if not raw_title: continue
-                            
-                        score = get_news_score(raw_title, keyword)
-                        if score > 0:
-                            href = a_tag["href"]
-                            if "article_id=" in href and "office_id=" in href:
-                                aid = re.search(r'article_id=([^&]+)', href).group(1)
-                                oid = re.search(r'office_id=([^&]+)', href).group(1)
-                                final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
-                            else:
-                                final_link = "https://finance.naver.com" + href
-                            press = td_info.text.strip() if td_info else "증권뉴스"
-                            candidates.append({"title": raw_title, "press": press, "link": final_link, "score": score})
-        except Exception as e:
-            print(f"PC Scrape Error: {e}")
+            code = str(stock_code).zfill(6)
+            d_url = f"https://finance.daum.net/api/quotes/A{code}/news?page=1&perPage=10"
+            d_headers = {"User-Agent": "Mozilla/5.0", "Referer": f"https://finance.daum.net/quotes/A{code}", "Accept": "application/json"}
+            d_res = requests.get(d_url, headers=d_headers, timeout=5)
+            if d_res.status_code == 200:
+                for item in d_res.json().get("data", []):
+                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
+                    link = f"https://finance.daum.net/news/{item.get('newsId')}"
+                    press = item.get("cpKorName", "증권뉴스")
+                    score = get_news_score(raw_title, keyword)
+                    if score > 0: 
+                        candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+        except: pass
 
-    # 3순위: [최후의 보루] 깃허브 서버 IP가 완전히 막혔을 때, 뉴스 상자가 사라지는 버그 방지
-    if not candidates and stock_code:
-         candidates.append({
-             "title": f"{keyword} 실시간 주요 뉴스 및 공시 보러가기",
-             "press": "네이버금융",
-             "link": f"https://finance.naver.com/item/news.naver?code={str(stock_code).zfill(6)}",
-             "score": 1
-         })
+    # 💡 3순위 (무조건 3개 출력 보장): 진짜 뉴스가 부족하면 다중 포털 링크로 빈칸을 예쁘게 채워넣습니다.
+    if stock_code:
+        code = str(stock_code).zfill(6)
+        # 점수를 소수점(0.9~0.7)으로 주어 진짜 뉴스가 있으면 진짜 뉴스가 항상 먼저 나오도록 설계
+        candidates.append({"title": f"[{keyword}] 네이버 증권 실시간 뉴스 및 공시", "press": "네이버금융", "link": f"https://finance.naver.com/item/news.naver?code={code}", "score": 0.9})
+        candidates.append({"title": f"[{keyword}] 다음 증권 실시간 뉴스 및 리포트", "press": "다음금융", "link": f"https://finance.daum.net/quotes/A{code}#news/stock", "score": 0.8})
+        candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://finance.naver.com/item/board.naver?code={code}", "score": 0.7})
 
-    # 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
     for item in candidates:
-        clean_title = re.sub(r'\[.*?\]', '', item['title'])
-        clean_title = re.sub(r'\(.*?\)', '', clean_title)
+        clean_title = re.sub(r'\[.*?\]', '', item['title']).strip()
         clean_title = re.sub(r'\W+', '', clean_title)
         if not clean_title: clean_title = item['title']
 
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            if len(unique_news) == 3:
+            if len(unique_news) == 3: # 여기서 무조건 3개를 꽉 채운 후 반복문을 멈춥니다.
                 break
 
     return unique_news
