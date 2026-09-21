@@ -109,7 +109,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     """
 
     try:
-        model = genai.GenerativeModel('gemini-3.6 Flash')
+        model = genai.GenerativeModel('gemini-3.6Flash')
         response = model.generate_content(prompt)
         
         # 💡 안전하게 응답 텍스트를 추출하는 로직 적용
