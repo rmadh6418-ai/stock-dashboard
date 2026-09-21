@@ -22,7 +22,6 @@ def get_headers(is_daum=False):
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 
-# Gemini API 초기화
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -85,8 +84,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 if time.time() - cache_data.get("timestamp", 0) < cache_duration:
                     print("[INFO] 최근 30분 이내의 캐시된 AI 분석 결과를 불러옵니다.")
                     return cache_data.get("text")
-        except Exception as e:
-            print(f"[WARN] 캐시 파일 읽기 오류: {e}")
+        except: pass
 
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
@@ -113,8 +111,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             try:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-            except Exception as e:
-                print(f"[WARN] 캐시 저장 오류: {e}")
+            except: pass
             return result_text
         else:
             return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
@@ -151,50 +148,40 @@ def get_news_score(title, stock_name):
     
     return score
 
-# 💡 limit 파라미터 추가: 기본 1개만 가져오도록 최적화
+# 💡 구글 뉴스(Google News) RSS 엔진 탑재: 깃허브 IP 차단을 100% 무시하고 뉴스를 긁어옵니다.
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     
     try:
         search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
         encoded_query = urllib.parse.quote(search_query)
-        url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        res = requests.get(url, headers=headers, timeout=4)
+        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+        
+        res = requests.get(url, timeout=5)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        tit_tags = soup.find_all("a", class_="news_tit")
-        for tit_tag in tit_tags:
-            raw_title = tit_tag.text.strip()
-            link = tit_tag.get("href", "")
-            press = "관련뉴스"
-            parent = tit_tag.find_parent("div", class_="news_wrap")
-            if parent:
-                press_tag = parent.find("a", class_="info press")
-                if press_tag: 
-                    press = press_tag.text.replace("언론사 선정", "").strip()
+        items = soup.find_all("item")
+        for item in items:
+            title_tag = item.find("title")
+            link_tag = item.find("link")
+            source_tag = item.find("source")
+
+            if title_tag and link_tag:
+                raw_title = title_tag.text.strip()
+                # 구글 뉴스는 제목 끝에 ' - 언론사명'이 붙으므로 제거
+                if " - " in raw_title:
+                    raw_title = raw_title.rsplit(" - ", 1)[0]
                     
-            score = get_news_score(raw_title, keyword)
-            if score > 0: 
-                candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
-    except: pass
+                link = link_tag.text.strip()
+                press = source_tag.text.strip() if source_tag else "구글뉴스"
 
-    if len(candidates) < limit and stock_code:
-        try:
-            code = str(stock_code).zfill(6)
-            d_url = f"https://finance.daum.net/api/quotes/A{code}/news?page=1&perPage=10"
-            d_headers = {"User-Agent": "Mozilla/5.0", "Referer": f"https://finance.daum.net/quotes/A{code}", "Accept": "application/json"}
-            d_res = requests.get(d_url, headers=d_headers, timeout=4)
-            if d_res.status_code == 200:
-                for item in d_res.json().get("data", []):
-                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
-                    link = f"https://finance.daum.net/news/{item.get('newsId')}"
-                    press = item.get("cpKorName", "증권뉴스")
-                    score = get_news_score(raw_title, keyword)
-                    if score > 0: 
-                        candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
-        except: pass
+                score = get_news_score(raw_title, keyword)
+                if score > 0: 
+                    candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+    except Exception as e:
+        print(f"Google News Fetch Error: {e}")
 
+    # 구글 뉴스가 모자랄 경우를 대비한 하단 방어막 (기존 유지)
     if stock_code:
         code = str(stock_code).zfill(6)
         candidates.append({"title": f"[{keyword}] 실시간 주가 분석 및 리포트 바로가기", "press": "다음금융", "link": f"https://finance.daum.net/quotes/A{code}#news/stock", "score": 0.8})
@@ -212,7 +199,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            # 💡 limit으로 설정된 개수(1개)만 반환하도록 보장
             if len(unique_news) == limit:
                 break
 
@@ -478,11 +464,9 @@ def get_market_stocks():
 
     return stocks
 
-# 💡 핵심 수정: 모든 섹터를 검색하지 않고, 최종 확정된 6개 섹터에 대해서만 각 종목당 1개씩 총 3개 뉴스를 수집합니다.
 def calculate_sectors(sector_dict, stock_data):
     sector_stats = []
     
-    # 1. 먼저 섹터별 평균 등락률을 계산하고 순위를 매깁니다. (뉴스 검색 안 함)
     for sec_name, stock_names in sector_dict.items():
         try:
             matched = []
@@ -509,16 +493,13 @@ def calculate_sectors(sector_dict, stock_data):
     if not sector_stats:
         return [], []
 
-    # 2. 전체 섹터를 정렬하여 상위 3개, 하위 3개를 뽑아냅니다.
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
     
-    # 3. 선정된 6개 알짜 섹터에 대해서만! 각 상위 3개 종목의 뉴스를 1개씩(총 3개) 불러옵니다.
     for s in top_sectors + bot_sectors:
         news_items = []
         for st in s["stocks"]:
-            # 한 종목당 정확히 1개의 알짜 뉴스만 가져오도록 limit=1 지정
             st_news = fetch_real_news(st["name"], st.get("code", ""), limit=1)
             if st_news:
                 news_items.extend(st_news)
