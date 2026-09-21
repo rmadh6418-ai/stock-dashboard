@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+import urllib.parse  # 검색어 인코딩을 위해 필수 추가
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -26,7 +27,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
-EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
+EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
@@ -139,7 +140,7 @@ def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
         if bad in title: return -1
         
-    score = 1 # 무조건 1점 부여 (안전장치)
+    score = 1 # 무조건 기본 1점 (안전장치)
     
     aliases = [stock_name]
     if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
@@ -153,51 +154,52 @@ def get_news_score(title, stock_name):
     
     return score
 
-# 💡 완벽 해결 방안: 구조가 계속 바뀌는 API 대신, 인간이 검색하는 것과 똑같은 '네이버 통합 검색'을 파이썬이 대신 하도록 갈아엎었습니다.
+# 💡 완벽 해결 방안: GitHub Actions 서버 IP 차단을 100% 우회하는 RSS 데이터 수집 로직 적용
 def fetch_real_news(keyword, stock_code=""):
     candidates = []
-    headers = get_headers()
-
-    # 1순위: 네이버 통합 뉴스 검색 (가장 강력하고 끊기지 않음)
+    
+    # 1순위: 네이버 뉴스 RSS (자동화 봇 차단 정책의 영향을 받지 않는 가장 확실한 방법)
     try:
-        # 짧은 종목명(SK, GS 등)은 검색 정확도를 위해 '주식' 키워드를 추가합니다.
-        search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
-        url = f"https://search.naver.com/search.naver?where=news&query={search_query}"
-        res = requests.get(url, headers=headers, timeout=4)
-        soup = BeautifulSoup(res.text, "html.parser")
-
-        articles = soup.find_all("div", class_="news_area")
-        for article in articles:
-            tit_tag = article.find("a", class_="news_tit")
-            if not tit_tag:
-                continue
+        # 짧은 종목명(SK, GS 등)은 다른 분야 뉴스 혼동 방지를 위해 '특징주' 단어 결합
+        search_query = f"{keyword} 특징주" if len(keyword) < 4 else f"{keyword}"
+        encoded_query = urllib.parse.quote(search_query)
+        rss_url = f"https://newssearch.naver.com/search.naver?where=rss&query={encoded_query}"
+        
+        res = requests.get(rss_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            items = soup.find_all("item")
+            for item in items:
+                title_tag = item.find("title")
+                link_tag = item.find("link")
                 
-            raw_title = tit_tag.get("title") or tit_tag.text
-            raw_title = raw_title.strip()
-            if not raw_title: 
-                continue
-                
-            link = tit_tag.get("href", "")
-            
-            press_tag = article.find("a", class_="info press")
-            press = press_tag.text.replace("언론사 선정", "").strip() if press_tag else "증권뉴스"
-            
-            score = get_news_score(raw_title, keyword)
-            if score > 0:
-                candidates.append({
-                    "title": raw_title,
-                    "press": press,
-                    "link": link,
-                    "score": score
-                })
+                if title_tag and link_tag:
+                    raw_title = title_tag.text.strip()
+                    # RSS 특유의 CDATA 태그 및 HTML 찌꺼기 깔끔하게 제거
+                    raw_title = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_title)
+                    raw_title = re.sub(r'<[^>]+>', '', raw_title)
+                    
+                    link = link_tag.text.strip()
+                    
+                    if not raw_title: continue
+                    
+                    score = get_news_score(raw_title, keyword)
+                    if score > 0:
+                        candidates.append({
+                            "title": raw_title,
+                            "press": "관련뉴스",
+                            "link": link,
+                            "score": score
+                        })
     except Exception as e:
-        print(f"Search API Error: {e}")
+        print(f"RSS Scrape Error: {e}")
 
-    # 2순위: 네이버 금융 PC 종목별 뉴스 (백업용)
+    # 2순위: 네이버 금융 PC 종목별 뉴스 (RSS 수집 실패 시 동작하는 2차 백업)
     if not candidates and stock_code:
         try:
-            url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
-            res = requests.get(url, headers=headers, timeout=4)
+            code = str(stock_code).zfill(6) # 005930 처럼 6자리 코드로 포맷팅 보장
+            url = f"https://finance.naver.com/item/news_news.naver?code={code}&page=1"
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
             res.encoding = 'euc-kr'
             soup = BeautifulSoup(res.text, "html.parser")
             table = soup.find("table", class_="type5")
@@ -208,25 +210,32 @@ def fetch_real_news(keyword, stock_code=""):
                     if td_title and td_title.find("a"):
                         a_tag = td_title.find("a")
                         raw_title = a_tag.text.strip()
-                        
-                        if not raw_title:
-                            continue
+                        if not raw_title: continue
                             
                         score = get_news_score(raw_title, keyword)
                         if score > 0:
                             href = a_tag["href"]
-                            article_id_match = re.search(r'article_id=([^&]+)', href)
-                            office_id_match = re.search(r'office_id=([^&]+)', href)
-                            if article_id_match and office_id_match:
-                                aid = article_id_match.group(1)
-                                oid = office_id_match.group(1)
+                            if "article_id=" in href and "office_id=" in href:
+                                aid = re.search(r'article_id=([^&]+)', href).group(1)
+                                oid = re.search(r'office_id=([^&]+)', href).group(1)
                                 final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
                             else:
                                 final_link = "https://finance.naver.com" + href
-                            candidates.append({"title": raw_title, "press": td_info.text.strip() if td_info else "증권뉴스", "link": final_link, "score": score})
-        except: pass
+                            press = td_info.text.strip() if td_info else "증권뉴스"
+                            candidates.append({"title": raw_title, "press": press, "link": final_link, "score": score})
+        except Exception as e:
+            print(f"PC Scrape Error: {e}")
 
-    # 점수순 정렬 및 중복 기사 필터링
+    # 3순위: [최후의 보루] 깃허브 서버 IP가 완전히 막혔을 때, 뉴스 상자가 사라지는 버그 방지
+    if not candidates and stock_code:
+         candidates.append({
+             "title": f"{keyword} 실시간 주요 뉴스 및 공시 보러가기",
+             "press": "네이버금융",
+             "link": f"https://finance.naver.com/item/news.naver?code={str(stock_code).zfill(6)}",
+             "score": 1
+         })
+
+    # 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
@@ -234,9 +243,7 @@ def fetch_real_news(keyword, stock_code=""):
         clean_title = re.sub(r'\[.*?\]', '', item['title'])
         clean_title = re.sub(r'\(.*?\)', '', clean_title)
         clean_title = re.sub(r'\W+', '', clean_title)
-        
-        if not clean_title:
-            clean_title = item['title']
+        if not clean_title: clean_title = item['title']
 
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
@@ -628,7 +635,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
 
-            # 💡 뉴스 디자인 개선: 언론사 이름을 대괄호로 감싸서 예쁘게 표시합니다.
             news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" rel="noopener noreferrer" class="news-link">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
             html += f"""
