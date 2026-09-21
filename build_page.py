@@ -60,7 +60,6 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# 💡 신규 방어막: 에러 발생 시 현재 운영 중인 라이브 대시보드에서 이전 분석글을 그대로 가져옴
 def get_live_ai_summary():
     try:
         res = requests.get(f"{DASHBOARD_URL}?t={int(time.time())}", timeout=3)
@@ -135,8 +134,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
     except Exception as e:
         error_str = str(e)
-        
-        # 💡 API 한도 초과 시 에러창 대신 라이브 사이트 텍스트 재사용
         if "429" in error_str:
             live_text = get_live_ai_summary()
             if live_text:
@@ -172,11 +169,9 @@ def get_news_score(title, stock_name):
     
     return score
 
-# 💡 강력한 이중 백업 뉴스 엔진: 네이버 검색(1순위) -> 구글 뉴스(2순위, 차단 우회용)
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     
-    # 1. 네이버 웹 통합 검색 (원복 완료)
     try:
         search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
         encoded_query = urllib.parse.quote(search_query)
@@ -198,7 +193,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             if score > 0: candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
     except: pass
 
-    # 2. 구글 뉴스 RSS (깃허브 IP 차단 100% 우회) - 네이버 실패 시 동작
     if len(candidates) < limit:
         try:
             search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
@@ -219,7 +213,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     if score > 0: candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
         except: pass
 
-    # 3. 최후의 빈칸 방어막
     if stock_code:
         code = str(stock_code).zfill(6)
         candidates.append({"title": f"[{keyword}] 실시간 주가 분석 및 리포트 바로가기", "press": "다음금융", "link": f"https://finance.daum.net/quotes/A{code}#news/stock", "score": 0.8})
@@ -712,14 +705,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         const input = document.getElementById('pw-input').value;
         if (input === SECRET_PASSWORD) {{
             document.getElementById('lock-screen').style.display = 'none';
-            sessionStorage.setItem('isUnlocked', 'true');
+            // 💡 핵심 수정: 모바일 브라우저/카카오톡 뒤로 가기 시 비밀번호 풀림 방지를 위해 localStorage로 영구 저장
+            localStorage.setItem('isUnlocked', 'true');
         }} else {{
             document.getElementById('pw-error').style.display = 'block';
         }}
     }}
 
     window.onload = function() {{
-        if (sessionStorage.getItem('isUnlocked') === 'true') {{
+        // 💡 핵심 수정: sessionStorage 대신 localStorage 확인
+        if (localStorage.getItem('isUnlocked') === 'true') {{
             document.getElementById('lock-screen').style.display = 'none';
         }}
         document.getElementById('pw-input').addEventListener('keypress', function (e) {{
