@@ -56,10 +56,11 @@ KOSDAQ150_SECTORS = {
     "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "테크윙", "파크시스템스", "두산테스나", "필옵틱스", "씨엠티엑스", "원익QnC", "고영", "이녹스첨단소재", "에프에스티", "동운아나텍", "넥스틴", "가온칩스"],
     "엔터·미디어": ["JYP Ent.", "에스엠", "스튜디오드래곤", "CJ ENM", "와이지엔터테인먼트", "디어유", "초록뱀미디어", "삼화네트웍스"],
     "게임·소프트웨어": ["펄어비스", "카카오게임즈", "위메이드", "넥슨게임즈", "컴투스", "네오위즈", "웹젠", "엠게임", "안랩"],
-    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱스", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션"],
+    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱s", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션"],
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
+# 💡 AI 분석 오류를 해결하고 안정적으로 텍스트를 뽑아내도록 개선된 함수
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -83,8 +84,10 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 if time.time() - cache_data.get("timestamp", 0) < cache_duration:
-                    print("[INFO] 최근 30분 이내의 캐시된 AI 분석 결과를 불러옵니다.")
-                    return cache_data.get("text")
+                    cached_txt = cache_data.get("text", "")
+                    if cached_txt and not cached_txt.startswith("[요약]"):
+                        print("[INFO] 최근 30분 이내의 캐시된 AI 분석 결과를 불러옵니다.")
+                        return cached_txt
         except Exception as e:
             print(f"[WARN] 캐시 파일 읽기 오류: {e}")
 
@@ -95,7 +98,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
-    - 코스피 상승 주도 섹터: {k200_strong}
+    - 코ส피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
 
     [작성 지침]
@@ -106,10 +109,17 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     """
 
     try:
-        model = genai.GenerativeModel('gemini-3.6-flash')
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
+        
+        # 💡 안전하게 응답 텍스트를 추출하는 로직 적용
+        result_text = ""
         if response and hasattr(response, 'text') and response.text:
             result_text = response.text.strip().replace('\n', ' ')
+        elif response and hasattr(response, 'parts'):
+            result_text = "".join([p.text for p in response.parts if hasattr(p, 'text')]).strip().replace('\n', ' ')
+
+        if result_text:
             try:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
@@ -117,15 +127,18 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 print(f"[WARN] 캐시 저장 오류: {e}")
             return result_text
         else:
-            return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
+            return f"🚨 AI 응답 데이터가 비어 있습니다.<br><br>{fallback_text}"
+            
     except Exception as e:
         error_str = str(e)
         if "429" in error_str:
             time.sleep(60)
             try:
                 response = model.generate_content(prompt)
+                result_text = ""
                 if response and hasattr(response, 'text') and response.text:
                     result_text = response.text.strip().replace('\n', ' ')
+                if result_text:
                     with open(cache_file, "w", encoding="utf-8") as f:
                         json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
                     return result_text
@@ -419,7 +432,7 @@ def get_market_indices():
     results.append(get_us_10y_yield())          
     results.append(get_us_30y_yield())          
     results.append(get_gold_price())            
-    results.append(get_silver_price())            
+    results.append(get_silver_price())          
     results.append(get_oil_price())             
 
     return results
