@@ -61,6 +61,8 @@ KOSDAQ150_SECTORS = {
 }
 
 # 라이브 서버에서 기존 AI 텍스트 긁어오기 (에러 방어용)
+# 💡 아래 2개의 함수만 기존 코드에 덮어씌우시면 됩니다.
+
 def get_live_ai_summary():
     try:
         res = requests.get(f"{DASHBOARD_URL}?t={int(time.time())}", timeout=3)
@@ -69,7 +71,8 @@ def get_live_ai_summary():
             ai_div = soup.find("div", class_="market-ai-content")
             if ai_div:
                 text = ai_div.get_text(strip=True)
-                if not text.startswith("🚨") and not text.startswith("💡"):
+                # 💡 핵심 수정 1: 라이브 사이트에 떠 있는 글이 '에러'나 '[요약]' 텍스트라면 복사하지 않고 무시합니다.
+                if not text.startswith("🚨") and not text.startswith("💡") and not text.startswith("[요약]"):
                     return ai_div.decode_contents() + " <span style='font-size:0.8em; color:#94a3b8; margin-left:6px;'>(이전 분석 유지)</span>"
     except: pass
     return None
@@ -94,25 +97,26 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
     cache_duration = 1800
 
-    # 1. 라이브 웹페이지에서 기존 캐시 원격 다운로드 (깃허브 액션 초기화 방어)
+    # 1. 라이브 웹페이지에서 기존 캐시 원격 다운로드
     try:
         res = requests.get(f"{cache_url}?t={int(time.time())}", timeout=3)
         if res.status_code == 200:
             cache_data = res.json()
-            if time.time() - cache_data.get("timestamp", 0) < cache_duration:
-                print("[INFO] 라이브 서버에서 30분 이내의 AI 분석 캐시를 불러옵니다.")
+            # 💡 [요약]으로 시작하는 잘못된 캐시는 버리도록 조건 추가
+            if time.time() - cache_data.get("timestamp", 0) < cache_duration and not cache_data.get("text", "").startswith("[요약]"):
+                print("[INFO] 라이브 서버에서 30분 이내의 정상적인 AI 분석 캐시를 불러옵니다.")
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(cache_data, f, ensure_ascii=False)
                 return cache_data.get("text")
     except Exception as e:
         print(f"[WARN] 원격 캐시 파일 읽기 오류: {e}")
 
-    # 2. 로컬 캐시 확인 (PC 실행용 보조)
+    # 2. 로컬 캐시 확인
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
-                if time.time() - cache_data.get("timestamp", 0) < cache_duration:
+                if time.time() - cache_data.get("timestamp", 0) < cache_duration and not cache_data.get("text", "").startswith("[요약]"):
                     return cache_data.get("text")
         except: pass
 
@@ -133,10 +137,20 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
     """
 
+    # 💡 핵심 수정 2: 모델 호출을 전담하는 내부 함수 (실패 시 무조건 작동하는 기본 모델로 자동 우회)
+    def call_gemini():
+        try:
+            model = genai.GenerativeModel('gemini-3.6-flash')
+            return model.generate_content(prompt)
+        except Exception as ex:
+            if "404" in str(ex) or "not found" in str(ex).lower():
+                print("[INFO] 최신 모델 인식이 실패하여, 모든 환경에서 작동하는 기본 모델(gemini-pro)로 우회합니다.")
+                fallback_model = genai.GenerativeModel('gemini-pro')
+                return fallback_model.generate_content(prompt)
+            raise ex
+
     try:
-        # 💡 회원님께서 맞춰두신 3.6-flash 모델로 정확하게 원복 완료!
-        model = genai.GenerativeModel('gemini-3.6-flash')
-        response = model.generate_content(prompt)
+        response = call_gemini()
         if response and hasattr(response, 'text') and response.text:
             result_text = response.text.strip().replace('\n', ' ')
             try:
@@ -145,11 +159,11 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             except: pass
             return result_text
         else:
-            return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
+            return f"🚨 AI 응답 텍스트가 비어 있습니다.<br><br>{fallback_text}"
     except Exception as e:
         error_str = str(e)
         
-        # 429 에러 발생 시 절대 에러문구를 띄우지 않고 기존 텍스트 재사용
+        # 429 에러 발생 시 최후의 방어
         if "429" in error_str:
             live_text = get_live_ai_summary()
             if live_text:
@@ -157,7 +171,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             
             time.sleep(60)
             try:
-                response = model.generate_content(prompt)
+                response = call_gemini()
                 if response and hasattr(response, 'text') and response.text:
                     result_text = response.text.strip().replace('\n', ' ')
                     with open(cache_file, "w", encoding="utf-8") as f:
