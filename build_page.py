@@ -26,7 +26,8 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
-EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
+# 💡 수정사항: 경제 뉴스 제목에 자주 붙는 "포토", "영상", "방송" 키워드를 제외 목록에서 빼서 정상 뉴스가 누락되지 않도록 완화했습니다.
+EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
@@ -74,7 +75,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
 
-    # 1. 파일 캐싱(Caching) 로직: 30분(1800초) 동안 캐시 유지
+    # 파일 캐싱(Caching) 로직: 30분(1800초) 동안 캐시 유지
     cache_file = "ai_summary_cache.json"
     cache_duration = 1800
 
@@ -110,7 +111,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
         response = model.generate_content(prompt)
         if response and hasattr(response, 'text') and response.text:
             result_text = response.text.strip().replace('\n', ' ')
-            # 캐시 파일 저장
             try:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
@@ -121,8 +121,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
     except Exception as e:
         error_str = str(e)
-        
-        # 2. 429 에러 발생 시 대기 후 1회 재시도 로직
         if "429" in error_str:
             print("[WARN] 429 에러 발생. 60초 대기 후 1회 재시도합니다...")
             time.sleep(60)
@@ -154,45 +152,84 @@ def get_news_score(title, stock_name):
     if not has_stock and not has_biz: return -1
     return score
 
+# 💡 수정사항: 네이버 주식 모바일 전용 API를 우선 사용하여 구조 변경 및 인코딩 깨짐을 원천 차단했습니다.
 def fetch_real_news(keyword, stock_code=""):
     candidates = []
+    
     if stock_code:
+        # 1순위: 네이버 모바일 주식 뉴스 API (가장 안정적이고 빠름)
         try:
-            url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
-            res = requests.get(url, headers=get_headers(), timeout=4)
-            soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-            table = soup.find("table", class_="type5")
-            if table:
-                for tr in table.find_all("tr"):
-                    td_title = tr.find("td", class_="title")
-                    td_info = tr.find("td", class_="info")
-                    if td_title and td_title.find("a"):
-                        a_tag = td_title.find("a")
-                        raw_title = a_tag.text.strip()
+            m_url = f"https://m.stock.naver.com/api/news/stock/{stock_code}?pageSize=10&page=1"
+            m_res = requests.get(m_url, headers=get_headers(), timeout=4)
+            if m_res.status_code == 200:
+                data = m_res.json()
+                if isinstance(data, list):
+                    for item in data:
+                        raw_title = item.get('title', '')
+                        oid = item.get('officeId', '')
+                        aid = item.get('articleId', '')
+                        press = item.get('officeName', '증권뉴스')
+                        
+                        # API에서 가끔 넘어오는 <b> 태그 등 불필요한 HTML 찌꺼기 제거
+                        raw_title = re.sub(r'<[^>]+>', '', raw_title)
+                        raw_title = raw_title.replace('&quot;', '"').replace('&amp;', '&')
+                        
                         score = get_news_score(raw_title, keyword)
                         if score > 0:
-                            href = a_tag["href"]
-                            article_id_match = re.search(r'article_id=([^&]+)', href)
-                            office_id_match = re.search(r'office_id=([^&]+)', href)
-                            if article_id_match and office_id_match:
-                                aid = article_id_match.group(1)
-                                oid = office_id_match.group(1)
+                            if oid and aid:
                                 final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
                             else:
-                                final_link = "https://finance.naver.com" + href
-
+                                final_link = f"https://m.stock.naver.com/item/main.naver#/stocks/{stock_code}/news"
+                                
                             candidates.append({
                                 "title": raw_title,
-                                "press": td_info.text.strip() if td_info else "증권뉴스",
+                                "press": press,
                                 "link": final_link,
-                                "score": score,
+                                "score": score
                             })
-        except: pass
+        except Exception:
+            pass
 
+        # 2순위: 모바일 API 실패 시 기존 HTML 크롤링 방식으로 폴백 (안전망)
+        if not candidates:
+            try:
+                url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
+                res = requests.get(url, headers=get_headers(), timeout=4)
+                res.encoding = 'euc-kr' # 인코딩 강제 지정으로 한글 깨짐 방지
+                soup = BeautifulSoup(res.text, "html.parser")
+                table = soup.find("table", class_="type5")
+                if table:
+                    for tr in table.find_all("tr"):
+                        td_title = tr.find("td", class_="title")
+                        td_info = tr.find("td", class_="info")
+                        if td_title and td_title.find("a"):
+                            a_tag = td_title.find("a")
+                            raw_title = a_tag.text.strip()
+                            score = get_news_score(raw_title, keyword)
+                            if score > 0:
+                                href = a_tag["href"]
+                                article_id_match = re.search(r'article_id=([^&]+)', href)
+                                office_id_match = re.search(r'office_id=([^&]+)', href)
+                                if article_id_match and office_id_match:
+                                    aid = article_id_match.group(1)
+                                    oid = office_id_match.group(1)
+                                    final_link = f"https://n.news.naver.com/article/{oid}/{aid}"
+                                else:
+                                    final_link = "https://finance.naver.com" + href
+
+                                candidates.append({
+                                    "title": raw_title,
+                                    "press": td_info.text.strip() if td_info else "증권뉴스",
+                                    "link": final_link,
+                                    "score": score,
+                                })
+            except: pass
+
+    # 점수순 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
-
     unique_news = []
     seen_titles = set()
+    
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]', '', item['title'])
         clean_title = re.sub(r'\(.*?\)', '', clean_title)
