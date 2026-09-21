@@ -745,5 +745,3 @@ if __name__ == "__main__":
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
 
     send_kakao_alert(indices, k200_top, k150_top)
-
-이 상태에서 AI 분석만 재대로 나오게 해줘.
