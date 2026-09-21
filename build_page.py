@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-# 💡 수정사항 1: 네이버 API 전용 헤더(is_naver_api)를 추가하여 JSON 데이터를 정상적으로 받아오도록 수정
 def get_headers(is_daum=False, is_naver_api=False):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -139,7 +138,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 
         return f"🚨 <b>AI 호출 실패</b> (사유: {error_str})<br><br>{fallback_text}"
 
-# 💡 수정사항 2: 검색된 뉴스는 무조건 '기본 1점'을 부여하여, 기사 제목에 종목명이 없더라도 멀쩡한 뉴스가 차단되지 않도록 완화했습니다.
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
         if bad in title: return -1
@@ -158,13 +156,12 @@ def get_news_score(title, stock_name):
     
     return score
 
-# 💡 수정사항 3: 네이버 모바일 API -> 다음(Daum) 금융 API -> 네이버 PC 크롤링의 3중 백업 시스템 적용
 def fetch_real_news(keyword, stock_code=""):
     candidates = []
     if not stock_code:
         return candidates
 
-    # 1순위: 네이버 모바일 주식 뉴스 API (헤더 is_naver_api=True 적용)
+    # 1순위: 네이버 모바일 주식 뉴스 API
     try:
         m_url = f"https://m.stock.naver.com/api/news/stock/{stock_code}?pageSize=10&page=1"
         m_res = requests.get(m_url, headers=get_headers(is_naver_api=True), timeout=4)
@@ -177,13 +174,18 @@ def fetch_real_news(keyword, stock_code=""):
                 items = data.get("items", []) or data.get("data", []) or data.get("list", [])
             
             for item in items:
-                raw_title = item.get('title', '')
-                oid = item.get('officeId', '')
-                aid = item.get('articleId', '')
-                press = item.get('officeName', '증권뉴스')
+                # 💡 핵심 수정: 네이버 API가 사용하는 tit, oid, aid 키 매핑 완벽 적용
+                raw_title = item.get('tit') or item.get('title', '')
+                oid = item.get('oid') or item.get('officeId', '')
+                aid = item.get('aid') or item.get('articleId', '')
+                press = item.get('offNm') or item.get('officeName', '증권뉴스')
                 
+                # 💡 핵심 수정: 제목이 비어있으면 공백 상자를 만들지 않고 즉시 패스
+                if not raw_title.strip():
+                    continue
+
                 raw_title = re.sub(r'<[^>]+>', '', raw_title)
-                raw_title = raw_title.replace('&quot;', '"').replace('&amp;', '&')
+                raw_title = raw_title.replace('&quot;', '"').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
                 
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
@@ -194,7 +196,7 @@ def fetch_real_news(keyword, stock_code=""):
                     candidates.append({"title": raw_title, "press": press, "link": final_link, "score": score})
     except: pass
 
-    # 2순위: 다음(Daum) 금융 뉴스 API (네이버 오류 시 긴급 대체용)
+    # 2순위: 다음(Daum) 금융 뉴스 API
     if not candidates:
         try:
             d_url = f"https://finance.daum.net/api/quotes/A{stock_code}/news?page=1&perPage=10"
@@ -203,6 +205,10 @@ def fetch_real_news(keyword, stock_code=""):
                 d_data = d_res.json()
                 for item in d_data.get("data", []):
                     raw_title = item.get("title", "")
+                    
+                    if not raw_title.strip():
+                        continue
+                        
                     raw_title = re.sub(r'<[^>]+>', '', raw_title)
                     raw_title = raw_title.replace('&quot;', '"').replace('&amp;', '&')
                     
@@ -216,7 +222,7 @@ def fetch_real_news(keyword, stock_code=""):
                         })
         except: pass
 
-    # 3순위: 네이버 PC버전 HTML 크롤링 (최후의 수단)
+    # 3순위: 네이버 PC버전 HTML 크롤링
     if not candidates:
         try:
             url = f"https://finance.naver.com/item/news_news.naver?code={stock_code}&page=1"
@@ -231,6 +237,10 @@ def fetch_real_news(keyword, stock_code=""):
                     if td_title and td_title.find("a"):
                         a_tag = td_title.find("a")
                         raw_title = a_tag.text.strip()
+                        
+                        if not raw_title.strip():
+                            continue
+                            
                         score = get_news_score(raw_title, keyword)
                         if score > 0:
                             href = a_tag["href"]
@@ -245,7 +255,7 @@ def fetch_real_news(keyword, stock_code=""):
                             candidates.append({"title": raw_title, "press": td_info.text.strip() if td_info else "증권뉴스", "link": final_link, "score": score})
         except: pass
 
-    # 높은 점수순 정렬 및 중복 기사 필터링
+    # 점수순 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
@@ -253,6 +263,10 @@ def fetch_real_news(keyword, stock_code=""):
         clean_title = re.sub(r'\[.*?\]', '', item['title'])
         clean_title = re.sub(r'\(.*?\)', '', clean_title)
         clean_title = re.sub(r'\W+', '', clean_title)
+        
+        # 기호 제거 후 아무것도 안 남을 경우 방어
+        if not clean_title:
+            clean_title = item['title']
 
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
