@@ -60,7 +60,7 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# 💡 AI 분석 오류를 해결하고 안정적으로 텍스트를 뽑아내도록 개선된 함수
+# 💡 AI 분석 오류를 해결하고 안정적으로 텍스트를 뽑아내도록 개선된 함수 (자동 모델 대체 적용)
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -98,7 +98,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {kosdaq.get('change_rate')}%)
-    - 코ส피 상승 주도 섹터: {k200_strong}
+    - 코스피 상승 주도 섹터: {k200_strong}
     - 코스닥 상승 주도 섹터: {k150_strong}
 
     [작성 지침]
@@ -108,44 +108,46 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
     """
 
-    try:
-        model = genai.GenerativeModel('gemini-3.6flash')
-        response = model.generate_content(prompt)
-        
-        # 💡 안전하게 응답 텍스트를 추출하는 로직 적용
-        result_text = ""
-        if response and hasattr(response, 'text') and response.text:
-            result_text = response.text.strip().replace('\n', ' ')
-        elif response and hasattr(response, 'parts'):
-            result_text = "".join([p.text for p in response.parts if hasattr(p, 'text')]).strip().replace('\n', ' ')
+    # 💡 우선순위에 따라 모델을 순차적으로 호출할 리스트 구성
+    models_to_try = [
+        'gemini-3.6-flash',
+        'gemini-3.1-pro',
+        'gemini-3-flash',
+        'gemini-2.5-flash'
+    ]
 
-        if result_text:
-            try:
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-            except Exception as e:
-                print(f"[WARN] 캐시 저장 오류: {e}")
-            return result_text
-        else:
-            return f"🚨 AI 응답 데이터가 비어 있습니다.<br><br>{fallback_text}"
+    last_error_str = ""
+
+    for model_name in models_to_try:
+        try:
+            print(f"[INFO] {model_name} 모델로 AI 시황 분석을 시도합니다...")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
             
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str:
-            time.sleep(60)
-            try:
-                response = model.generate_content(prompt)
-                result_text = ""
-                if response and hasattr(response, 'text') and response.text:
-                    result_text = response.text.strip().replace('\n', ' ')
-                if result_text:
+            result_text = ""
+            if response and hasattr(response, 'text') and response.text:
+                result_text = response.text.strip().replace('\n', ' ')
+            elif response and hasattr(response, 'parts'):
+                result_text = "".join([p.text for p in response.parts if hasattr(p, 'text')]).strip().replace('\n', ' ')
+
+            if result_text:
+                try:
                     with open(cache_file, "w", encoding="utf-8") as f:
                         json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-                    return result_text
-            except Exception as retry_e:
-                return f"🚨 <b>AI 호출 재시도 실패</b> (사유: {str(retry_e)})<br><br>{fallback_text}"
+                except Exception as e:
+                    print(f"[WARN] 캐시 저장 오류: {e}")
                 
-        return f"🚨 <b>AI 호출 실패</b> (사유: {error_str})<br><br>{fallback_text}"
+                # 분석 성공 시 즉시 텍스트 반환 후 반복문 종료
+                return result_text
+
+        except Exception as e:
+            last_error_str = str(e)
+            print(f"[WARN] {model_name} 호출 실패: {last_error_str}. 다음 모델을 준비합니다.")
+            # 실패 시 다음 모델로 넘어가서 다시 시도 (continue)
+            continue
+
+    # 리스트에 있는 모든 모델이 호출에 실패했을 경우 처리
+    return f"🚨 <b>AI 호출 실패</b> (최종 사유: {last_error_str})<br><br>{fallback_text}"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
