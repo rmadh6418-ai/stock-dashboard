@@ -694,7 +694,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    const SECRET_PASSWORD = "1029";
+    const SECRET_PASSWORD = "4203";
 
     function checkPassword() {{
         const input = document.getElementById('pw-input').value;
