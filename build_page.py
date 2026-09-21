@@ -27,7 +27,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
-EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집", "포토", "영상", "방송", "예능"]
+EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
@@ -120,9 +120,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             return f"🚨 AI 응답 오류가 발생했습니다.<br><br>{fallback_text}"
     except Exception as e:
         error_str = str(e)
-        
         if "429" in error_str:
-            print("[WARN] 429 에러 발생. 60초 대기 후 1회 재시도합니다...")
             time.sleep(60)
             try:
                 response = model.generate_content(prompt)
@@ -140,8 +138,7 @@ def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
         if bad in title: return -1
         
-    score = 10 # 💡 진짜 뉴스 기사에는 높은 점수(10점)를 부여하여 백업 링크들보다 무조건 상단에 오도록 보장합니다.
-    
+    score = 10 
     aliases = [stock_name]
     if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
     elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
@@ -154,16 +151,16 @@ def get_news_score(title, stock_name):
     
     return score
 
-def fetch_real_news(keyword, stock_code=""):
+# 💡 limit 파라미터 추가: 기본 1개만 가져오도록 최적화
+def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     
-    # 1순위: 네이버 웹 통합 뉴스 검색 (가장 막강한 스크래핑 엔진)
     try:
         search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
         encoded_query = urllib.parse.quote(search_query)
         url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=4)
         soup = BeautifulSoup(res.text, "html.parser")
         
         tit_tags = soup.find_all("a", class_="news_tit")
@@ -182,13 +179,12 @@ def fetch_real_news(keyword, stock_code=""):
                 candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
     except: pass
 
-    # 2순위: 다음(Daum) 금융 API 보조 스크래핑
-    if len(candidates) < 3 and stock_code:
+    if len(candidates) < limit and stock_code:
         try:
             code = str(stock_code).zfill(6)
             d_url = f"https://finance.daum.net/api/quotes/A{code}/news?page=1&perPage=10"
             d_headers = {"User-Agent": "Mozilla/5.0", "Referer": f"https://finance.daum.net/quotes/A{code}", "Accept": "application/json"}
-            d_res = requests.get(d_url, headers=d_headers, timeout=5)
+            d_res = requests.get(d_url, headers=d_headers, timeout=4)
             if d_res.status_code == 200:
                 for item in d_res.json().get("data", []):
                     raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
@@ -199,12 +195,10 @@ def fetch_real_news(keyword, stock_code=""):
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
         except: pass
 
-    # 💡 3순위 (무조건 3개 출력 보장): 진짜 뉴스가 부족하면 다중 포털 링크로 빈칸을 예쁘게 채워넣습니다.
     if stock_code:
         code = str(stock_code).zfill(6)
-        # 점수를 소수점(0.9~0.7)으로 주어 진짜 뉴스가 있으면 진짜 뉴스가 항상 먼저 나오도록 설계
-        candidates.append({"title": f"[{keyword}] 네이버 증권 실시간 뉴스 및 공시", "press": "네이버금융", "link": f"https://finance.naver.com/item/news.naver?code={code}", "score": 0.9})
-        candidates.append({"title": f"[{keyword}] 다음 증권 실시간 뉴스 및 리포트", "press": "다음금융", "link": f"https://finance.daum.net/quotes/A{code}#news/stock", "score": 0.8})
+        candidates.append({"title": f"[{keyword}] 실시간 주가 분석 및 리포트 바로가기", "press": "다음금융", "link": f"https://finance.daum.net/quotes/A{code}#news/stock", "score": 0.8})
+        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://finance.naver.com/item/news.naver?code={code}", "score": 0.9})
         candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://finance.naver.com/item/board.naver?code={code}", "score": 0.7})
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -218,7 +212,8 @@ def fetch_real_news(keyword, stock_code=""):
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            if len(unique_news) == 3: # 여기서 무조건 3개를 꽉 채운 후 반복문을 멈춥니다.
+            # 💡 limit으로 설정된 개수(1개)만 반환하도록 보장
+            if len(unique_news) == limit:
                 break
 
     return unique_news
@@ -483,8 +478,11 @@ def get_market_stocks():
 
     return stocks
 
+# 💡 핵심 수정: 모든 섹터를 검색하지 않고, 최종 확정된 6개 섹터에 대해서만 각 종목당 1개씩 총 3개 뉴스를 수집합니다.
 def calculate_sectors(sector_dict, stock_data):
-    results = []
+    sector_stats = []
+    
+    # 1. 먼저 섹터별 평균 등락률을 계산하고 순위를 매깁니다. (뉴스 검색 안 함)
     for sec_name, stock_names in sector_dict.items():
         try:
             matched = []
@@ -496,23 +494,37 @@ def calculate_sectors(sector_dict, stock_data):
                 continue
 
             matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
-            top_stock = matched[0]
-            news_items = fetch_real_news(top_stock["name"], top_stock.get("code", ""))
-
+            top_3_stocks = matched[:3]
             avg_r = sum(s["rate"] for s in matched) / len(matched)
-
-            results.append({
-                "name": sec_name, "rate": round(avg_r, 2), "stocks": matched[:3],
-                "lead_stock": top_stock["name"], "news": news_items,
+            
+            sector_stats.append({
+                "name": sec_name, 
+                "rate": round(avg_r, 2), 
+                "stocks": top_3_stocks,
+                "lead_stock": top_3_stocks[0]["name"]
             })
         except Exception:
             pass
 
-    if not results:
+    if not sector_stats:
         return [], []
 
-    results.sort(key=lambda x: x["rate"], reverse=True)
-    return results[:3], results[-3:][::-1]
+    # 2. 전체 섹터를 정렬하여 상위 3개, 하위 3개를 뽑아냅니다.
+    sector_stats.sort(key=lambda x: x["rate"], reverse=True)
+    top_sectors = sector_stats[:3]
+    bot_sectors = sector_stats[-3:][::-1]
+    
+    # 3. 선정된 6개 알짜 섹터에 대해서만! 각 상위 3개 종목의 뉴스를 1개씩(총 3개) 불러옵니다.
+    for s in top_sectors + bot_sectors:
+        news_items = []
+        for st in s["stocks"]:
+            # 한 종목당 정확히 1개의 알짜 뉴스만 가져오도록 limit=1 지정
+            st_news = fetch_real_news(st["name"], st.get("code", ""), limit=1)
+            if st_news:
+                news_items.extend(st_news)
+        s["news"] = news_items
+
+    return top_sectors, bot_sectors
 
 def send_kakao_alert(indices, k200_top, k150_top):
     rest_api_key = os.environ.get("KAKAO_REST_API_KEY")
