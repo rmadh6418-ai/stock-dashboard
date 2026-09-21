@@ -93,7 +93,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
-    오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
+    오늘의 한국 주식시장(코스피, 코스닥) 데이터와 주도섹터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
 
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
@@ -104,13 +104,14 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     [작성 지침]
     1. 지수 등락과 주도 섹터의 흐름을 바탕으로 시장의 분위기를 깊이 있게 분석할 것.
     2. 주가 상황을 바탕으로 리스크가 무엇이 있을지 대비는 어떻게 해야하는지 분석할 것.
-    3. 전체 분량은 4~6문장 분량으로 매끄러운 단일 평문으로 작성할 것.
+    3. 매끄러운 단일 평문으로 작성할 것.
     4. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
     """
 
     # 💡 우선순위에 따라 모델을 순차적으로 호출할 리스트 구성
     models_to_try = [
         'gemini-3.6-flash',
+        'gemini-3.5-flash-lite'
         'gemini-3.1-pro',
         'gemini-3-flash',
         'gemini-2.5-flash'
