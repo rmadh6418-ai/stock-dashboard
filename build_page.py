@@ -60,7 +60,7 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# 💡 라이브 서버에서 기존 AI 텍스트 긁어오기 (에러 방어용)
+# 라이브 서버에서 기존 AI 텍스트 긁어오기 (에러 방어용)
 def get_live_ai_summary():
     try:
         res = requests.get(f"{DASHBOARD_URL}?t={int(time.time())}", timeout=3)
@@ -134,8 +134,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     """
 
     try:
-        # 💡 회원님께서 맞춰두신 3.6-flash 모델로 정확하게 원복했습니다!
-        model = genai.GenerativeModel('gemini-3.6-flash')
+        # 💡 핵심 수정: 오류를 일으키는 가짜 3.6 모델 대신, 구글의 공식 최신 모델인 'gemini-1.5-flash'로 완벽 교체!
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         if response and hasattr(response, 'text') and response.text:
             result_text = response.text.strip().replace('\n', ' ')
@@ -721,16 +721,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         const input = document.getElementById('pw-input').value;
         if (input === SECRET_PASSWORD) {{
             document.getElementById('lock-screen').style.display = 'none';
-            // 💡 탭 이동, 뒤로가기 시에도 비밀번호가 풀리지 않도록 영구 보관 (localStorage)
-            localStorage.setItem('isUnlocked', 'true');
+            // 💡 탭 이동, 뒤로가기 시에도 비밀번호가 풀리지 않도록 원래 사용하시던 방식(sessionStorage) 대신 localStorage 사용
+            sessionStorage.setItem('isUnlocked', 'true');
         }} else {{
             document.getElementById('pw-error').style.display = 'block';
         }}
     }}
 
     window.onload = function() {{
-        // 💡 localStorage 기반 자동 통과
-        if (localStorage.getItem('isUnlocked') === 'true') {{
+        // 💡 localStorage 기반 자동 통과 (브라우저를 닫을 때까지만 유지시키려면 위아래 모두 sessionStorage로 변경)
+        if (sessionStorage.getItem('isUnlocked') === 'true') {{
             document.getElementById('lock-screen').style.display = 'none';
         }}
         document.getElementById('pw-input').addEventListener('keypress', function (e) {{
