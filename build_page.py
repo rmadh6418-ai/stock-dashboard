@@ -110,9 +110,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     # 💡 우선순위에 따라 모델을 순차적으로 호출할 리스트 구성
     models_to_try = [
-        'gemini-3.6-flash',
-        'gemini-3.5-flash-lite'
-        'gemini-3.1-pro'
+        'gemini-3.6-flash'
     ]
 
     last_error_str = ""
