@@ -108,35 +108,24 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     """
 
     try:
+        # 회원님 설정대로 gemini-3.6-flash 모델 호출
         model = genai.GenerativeModel('gemini-3.6-flash')
+        response = model.generate_content(prompt)
         
-        # 💡 [핵심 방어막] 1분 호출 제한(429)에 걸리면 코드가 알아서 40초를 기다렸다가 다시 시도합니다!
-        for attempt in range(3):
+        if response and hasattr(response, 'text') and response.text:
+            result_text = response.text.strip().replace('\n', ' ')
             try:
-                response = model.generate_content(prompt)
-                if response and hasattr(response, 'text') and response.text:
-                    result_text = response.text.strip().replace('\n', ' ')
-                    try:
-                        with open(cache_file, "w", encoding="utf-8") as f:
-                            json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-                    except: pass
-                    return result_text
-                break # 성공 시 루프 탈출
-                
-            except Exception as api_err:
-                error_str = str(api_err).lower()
-                if "429" in error_str or "quota" in error_str:
-                    if attempt < 2: # 최대 3번(0, 1, 2)까지 재시도
-                        print(f"[WARN] API 단기 호출 제한(429) 발생! 40초 대기 후 재시도합니다... (시도: {attempt+1}/3)")
-                        time.sleep(40)
-                        continue
-                raise api_err # 429가 아니거나 재시도를 다 썼으면 밖으로 던짐
-
-        return f"🚨 <b>AI 응답 없음</b><br><br>{fallback_text}"
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
+            except: pass
+            return result_text
+        else:
+            return f"🚨 <b>AI 응답 없음</b><br><br>{fallback_text}"
             
     except Exception as e:
-        # 에러가 나도 지저분한 영어 텍스트를 숨기고 깔끔하게 표시합니다.
-        return f"⏳ <b>AI 호출 지연</b> (API 사용량이 많아 심층 분석을 건너뛰었습니다. 다음 업데이트 때 반영됩니다.)<br><br>{fallback_text}"
+        # 💡 어떤 에러인지 정확히 알기 위해 화면에 원본 원인을 출력합니다.
+        error_msg = str(e).replace('\n', ' ')
+        return f"⏳ <b>AI 호출 에러 발생! (원인: {error_msg})</b><br>이 메시지가 나오면 원인을 캡처해서 알려주세요.<br><br>{fallback_text}"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
