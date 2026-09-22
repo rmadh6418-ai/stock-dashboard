@@ -76,24 +76,23 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
 
-    cache_file = "ai_summary_cache.json"
-    cache_duration = 1800
+    os.makedirs("public", exist_ok=True)
+    cache_file = "public/ai_summary_cache.json"
 
+    # 로컬 캐시 확인
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
-                if time.time() - cache_data.get("timestamp", 0) < cache_duration:
-                    cached_txt = cache_data.get("text", "")
-                    if cached_txt and not cached_txt.startswith("[요약]"):
-                        print("[INFO] 최근 30분 이내의 캐시된 AI 분석 결과를 불러옵니다.")
-                        return cached_txt
-        except Exception as e:
-            print(f"[WARN] 캐시 파일 읽기 오류: {e}")
+                if time.time() - cache_data.get("timestamp", 0) < 1800:
+                    text = cache_data.get("text", "")
+                    if not text.startswith("[요약]") and not text.startswith("🚨") and not text.startswith("⏳"):
+                        return text
+        except: pass
 
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
-    오늘의 한국 주식시장(코스피, 코스닥) 데이터와 주도섹터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
+    오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
 
     [오늘의 핵심 데이터]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {kospi.get('change_rate')}%)
@@ -104,47 +103,40 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     [작성 지침]
     1. 지수 등락과 주도 섹터의 흐름을 바탕으로 시장의 분위기를 깊이 있게 분석할 것.
     2. 주가 상황을 바탕으로 리스크가 무엇이 있을지 대비는 어떻게 해야하는지 분석할 것.
-    3. 매끄러운 단일 평문으로 작성할 것.
+    3. 전체 분량은 4~6문장 분량으로 매끄러운 단일 평문으로 작성할 것.
     4. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
     """
 
-    # 💡 우선순위에 따라 모델을 순차적으로 호출할 리스트 구성
-    models_to_try = [
-        'gemini-3.6-flash'
-    ]
-
-    last_error_str = ""
-
-    for model_name in models_to_try:
-        try:
-            print(f"[INFO] {model_name} 모델로 AI 시황 분석을 시도합니다...")
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            
-            result_text = ""
-            if response and hasattr(response, 'text') and response.text:
-                result_text = response.text.strip().replace('\n', ' ')
-            elif response and hasattr(response, 'parts'):
-                result_text = "".join([p.text for p in response.parts if hasattr(p, 'text')]).strip().replace('\n', ' ')
-
-            if result_text:
-                try:
-                    with open(cache_file, "w", encoding="utf-8") as f:
-                        json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-                except Exception as e:
-                    print(f"[WARN] 캐시 저장 오류: {e}")
+    try:
+        model = genai.GenerativeModel('gemini-3.6-flash')
+        
+        # 💡 [핵심 방어막] 1분 호출 제한(429)에 걸리면 코드가 알아서 40초를 기다렸다가 다시 시도합니다!
+        for attempt in range(3):
+            try:
+                response = model.generate_content(prompt)
+                if response and hasattr(response, 'text') and response.text:
+                    result_text = response.text.strip().replace('\n', ' ')
+                    try:
+                        with open(cache_file, "w", encoding="utf-8") as f:
+                            json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
+                    except: pass
+                    return result_text
+                break # 성공 시 루프 탈출
                 
-                # 분석 성공 시 즉시 텍스트 반환 후 반복문 종료
-                return result_text
+            except Exception as api_err:
+                error_str = str(api_err).lower()
+                if "429" in error_str or "quota" in error_str:
+                    if attempt < 2: # 최대 3번(0, 1, 2)까지 재시도
+                        print(f"[WARN] API 단기 호출 제한(429) 발생! 40초 대기 후 재시도합니다... (시도: {attempt+1}/3)")
+                        time.sleep(40)
+                        continue
+                raise api_err # 429가 아니거나 재시도를 다 썼으면 밖으로 던짐
 
-        except Exception as e:
-            last_error_str = str(e)
-            print(f"[WARN] {model_name} 호출 실패: {last_error_str}. 다음 모델을 준비합니다.")
-            # 실패 시 다음 모델로 넘어가서 다시 시도 (continue)
-            continue
-
-    # 리스트에 있는 모든 모델이 호출에 실패했을 경우 처리
-    return f"🚨 <b>AI 호출 실패</b> (최종 사유: {last_error_str})<br><br>{fallback_text}"
+        return f"🚨 <b>AI 응답 없음</b><br><br>{fallback_text}"
+            
+    except Exception as e:
+        # 에러가 나도 지저분한 영어 텍스트를 숨기고 깔끔하게 표시합니다.
+        return f"⏳ <b>AI 호출 지연</b> (API 사용량이 많아 심층 분석을 건너뛰었습니다. 다음 업데이트 때 반영됩니다.)<br><br>{fallback_text}"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
