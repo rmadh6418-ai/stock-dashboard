@@ -79,11 +79,9 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     os.makedirs("public", exist_ok=True)
     cache_file = "public/ai_summary_cache.json"
     cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
+    cache_duration = 1800 # 30분 캐시 유지
 
-    # 💡 1일 20회 제한을 피하기 위해 방어막을 30분 -> '2시간(7200초)'으로 대폭 상향
-    cache_duration = 7200 
-
-    # 1. 라이브 사이트에서 이전 분석글 가져오기
+    # 1. 라이브 사이트 캐시 확인 (30분 고정)
     try:
         res = requests.get(f"{cache_url}?t={int(time.time())}", timeout=3)
         if res.status_code == 200:
@@ -124,23 +122,29 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
     """
 
-    try:
-        model = genai.GenerativeModel('gemini-3.6-flash')
-        response = model.generate_content(prompt)
-        
-        if response and hasattr(response, 'text') and response.text:
-            result_text = response.text.strip().replace('\n', ' ')
-            try:
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-            except: pass
-            return result_text
-        else:
-            return f"🚨 <b>AI 응답 없음</b><br><br>{fallback_text}"
+    # 💡 500회 한도를 가진 3.5-flash-lite를 1순위로 호출하고, 실패 시 3.6-flash 시도
+    available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash']
+    last_error = ""
+
+    for model_name in available_models:
+        try:
+            print(f"[INFO] AI 모델 호출 시도: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
             
-    except Exception as e:
-        error_msg = str(e).replace('\n', ' ')
-        return f"⏳ <b>AI 호출 에러 발생! (원인: {error_msg})</b><br><br>{fallback_text}"
+            if response and hasattr(response, 'text') and response.text:
+                result_text = response.text.strip().replace('\n', ' ')
+                try:
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
+                except: pass
+                return result_text
+        except Exception as e:
+            last_error = str(e)
+            print(f"[WARN] {model_name} 호출 실패 (사유: {last_error}), 다음 대체 모델로 전환합니다.")
+            continue
+
+    return f"⏳ <b>AI 호출 지연</b> (모든 AI 모델 할당량 도달: {last_error})<br><br>{fallback_text}"
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
