@@ -78,18 +78,36 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     os.makedirs("public", exist_ok=True)
     cache_file = "public/ai_summary_cache.json"
+    cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
 
-    # 로컬 캐시 확인
+    # 💡 1. 30분 고정 방어막 (라이브 사이트에서 이전 분석글 가져오기)
+    try:
+        res = requests.get(f"{cache_url}?t={int(time.time())}", timeout=3)
+        if res.status_code == 200:
+            cache_data = res.json()
+            # 1800초(30분) 이내인지 검사
+            if time.time() - cache_data.get("timestamp", 0) < 1800:
+                text = cache_data.get("text", "")
+                # 에러 텍스트가 아닌 정상 분석글일 때만 내용 100% 고정
+                if text and not text.startswith("[요약]") and not text.startswith("🚨") and not text.startswith("⏳"):
+                    # 깃허브 서버 초기화를 막기 위해 파일을 새로 만들어 줌
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(cache_data, f, ensure_ascii=False)
+                    return text
+    except: pass
+
+    # 2. 로컬 캐시 확인 (PC에서 테스트할 때 필요)
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 if time.time() - cache_data.get("timestamp", 0) < 1800:
                     text = cache_data.get("text", "")
-                    if not text.startswith("[요약]") and not text.startswith("🚨") and not text.startswith("⏳"):
+                    if text and not text.startswith("[요약]") and not text.startswith("🚨") and not text.startswith("⏳"):
                         return text
         except: pass
 
+    # 3. 캐시가 없거나 30분이 지났을 때만 새로 AI 호출
     prompt = f"""
     당신은 대한민국 상위 1% 전문 펀드매니저이자 날카로운 시각을 가진 주식시장 분석가입니다.
     오늘의 한국 주식시장(코스피, 코스닥) 데이터를 바탕으로 전체 시황을 아주 상세하게 분석해주세요.
@@ -108,12 +126,12 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     """
 
     try:
-        # 회원님 설정대로 gemini-3.6-flash 모델 호출
         model = genai.GenerativeModel('gemini-3.6-flash')
         response = model.generate_content(prompt)
         
         if response and hasattr(response, 'text') and response.text:
             result_text = response.text.strip().replace('\n', ' ')
+            # 정상 응답을 받았을 때만 30분 타이머 갱신 저장
             try:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
@@ -123,7 +141,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             return f"🚨 <b>AI 응답 없음</b><br><br>{fallback_text}"
             
     except Exception as e:
-        # 💡 어떤 에러인지 정확히 알기 위해 화면에 원본 원인을 출력합니다.
         error_msg = str(e).replace('\n', ' ')
         return f"⏳ <b>AI 호출 에러 발생! (원인: {error_msg})</b><br>이 메시지가 나오면 원인을 캡처해서 알려주세요.<br><br>{fallback_text}"
 
