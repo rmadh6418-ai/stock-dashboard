@@ -636,6 +636,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
+    # 💡 보안 적용: 비트 연산(XOR)을 활용하여 평문 비밀번호 숨기기
+    raw_password = os.environ.get("DASHBOARD_PW", "4203")
+    xor_key = 123  # 임의의 비트 연산 키
+    
+    # 비밀번호의 각 문자를 ASCII 코드로 변환 후 XOR 연산 처리
+    obfuscated_pw = [ord(char) ^ xor_key for char in raw_password]
+
     template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -691,11 +698,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    const SECRET_PASSWORD = "4203";
+    // 파이썬에서 미리 비트 연산(XOR) 처리한 배열 (평문 노출 원천 차단)
+    const TARGET_ARR = {obfuscated_pw};
+    const XOR_KEY = {xor_key};
 
     function checkPassword() {{
         const input = document.getElementById('pw-input').value;
-        if (input === SECRET_PASSWORD) {{
+        
+        // 1차 길이 비교
+        if (input.length !== TARGET_ARR.length) {{
+            document.getElementById('pw-error').style.display = 'block';
+            return;
+        }}
+
+        let isMatch = true;
+        // 사용자가 입력한 문자마다 동일한 비트 연산을 적용하여 비교
+        for (let i = 0; i < input.length; i++) {{
+            if ((input.charCodeAt(i) ^ XOR_KEY) !== TARGET_ARR[i]) {{
+                isMatch = false;
+                break;
+            }}
+        }}
+
+        if (isMatch) {{
             document.getElementById('lock-screen').style.display = 'none';
             sessionStorage.setItem('isUnlocked', 'true');
         }} else {{
