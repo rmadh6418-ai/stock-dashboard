@@ -60,7 +60,6 @@ KOSDAQ150_SECTORS = {
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
-# 💡 AI 분석 오류를 해결하고 안정적으로 텍스트를 뽑아내도록 개선된 함수 (자동 모델 대체 적용)
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
@@ -81,7 +80,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
     cache_duration = 1800 # 30분 캐시 유지
 
-    # 1. 라이브 사이트 캐시 확인 (30분 고정)
     try:
         res = requests.get(f"{cache_url}?t={int(time.time())}", timeout=3)
         if res.status_code == 200:
@@ -94,7 +92,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                     return text
     except: pass
 
-    # 2. 로컬 캐시 확인
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
@@ -122,7 +119,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
     """
 
-    # 💡 500회 한도를 가진 3.5-flash-lite를 1순위로 호출하고, 실패 시 3.6-flash 시도
     available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash']
     last_error = ""
 
@@ -636,8 +632,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
-    # 💡 보안 적용: 비트 연산(XOR)을 활용하여 평문 비밀번호 숨기기
-    raw_password = os.environ.get("DASHBOARD_PW", "4203")
+    # 💡 [필수 수정] 보안 적용: 비트 연산(XOR) + 빈 공백(엔터) 제거 방어 코드 추가
+    raw_password = os.environ.get("DASHBOARD_PW", "4203").strip()
     xor_key = 123  # 임의의 비트 연산 키
     
     # 비밀번호의 각 문자를 ASCII 코드로 변환 후 XOR 연산 처리
