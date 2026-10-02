@@ -75,8 +75,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}"
 
-    os.makedirs("public", exist_ok=True)
-    cache_file = "public/ai_summary_cache.json"
+    cache_file = "ai_summary_cache.json"
     cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
     cache_duration = 1800 # 30분 캐시 유지
 
@@ -754,8 +753,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </body>
 </html>
 """
-    os.makedirs("public", exist_ok=True)
-    with open("public/index.html", "w", encoding="utf-8") as f:
+    with open("index.html", "w", encoding="utf-8") as f:
         f.write(template)
 
 if __name__ == "__main__":
