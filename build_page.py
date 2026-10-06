@@ -203,9 +203,8 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
     if stock_code:
         code = str(stock_code).zfill(6)
-        # 다음/네이버 모바일 전용 주소로 변경
         candidates.append({"title": f"[{keyword}] 실시간 주가 분석 및 리포트 바로가기", "press": "다음금융", "link": f"https://m.finance.daum.net/quotes/A{code}/news", "score": 0.8})
-        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news/title", "score": 0.9})
+        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news", "score": 0.9})
         candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://m.stock.naver.com/domestic/stock/{code}/discuss", "score": 0.7})
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
