@@ -194,18 +194,20 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             if d_res.status_code == 200:
                 for item in d_res.json().get("data", []):
                     raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
-                    link = f"https://finance.daum.net/news/{item.get('newsId')}"
+                    # 다음 뉴스 링크 모바일 호환 주소로 변경
+                    link = f"https://v.daum.net/v/{item.get('newsId')}"
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
                     if score > 0: 
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
         except: pass
 
+    # --- 💡 핵심 수정 부분: 네이버/다음 기본 링크를 '모바일 주소'로 교체 ---
     if stock_code:
         code = str(stock_code).zfill(6)
-        candidates.append({"title": f"[{keyword}] 실시간 주가 분석 및 리포트 바로가기", "press": "다음금융", "link": f"https://finance.daum.net/quotes/A{code}#news/stock", "score": 0.8})
-        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://finance.naver.com/item/news.naver?code={code}", "score": 0.9})
-        candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://finance.naver.com/item/board.naver?code={code}", "score": 0.7})
+        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news/title", "score": 0.9})
+        candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://m.stock.naver.com/domestic/stock/{code}/discuss", "score": 0.8})
+        candidates.append({"title": f"[{keyword}] 실시간 주가 분석 및 리포트 바로가기", "press": "다음금융", "link": f"https://m.finance.daum.net/quotes/A{code}/news", "score": 0.7})
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
@@ -433,40 +435,38 @@ def get_market_indices():
 
 def get_market_stocks():
     stocks = {}
-    urls = [
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
-    ]
+    ts = int(time.time()) # 캐시(과거 데이터) 무력화용 시간값
+    headers = get_headers()
+    
+    # 1. 네이버 모바일 실시간 API 사용 (KOSPI, KOSDAQ 상위 300종목까지 수집)
+    for market in ["KOSPI", "KOSDAQ"]:
+        for page in range(1, 4):  # 1~3페이지(총 300종목) 넉넉하게 수집
+            try:
+                url = f"https://m.stock.naver.com/api/stocks/marketValue/{market}?page={page}&pageSize=100&_={ts}"
+                res = requests.get(url, headers=headers, timeout=5)
+                if res.status_code == 200:
+                    data = res.json()
+                    for item in data.get("stocks", []):
+                        name = item.get("stockName")
+                        code = item.get("itemCode")
+                        price = item.get("closePrice")
+                        rate_text = item.get("fluctuationsRatio", "0")
+                        try:
+                            stocks[name] = {
+                                "price": price, 
+                                "rate": float(rate_text), 
+                                "code": code, 
+                                "market": market
+                            }
+                        except: pass
+            except: pass
 
-    for u, market in urls:
-        try:
-            res = requests.get(u, headers=get_headers(), timeout=5)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-                table = soup.find("table", class_="type_2")
-                if table:
-                    for tr in table.find_all("tr"):
-                        tds = tr.find_all("td")
-                        if len(tds) >= 5:
-                            a_tag = tds[1].find("a")
-                            if a_tag:
-                                name = a_tag.text.strip()
-                                code_match = re.search(r"code=(\d+)", a_tag.get("href", ""))
-                                code = code_match.group(1) if code_match else ""
-                                price = tds[2].text.strip()
-                                rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
-                                try:
-                                    stocks[name] = {"price": price, "rate": float(rate_text), "code": code, "market": market}
-                                except: pass
-        except: pass
-
+    # 2. 만약 네이버 API가 막혔을 경우를 대비한 다음(Daum) 금융 API 완벽 백업
     if len(stocks) < 50:
         daum_headers = get_headers(is_daum=True)
         for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
             try:
-                url = f"https://finance.daum.net/api/trend/market_capitalization?page=1&perPage=200&market={m_code}"
+                url = f"https://finance.daum.net/api/trend/market_capitalization?page=1&perPage=200&market={m_code}&_={ts}"
                 res = requests.get(url, headers=daum_headers, timeout=5)
                 if res.status_code == 200:
                     data = res.json()
@@ -608,14 +608,21 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
 
-    def build_sector_list(sectors):
+def build_sector_list(sectors):
         if not sectors: 
             return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 로딩 오류가 발생했습니다.</div>'
         html = ""
         for s in sectors:
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
-            stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
+            
+            # 개별 종목 색상 매칭 수정 (+, -, 0 명확히 구분)
+            stock_tags = "".join([
+                f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> '
+                f'<b class="stock-rate {"text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")}">{st["rate"]:+.2f}%</b> '
+                f'<span class="stock-price">({st["price"]}원)</span></span>' 
+                for st in s.get("stocks", [])
+            ])
 
             news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" target="_blank" rel="noopener noreferrer" class="news-link">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
