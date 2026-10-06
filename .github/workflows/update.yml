@@ -26,7 +26,7 @@ jobs:
       - name: Run Python script
         env:
           KAKAO_TOKEN: ${{ secrets.KAKAO_TOKEN }}
-        run: python app.py
+        run: python build_page.py
 
       - name: Commit and Push changes
         run: |
