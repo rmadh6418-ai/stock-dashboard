@@ -31,6 +31,14 @@ jobs:
           DASHBOARD_PW: ${{ secrets.DASHBOARD_PW }}
         run: python build_page.py
 
+# [추가] 파이썬이 던져준 새 리프레시 토큰이 있을 경우에만 Secrets 자동 덮어쓰기
+      - name: Update Kakao Secret (If Renewed)
+        if: env.NEW_KAKAO_TOKEN != ''
+        run: |
+          gh secret set KAKAO_REFRESH_TOKEN -b"${{ env.NEW_KAKAO_TOKEN }}"
+        env:
+          GH_TOKEN: ${{ secrets.MY_PAT }} # 1단계에서 만든 마스터 열쇠 사용
+
       - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
