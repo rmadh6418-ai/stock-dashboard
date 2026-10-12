@@ -548,6 +548,17 @@ def send_kakao_alert(indices, k200_top, k150_top):
             print(f"[ERROR] 카카오 토큰 갱신 실패: {t_res}")
             return
 
+        # ------------------------------------------------------------------
+        # 🚀 [핵심 추가] 카카오가 새 리프레시 토큰을 주면 낚아채서 깃허브로 넘기는 로직
+        new_refresh_token = t_res.get("refresh_token") 
+        if new_refresh_token:
+            print("[INFO] 카카오 리프레시 토큰 만료 임박으로 자동 갱신됨")
+            env_file = os.getenv("GITHUB_ENV")
+            if env_file:
+                with open(env_file, "a") as f:
+                    f.write(f"NEW_KAKAO_TOKEN={new_refresh_token}\n")
+        # ------------------------------------------------------------------
+
         kst_now = datetime.now(timezone(timedelta(hours=9)))
         date_str = kst_now.strftime("%m/%d 15:30 마감")
 
