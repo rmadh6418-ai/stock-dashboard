@@ -2,7 +2,10 @@ name: Daily Dashboard Update
 
 on:
   schedule:
-    - cron: '0 22 * * *' # 한국시간 오전 7시
+    # 평일 한국시간 09:05 ~ 14:50 사이 15분마다 장중 자동 업데이트 (UTC 00:05 ~ 05:50)
+    - cron: '5,20,35,50 0-5 * * 1-5'
+    # 평일 한국시간 15:05, 15:20 장중 업데이트 및 15:35 정규장 마감 리포트/카톡 발송 (UTC 06:05, 06:20, 06:35)
+    - cron: '5,20,35 6 * * 1-5'
   workflow_dispatch: # 수동 실행 버튼
 
 permissions:
@@ -31,13 +34,13 @@ jobs:
           DASHBOARD_PW: ${{ secrets.DASHBOARD_PW }}
         run: python build_page.py
 
-# [추가] 파이썬이 던져준 새 리프레시 토큰이 있을 경우에만 Secrets 자동 덮어쓰기
+      # 파이썬이 던져준 새 리프레시 토큰이 있을 경우에만 Secrets 자동 덮어쓰기
       - name: Update Kakao Secret (If Renewed)
         if: env.NEW_KAKAO_TOKEN != ''
         run: |
           gh secret set KAKAO_REFRESH_TOKEN -b"${{ env.NEW_KAKAO_TOKEN }}"
         env:
-          GH_TOKEN: ${{ secrets.MY_PAT }} # 1단계에서 만든 마스터 열쇠 사용
+          GH_TOKEN: ${{ secrets.MY_PAT }}
 
       - name: Commit and Push changes
         run: |
