@@ -917,6 +917,8 @@ if __name__ == "__main__":
     # 장 마감 시간대(한국시간 15:20 ~ 16:10) 또는 수동 실행(workflow_dispatch)일 때만 카카오톡 발송
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    # 하루 2번 (오전 9시 05분~15분 개장 직후 1번 + 오후 3시 30분 이후 마감 1번)
+    is_open_time = (kst_now.hour == 9 and kst_now.minute <= 18)
     is_close_time = (kst_now.hour == 15 and kst_now.minute >= 20) or (kst_now.hour == 16 and kst_now.minute <= 10)
 
     if event_name == "workflow_dispatch" or is_close_time:
