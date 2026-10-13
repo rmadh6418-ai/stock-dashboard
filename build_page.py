@@ -483,7 +483,7 @@ def get_market_stocks():
             except Exception as e:
                 print(f"[WARN] 네이버 모바일 시총 API 호출 오류 ({market} p.{page}): {e}")
 
-    # 2. 누락 종목 다음(Daum) 금융 API로 2차 보완 (정수형 가격 포맷 적용)
+    # 2. 누락 종목 다음(Daum) 금융 API로 2차 보완
     daum_headers = get_headers(is_daum=True)
     for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
         try:
@@ -698,7 +698,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         body {{ background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
         header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .sync-status {{ font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; }}
+        .sync-status {{ font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none; }}
+        .sync-status:hover {{ background: #cbd5e1; }}
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }}
@@ -747,9 +748,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 <div id="dashboard-root">
     <header>
         <h1>📊 실시간 국내 증시 대시보드</h1>
-        <div class="sync-status" onclick="forceRefreshAll()" title="클릭 시 즉시 동기화">
+        <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 갱신">
             <span class="live-dot"></span>
-            <span id="sync-time-text">업데이트 시각: {kst_now} (실시간 자동 갱신 중)</span>
+            <span id="sync-time-text">기준 시각: {kst_now} (실시간 동기화 중...)</span>
         </div>
     </header>
 
@@ -797,43 +798,31 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // 1. GitHub Pages의 최신 빌드본을 캐시 없이 직접 당겨와 화면 교체 (CORS 영향 없음)
-    async function syncLatestServerBuild() {{
-        try {{
-            const baseUrl = window.location.href.split('?')[0];
-            const res = await fetch(`${{baseUrl}}?t=${{Date.now()}}`, {{
-                cache: "no-store",
-                headers: {{ "Pragma": "no-cache", "Cache-Control": "no-cache" }}
-            }});
-            if (!res.ok) return;
-            const htmlText = await res.text();
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(htmlText, "text/html");
-            const newRoot = doc.getElementById("dashboard-root");
-            const curRoot = document.getElementById("dashboard-root");
-            if (newRoot && curRoot) {{
-                curRoot.innerHTML = newRoot.innerHTML;
-            }}
-        }} catch (e) {{}}
-    }}
-
-    // 2. 3초 타임아웃 및 병렬 호출이 적용된 고속 프록시 요청
-    async function fetchWithFastProxy(targetUrl) {{
+    // 유효한 주가/지수 데이터가 있는 응답만 통과시키는 검증 프록시 함수
+    async function fetchValidStockJson(targetUrl) {{
         const encoded = encodeURIComponent(targetUrl);
-        const urls = [
-            `https://api.codetabs.com/v1/proxy?quest=${{encoded}}`,
-            `https://api.allorigins.win/raw?url=${{encoded}}`,
-            `https://corsproxy.io/?${{encoded}}`
+        const candidates = [
+            {{ url: `https://api.allorigins.win/get?url=${{encoded}}&_=${{Date.now()}}`, wrapped: true }},
+            {{ url: `https://api.codetabs.com/v1/proxy?quest=${{encoded}}`, wrapped: false }},
+            {{ url: `https://api.allorigins.win/raw?url=${{encoded}}`, wrapped: false }}
         ];
 
-        const fetchOne = async (u) => {{
+        const tryFetch = async (cand) => {{
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 3000);
+            const timer = setTimeout(() => controller.abort(), 4000);
             try {{
-                const res = await fetch(u, {{ signal: controller.signal, cache: "no-store" }});
+                const res = await fetch(cand.url, {{ signal: controller.signal, cache: "no-store" }});
                 clearTimeout(timer);
-                if (!res.ok) throw new Error("status " + res.status);
-                return await res.json();
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                let data = await res.json();
+                if (cand.wrapped && data && typeof data.contents === "string") {{
+                    data = JSON.parse(data.contents);
+                }}
+                // 에러 객체이거나 주가/지수 핵심 필드가 없으면 기각
+                if (!data || data.error || (!data.closePrice && !Array.isArray(data.stocks))) {{
+                    throw new Error("Invalid stock payload");
+                }}
+                return data;
             }} catch (err) {{
                 clearTimeout(timer);
                 throw err;
@@ -841,23 +830,26 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }};
 
         try {{
-            return await Promise.any(urls.map(fetchOne));
+            return await Promise.any(candidates.map(tryFetch));
         }} catch (e) {{
             return null;
         }}
     }}
 
-    // 3. 네이버 모바일 API 실시간 지수 및 종목 시세 동기화
     async function syncLiveMarketData() {{
-        let updatedCount = 0;
+        const syncText = document.getElementById('sync-time-text');
+        if (syncText) {{
+            syncText.innerText = "🔄 실시간 시세 동기화 중...";
+        }}
 
+        // 1. 코스피 / 코스닥 / 코스피200 실시간 지수 즉시 갱신
         const naverIndices = [
             {{ key: "KOSPI", code: "KOSPI" }},
             {{ key: "KOSDAQ", code: "KOSDAQ" }},
             {{ key: "KPI200", code: "KPI200" }}
         ];
         await Promise.all(naverIndices.map(async (item) => {{
-            const data = await fetchWithFastProxy(`https://m.stock.naver.com/api/index/${{item.code}}/basic?t=${{Date.now()}}`);
+            const data = await fetchValidStockJson(`https://m.stock.naver.com/api/index/${{item.code}}/basic?t=${{Date.now()}}`);
             if (data && data.closePrice) {{
                 const valEl = document.getElementById(`val-${{item.key}}`);
                 const badgeEl = document.getElementById(`badge-${{item.key}}`);
@@ -871,11 +863,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     const diff = data.compareToPreviousClosePrice || "0";
                     badgeEl.innerText = `${{sign}}${{rate}}% (${{diff}})`;
                     badgeEl.className = `badge ${{isUp ? 'bg-up-light text-up' : (isDown ? 'bg-down-light text-down' : 'bg-gray-100 text-flat')}}`;
-                    updatedCount++;
                 }}
             }}
         }}));
 
+        // 2. 코스피·코스닥 시가총액 상위 400개 종목 일괄 실시간 조회
         const liveStockMap = {{}};
         const marketPages = [
             {{ market: "KOSPI", page: 1 }},
@@ -885,7 +877,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         ];
 
         await Promise.all(marketPages.map(async (mp) => {{
-            const data = await fetchWithFastProxy(`https://m.stock.naver.com/api/stocks/marketValue/${{mp.market}}?page=${{mp.page}}&pageSize=100&t=${{Date.now()}}`);
+            const data = await fetchValidStockJson(`https://m.stock.naver.com/api/stocks/marketValue/${{mp.market}}?page=${{mp.page}}&pageSize=100&t=${{Date.now()}}`);
             if (data && Array.isArray(data.stocks)) {{
                 for (const st of data.stocks) {{
                     const cd = String(st.compareToPreviousPrice?.code || "3");
@@ -907,11 +899,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }}));
 
+        // 3. 화면에 표시된 각 종목 등락률 및 현재가 즉시 교체
         const pills = document.querySelectorAll('.stock-pill');
-        for (const pill of pills) {{
+        await Promise.all(Array.from(pills).map(async (pill) => {{
             const code = pill.getAttribute('data-stock-code');
             const name = pill.getAttribute('data-stock-name') || pill.querySelector('.stock-name')?.innerText?.trim();
-            const info = (code && liveStockMap[code]) || (name && liveStockMap[name]);
+            let info = (code && liveStockMap[code]) || (name && liveStockMap[name]);
+
+            if (!info && code) {{
+                const single = await fetchValidStockJson(`https://m.stock.naver.com/api/stock/${{code}}/basic?t=${{Date.now()}}`);
+                if (single && single.closePrice) {{
+                    const cd = String(single.compareToPreviousPrice?.code || "3");
+                    const rawStr = String(single.fluctuationsRatio || "0").replace(/,/g, "");
+                    const absRate = Math.abs(parseFloat(rawStr) || 0);
+                    const isDown = ["4", "5"].includes(cd) || rawStr.startsWith("-");
+                    const isUp = ["1", "2"].includes(cd);
+                    info = {{
+                        price: String(single.closePrice || "0").replace(".0", ""),
+                        rate: isDown ? -absRate : (isUp ? absRate : 0),
+                        isUp: isUp,
+                        isDown: isDown
+                    }};
+                }}
+            }}
 
             if (info) {{
                 const rateEl = pill.querySelector('.stock-rate');
@@ -924,10 +934,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (priceEl && info.price) {{
                     priceEl.innerText = `(${{info.price}}원)`;
                 }}
-                updatedCount++;
             }}
-        }}
+        }}));
 
+        // 4. 각 섹터 평균 등락률 실시간 재계산
         document.querySelectorAll('.sector-item').forEach(item => {{
             const rateEls = item.querySelectorAll('.stock-rate[data-live-rate]');
             if (rateEls.length > 0) {{
@@ -942,19 +952,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        if (updatedCount > 0) {{
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('ko-KR', {{ hour12: false }});
-            const syncText = document.getElementById('sync-time-text');
-            if (syncText) {{
-                syncText.innerText = `실시간 동기화 완료: ${{timeStr}} (1분 주기 자동 갱신)`;
-            }}
+        // 5. 상단 기준 시각을 현재 새로고침 시각으로 즉시 업데이트
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mi = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        if (syncText) {{
+            syncText.innerText = `실시간 동기화 완료: ${{yyyy}}-${{mm}}-${{dd}} ${{hh}}:${{mi}}:${{ss}} (새로고침 시 즉시 갱신)`;
         }}
-    }}
-
-    async function forceRefreshAll() {{
-        await syncLatestServerBuild();
-        await syncLiveMarketData();
     }}
 
     window.onload = function() {{
@@ -967,9 +975,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        // 접속 즉시 서버 최신 빌드 확인 후 실시간 시세 동기화
-        forceRefreshAll();
-        setInterval(forceRefreshAll, 60000);
+        // 페이지 접속 및 새로고침(F5) 즉시 실시간 시세 강제 동기화 + 1분 주기 자동 갱신
+        syncLiveMarketData();
+        setInterval(syncLiveMarketData, 60000);
     }};
 </script>
 </body>
