@@ -13,6 +13,11 @@ on:
     - cron: '5,20,35 6 * * 1-5'
   workflow_dispatch:
 
+# 동시에 여러 작업이 실행될 경우 이전 작업을 자동 취소하여 충돌 방지
+concurrency:
+  group: stock-dashboard-update
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pages: write
@@ -56,8 +61,13 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          cp index.html /tmp/index.html
+          if [ -f ai_summary_cache.json ]; then cp ai_summary_cache.json /tmp/ai_summary_cache.json; fi
+          git fetch origin main
+          git reset --hard origin/main
+          cp /tmp/index.html index.html
+          if [ -f /tmp/ai_summary_cache.json ]; then cp /tmp/ai_summary_cache.json ai_summary_cache.json; fi
           git add index.html ai_summary_cache.json
           git commit -m "업데이트: 실시간 금융 데이터 반영" || echo "No changes to commit"
-          git pull --rebase origin main
-          git push
+          git push origin main
           gh api -X POST /repos/${{ github.repository }}/pages/builds || true
