@@ -16,8 +16,8 @@ def get_headers(is_daum=False):
         headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
         headers["Referer"] = "https://finance.daum.net/"
     else:
-        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-        headers["Referer"] = "https://finance.naver.com/"
+        headers["Accept"] = "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers["Referer"] = "https://m.stock.naver.com/"
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
@@ -120,7 +120,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, # 등)는 일절 쓰지 말 것.
     """
 
-    available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash']
+    available_models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash']
     last_error = ""
 
     for model_name in available_models:
@@ -447,59 +447,66 @@ def get_market_indices():
 def get_market_stocks():
     stocks = {}
 
-    # 1. 실시간 체결 반영이 빠른 다음(Daum) 금융 API (코스피 200개, 코스닥 200개) 우선 수집
-    daum_headers = get_headers(is_daum=True)
-    for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
-        try:
-            url = f"https://finance.daum.net/api/trend/market_capitalization?page=1&perPage=200&market={m_code}"
-            res = requests.get(url, headers=daum_headers, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                for item in data.get("data", []):
-                    name = item.get("name")
-                    price = f"{item.get('tradePrice', 0):,}"
-                    rate = float(item.get("changeRate", 0)) * 100
-                    if item.get("change") in ["FALL", "MINUS"]:
-                        rate = -abs(rate)
-                    elif item.get("change") in ["RISE", "PLUS"]:
-                        rate = abs(rate)
-                    code = item.get("symbolCode", "")[1:] 
-                    if name:
-                        stocks[name] = {"price": price, "rate": round(rate, 2), "code": code, "market": market}
-        except:
-            pass
+    # 1. 네이버 모바일 공식 시가총액 JSON API (코스피 300개, 코스닥 300개 실시간 수집)
+    for market in ["KOSPI", "KOSDAQ"]:
+        for page in range(1, 4):
+            try:
+                url = f"https://m.stock.naver.com/api/stocks/marketValue/{market}?page={page}&pageSize=100"
+                res = requests.get(url, headers=get_headers(), timeout=5)
+                if res.status_code == 200:
+                    data = res.json()
+                    for item in data.get("stocks", []):
+                        name = item.get("stockName")
+                        code = item.get("itemCode", "")
+                        price = item.get("closePrice", "0")
+                        raw_ratio = str(item.get("fluctuationsRatio", "0")).replace(",", "").replace("%", "")
+                        try:
+                            abs_rate = abs(float(raw_ratio))
+                        except:
+                            abs_rate = 0.0
 
-    # 2. 네이버 금융 시가총액 1~4페이지(각 200개 종목)로 최신화 및 누락 종목 보완
-    urls = [
-        (f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}", market)
-        for sosok, market in [(0, "KOSPI"), (1, "KOSDAQ")]
-        for page in range(1, 5)
-    ]
+                        cd = str(item.get("compareToPreviousPrice", {}).get("code", "3"))
+                        if cd in ["4", "5"] or raw_ratio.startswith("-"):
+                            rate = -abs_rate
+                        elif cd in ["1", "2"]:
+                            rate = abs_rate
+                        else:
+                            rate = 0.0
 
-    for u, market in urls:
-        try:
-            res = requests.get(u, headers=get_headers(), timeout=5)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-                table = soup.find("table", class_="type_2")
-                if table:
-                    for tr in table.find_all("tr"):
-                        tds = tr.find_all("td")
-                        if len(tds) >= 5:
-                            a_tag = tds[1].find("a")
-                            if a_tag:
-                                name = a_tag.text.strip()
-                                code_match = re.search(r"code=(\d+)", a_tag.get("href", ""))
-                                code = code_match.group(1) if code_match else ""
-                                price = tds[2].text.strip()
-                                rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
-                                try:
-                                    stocks[name] = {"price": price, "rate": float(rate_text), "code": code, "market": market}
-                                except:
-                                    pass
-        except:
-            pass
+                        if name:
+                            stocks[name] = {
+                                "price": price,
+                                "rate": round(rate, 2),
+                                "code": code,
+                                "market": market
+                            }
+            except Exception as e:
+                print(f"[WARN] 네이버 모바일 시총 API 호출 오류 ({market} p.{page}): {e}")
 
+    # 2. 만약 누락된 종목이 있을 경우 다음(Daum) 금융 API로 2차 보완
+    if len(stocks) < 100:
+        daum_headers = get_headers(is_daum=True)
+        for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
+            try:
+                url = f"https://finance.daum.net/api/trend/market_capitalization?page=1&perPage=200&market={m_code}"
+                res = requests.get(url, headers=daum_headers, timeout=5)
+                if res.status_code == 200:
+                    data = res.json()
+                    for item in data.get("data", []):
+                        name = item.get("name")
+                        if name and name not in stocks:
+                            price = f"{item.get('tradePrice', 0):,}"
+                            rate = abs(float(item.get("changeRate", 0)) * 100)
+                            if item.get("change") in ["FALL", "MINUS"]:
+                                rate = -rate
+                            elif item.get("change") not in ["RISE", "PLUS"]:
+                                rate = 0.0
+                            code = item.get("symbolCode", "")[1:]
+                            stocks[name] = {"price": price, "rate": round(rate, 2), "code": code, "market": market}
+            except:
+                pass
+
+    print(f"[INFO] 총 {len(stocks)}개 종목 실시간 시세 및 등락률 수집 완료")
     return stocks
 
 def calculate_sectors(sector_dict, stock_data):
@@ -515,9 +522,14 @@ def calculate_sectors(sector_dict, stock_data):
             if not matched: 
                 continue
 
-            matched.sort(key=lambda x: abs(x["rate"]), reverse=True)
-            top_3_stocks = matched[:3]
             avg_r = sum(s["rate"] for s in matched) / len(matched)
+            # 강세 섹터(평균 등락률 양수)는 상승률 순, 약세 섹터는 하락률 순으로 대표 3종목 정렬
+            if avg_r >= 0:
+                matched.sort(key=lambda x: x["rate"], reverse=True)
+            else:
+                matched.sort(key=lambda x: x["rate"])
+
+            top_3_stocks = matched[:3]
             
             sector_stats.append({
                 "name": sec_name, 
@@ -567,7 +579,6 @@ def send_kakao_alert(indices, k200_top, k150_top):
             print(f"[ERROR] 카카오 토큰 갱신 실패: {t_res}")
             return
 
-        # 카카오 리프레시 토큰 자동 갱신 감지 및 GitHub 환경변수 전달
         new_refresh_token = t_res.get("refresh_token") 
         if new_refresh_token:
             print("[INFO] 카카오 리프레시 토큰 만료 임박으로 자동 갱신됨")
@@ -646,9 +657,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             stock_tags = "".join([
-                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}">'
+                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}">'
                 f'<span class="stock-name">{st["name"]}</span> '
-                f'<b class="stock-rate {"text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")}">{st["rate"]:+.2f}%</b> '
+                f'<b class="stock-rate {"text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")}" data-live-rate="{st["rate"]}">{st["rate"]:+.2f}%</b> '
                 f'<span class="stock-price">({st["price"]}원)</span>'
                 f'</span>'
                 for st in s.get("stocks", [])
@@ -790,7 +801,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         const encoded = encodeURIComponent(targetUrl);
         const proxies = [
             `https://api.allorigins.win/raw?url=${{encoded}}`,
-            `https://corsproxy.io/?${{encoded}}`
+            `https://corsproxy.io/?${{encoded}}`,
+            `https://api.codetabs.com/v1/proxy?quest=${{encoded}}`
         ];
         for (const p of proxies) {{
             try {{
@@ -827,33 +839,78 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }}
 
-        // 2. 개별 종목 실시간 주가·등락률 동기화 및 섹터 등락률 재계산
-        const pills = document.querySelectorAll('.stock-pill[data-stock-code]');
-        await Promise.all(Array.from(pills).map(async (pill) => {{
-            const code = pill.getAttribute('data-stock-code');
-            if (!code) return;
-            const data = await fetchWithProxy(`https://m.stock.naver.com/api/stock/${{code}}/basic?t=${{Date.now()}}`);
-            if (data && data.closePrice) {{
-                const cd = String(data.compareToPreviousPrice?.code || "3");
-                const isUp = ["1", "2"].includes(cd);
-                const isDown = ["4", "5"].includes(cd);
-                const rawRate = Math.abs(parseFloat(data.fluctuationsRatio || 0));
-                const signedRate = isDown ? -rawRate : (isUp ? rawRate : 0);
+        // 2. 코스피·코스닥 시가총액 상위 종목 일괄 조회 (단 4회 요청으로 400종목 실시간 등락률 확보)
+        const liveStockMap = {{}};
+        const marketPages = [
+            {{ market: "KOSPI", page: 1 }},
+            {{ market: "KOSPI", page: 2 }},
+            {{ market: "KOSDAQ", page: 1 }},
+            {{ market: "KOSDAQ", page: 2 }}
+        ];
 
+        for (const mp of marketPages) {{
+            const data = await fetchWithProxy(`https://m.stock.naver.com/api/stocks/marketValue/${{mp.market}}?page=${{mp.page}}&pageSize=100&t=${{Date.now()}}`);
+            if (data && Array.isArray(data.stocks)) {{
+                for (const st of data.stocks) {{
+                    const cd = String(st.compareToPreviousPrice?.code || "3");
+                    const rawStr = String(st.fluctuationsRatio || "0").replace(/,/g, "");
+                    const absRate = Math.abs(parseFloat(rawStr) || 0);
+                    const isDown = ["4", "5"].includes(cd) || rawStr.startsWith("-");
+                    const isUp = ["1", "2"].includes(cd);
+                    const signedRate = isDown ? -absRate : (isUp ? absRate : 0);
+
+                    const info = {{
+                        price: st.closePrice,
+                        rate: signedRate,
+                        isUp: isUp,
+                        isDown: isDown
+                    }};
+                    if (st.itemCode) liveStockMap[st.itemCode] = info;
+                    if (st.stockName) liveStockMap[st.stockName] = info;
+                }}
+            }}
+        }}
+
+        // 3. 화면 내 종목 배지(등락률·현재가) 실시간 교체
+        const pills = document.querySelectorAll('.stock-pill');
+        for (const pill of pills) {{
+            const code = pill.getAttribute('data-stock-code');
+            const name = pill.getAttribute('data-stock-name') || pill.querySelector('.stock-name')?.innerText?.trim();
+            let info = (code && liveStockMap[code]) || (name && liveStockMap[name]);
+
+            // 시총 200위 밖 종목일 경우에만 개별 API 호출
+            if (!info && code) {{
+                const single = await fetchWithProxy(`https://m.stock.naver.com/api/stock/${{code}}/basic?t=${{Date.now()}}`);
+                if (single && single.closePrice) {{
+                    const cd = String(single.compareToPreviousPrice?.code || "3");
+                    const rawStr = String(single.fluctuationsRatio || "0").replace(/,/g, "");
+                    const absRate = Math.abs(parseFloat(rawStr) || 0);
+                    const isDown = ["4", "5"].includes(cd) || rawStr.startsWith("-");
+                    const isUp = ["1", "2"].includes(cd);
+                    info = {{
+                        price: single.closePrice,
+                        rate: isDown ? -absRate : (isUp ? absRate : 0),
+                        isUp: isUp,
+                        isDown: isDown
+                    }};
+                }}
+            }}
+
+            if (info) {{
                 const rateEl = pill.querySelector('.stock-rate');
                 const priceEl = pill.querySelector('.stock-price');
                 if (rateEl) {{
-                    rateEl.innerText = `${{signedRate >= 0 ? '+' : ''}}${{signedRate.toFixed(2)}}%`;
-                    rateEl.className = `stock-rate ${{isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat')}}`;
-                    rateEl.setAttribute('data-live-rate', signedRate);
+                    rateEl.innerText = `${{info.rate >= 0 ? '+' : ''}}${{info.rate.toFixed(2)}}%`;
+                    rateEl.className = `stock-rate ${{info.isUp ? 'text-up' : (info.isDown ? 'text-down' : 'text-flat')}}`;
+                    rateEl.setAttribute('data-live-rate', info.rate);
                 }}
-                if (priceEl) {{
-                    priceEl.innerText = `(${{data.closePrice}}원)`;
+                if (priceEl && info.price) {{
+                    priceEl.innerText = `(${{info.price}}원)`;
                 }}
             }}
-        }}));
+        }}
 
-        // 3. 각 섹터 평균 등락률 실시간 업데이트
+        // 4. 섹터 평균 등락률 실시간 재계산
         document.querySelectorAll('.sector-item').forEach(item => {{
             const rateEls = item.querySelectorAll('.stock-rate[data-live-rate]');
             if (rateEls.length > 0) {{
@@ -914,12 +971,10 @@ if __name__ == "__main__":
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
 
-    # 장 마감 시간대(한국시간 15:20 ~ 16:10) 또는 수동 실행(workflow_dispatch)일 때만 카카오톡 발송
+    # 하루 1번 장 마감 시점(15:30~16:10) 또는 수동 실행(workflow_dispatch)일 때만 카카오톡 발송
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
-    # 하루 2번 (오전 9시 05분~15분 개장 직후 1번 + 오후 3시 30분 이후 마감 1번)
-    is_open_time = (kst_now.hour == 9 and kst_now.minute <= 18)
-    is_close_time = (kst_now.hour == 15 and kst_now.minute >= 20) or (kst_now.hour == 16 and kst_now.minute <= 10)
+    is_close_time = (kst_now.hour == 15 and kst_now.minute >= 30) or (kst_now.hour == 16 and kst_now.minute <= 10)
 
     if event_name == "workflow_dispatch" or is_close_time:
         send_kakao_alert(indices, k200_top, k150_top)
