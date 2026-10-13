@@ -383,6 +383,25 @@ def get_jpy_krw_rate():
         return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_index_data_robust(name, key, mobile_code, pc_code):
+    # 1순위: 네이버 초단위 실시간 폴링 API
+    try:
+        url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{mobile_code}"
+        res = requests.get(url, headers=get_headers(), timeout=3)
+        if res.status_code == 200:
+            datas = res.json().get("datas", [])
+            if datas:
+                data = datas[0]
+                cd = str(data.get("compareToPreviousPrice", {}).get("code", "3"))
+                return {
+                    "name": name, "code_key": key, "value": data.get("closePrice", "-"),
+                    "change_val": data.get("compareToPreviousClosePrice", "0"),
+                    "change_rate": abs(float(str(data.get("fluctuationsRatio", 0)).replace(",", ""))),
+                    "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
+                }
+    except:
+        pass
+
+    # 2순위: 네이버 모바일 기본 API
     try:
         url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
         res = requests.get(url, headers=get_headers(), timeout=3)
@@ -394,34 +413,6 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
                 "change_val": data.get("compareToPreviousClosePrice", "0"),
                 "change_rate": abs(float(data.get("fluctuationsRatio", 0))),
                 "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
-            }
-    except:
-        pass
-
-    try:
-        url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
-        res = requests.get(url, headers=get_headers(), timeout=3)
-        soup = BeautifulSoup(res.content.decode("euc-kr", "replace"), "html.parser")
-
-        val_el = soup.find(id="now_value")
-        change_el = soup.find(id="change_value_and_rate")
-
-        if val_el and change_el:
-            val = val_el.text.strip()
-            change_text = change_el.text.strip()
-
-            is_up = "red01" in str(change_el) or "+" in change_text
-            is_down = "nv01" in str(change_el) or "-" in change_text
-
-            nums = re.findall(r'[\d\.]+', change_text)
-            c_val = nums[0] if len(nums) > 0 else "0"
-            c_rate = nums[1] if len(nums) > 1 else "0"
-
-            return {
-                "name": name, "code_key": key, "value": val,
-                "change_val": c_val,
-                "change_rate": abs(float(c_rate)),
-                "is_up": is_up, "is_down": is_down
             }
     except:
         pass
@@ -447,9 +438,9 @@ def get_market_indices():
 def get_market_stocks():
     stocks = {}
 
-    # 1. 네이버 모바일 공식 시가총액 JSON API (코스피 300개, 코스닥 300개 실시간 수집)
+    # 1. 종목명 및 6자리 종목코드 확보 (네이버 모바일 시가총액 API)
     for market in ["KOSPI", "KOSDAQ"]:
-        for page in range(1, 4):
+        for page in range(1, 5):
             try:
                 url = f"https://m.stock.naver.com/api/stocks/marketValue/{market}?page={page}&pageSize=100"
                 res = requests.get(url, headers=get_headers(), timeout=5)
@@ -481,9 +472,9 @@ def get_market_stocks():
                                 "market": market
                             }
             except Exception as e:
-                print(f"[WARN] 네이버 모바일 시총 API 호출 오류 ({market} p.{page}): {e}")
+                print(f"[WARN] 네이버 시총 API 오류 ({market} p.{page}): {e}")
 
-    # 2. 누락 종목 다음(Daum) 금융 API로 2차 보완
+    # 2. 누락 종목 다음(Daum) 금융 API 보완
     daum_headers = get_headers(is_daum=True)
     for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
         try:
@@ -505,7 +496,47 @@ def get_market_stocks():
         except:
             pass
 
-    print(f"[INFO] 총 {len(stocks)}개 종목 실시간 시세 및 등락률 수집 완료")
+    # 3. [핵심] 대시보드 분석 대상 섹터의 전 종목을 네이버 '초단위 실시간 폴링 API'로 일괄 최신화 (시차 0초)
+    target_names = set()
+    for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
+        target_names.update(s_list)
+
+    code_to_name = {
+        info["code"]: name
+        for name, info in stocks.items()
+        if name in target_names and info.get("code")
+    }
+    target_codes = list(code_to_name.keys())
+
+    for i in range(0, len(target_codes), 50):
+        batch = target_codes[i:i+50]
+        try:
+            rt_url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{','.join(batch)}"
+            res = requests.get(rt_url, headers=get_headers(), timeout=5)
+            if res.status_code == 200:
+                for item in res.json().get("datas", []):
+                    code = item.get("itemCode")
+                    name = code_to_name.get(code) or item.get("stockName")
+                    if name and name in stocks:
+                        price = str(item.get("closePrice", stocks[name]["price"])).replace(".0", "")
+                        raw_ratio = str(item.get("fluctuationsRatio", "0")).replace(",", "").replace("%", "")
+                        try:
+                            abs_rate = abs(float(raw_ratio))
+                        except:
+                            abs_rate = 0.0
+                        cd = str(item.get("compareToPreviousPrice", {}).get("code", "3"))
+                        if cd in ["4", "5"] or raw_ratio.startswith("-"):
+                            rate = -abs_rate
+                        elif cd in ["1", "2"]:
+                            rate = abs_rate
+                        else:
+                            rate = 0.0
+                        stocks[name]["price"] = price
+                        stocks[name]["rate"] = round(rate, 2)
+        except Exception as e:
+            print(f"[WARN] 실시간 폴링 배치 업데이트 오류: {e}")
+
+    print(f"[INFO] 총 {len(stocks)}개 종목 (섹터 대상 {len(target_codes)}개 초단위 실시간 폴링) 수집 완료")
     return stocks
 
 def calculate_sectors(sector_dict, stock_data):
@@ -528,11 +559,13 @@ def calculate_sectors(sector_dict, stock_data):
                 matched.sort(key=lambda x: x["rate"])
 
             top_3_stocks = matched[:3]
+            all_codes = [s["code"] for s in matched if s.get("code")]
             
             sector_stats.append({
                 "name": sec_name, 
                 "rate": round(avg_r, 2), 
                 "stocks": top_3_stocks,
+                "all_codes": all_codes,
                 "lead_stock": top_3_stocks[0]["name"]
             })
         except Exception:
@@ -654,6 +687,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         for s in sectors:
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
+            all_codes_str = ",".join(s.get("all_codes", []))
             stock_tags = "".join([
                 f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}">'
                 f'<span class="stock-name">{st["name"]}</span> '
@@ -666,7 +700,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
             html += f"""
-            <div class="sector-item">
+            <div class="sector-item" data-sector-codes="{all_codes_str}">
                 <div class="sector-header">
                     <span class="sector-name">{s['name']}</span>
                     <span class="sector-rate {color_class}">{r:+.2f}%</span>
@@ -757,7 +791,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <div class="grid-indices">{index_cards}</div>
 
     <div class="market-ai-box">
-        <div class="market-ai-header">🤖 주식시장 전체 AI 시황 분석</div>
+        <div class="market-ai-header">🤖 주식시장 전체 AI 시황 분석 (30분마다 분석)</div>
         <div class="market-ai-content">{ai_market_summary}</div>
     </div>
 
@@ -798,13 +832,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // 유효한 주가/지수 데이터가 있는 응답만 통과시키는 검증 프록시 함수
+    // 유효한 네이버 폴링 JSON(datas 배열 포함)만 통과시키는 검증 프록시 함수
     async function fetchValidStockJson(targetUrl) {{
         const encoded = encodeURIComponent(targetUrl);
+        const ts = Date.now();
         const candidates = [
-            {{ url: `https://api.allorigins.win/get?url=${{encoded}}&_=${{Date.now()}}`, wrapped: true }},
-            {{ url: `https://api.codetabs.com/v1/proxy?quest=${{encoded}}`, wrapped: false }},
-            {{ url: `https://api.allorigins.win/raw?url=${{encoded}}`, wrapped: false }}
+            {{ url: `https://api.allorigins.win/raw?url=${{encoded}}&_=${{ts}}`, wrapped: false }},
+            {{ url: `https://api.allorigins.win/get?url=${{encoded}}&_=${{ts}}`, wrapped: true }},
+            {{ url: `https://api.codetabs.com/v1/proxy?quest=${{encoded}}`, wrapped: false }}
         ];
 
         const tryFetch = async (cand) => {{
@@ -818,8 +853,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (cand.wrapped && data && typeof data.contents === "string") {{
                     data = JSON.parse(data.contents);
                 }}
-                // 에러 객체이거나 주가/지수 핵심 필드가 없으면 기각
-                if (!data || data.error || (!data.closePrice && !Array.isArray(data.stocks))) {{
+                if (!data || data.error || (!Array.isArray(data.datas) && !data.closePrice && !Array.isArray(data.stocks))) {{
                     throw new Error("Invalid stock payload");
                 }}
                 return data;
@@ -839,47 +873,54 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     async function syncLiveMarketData() {{
         const syncText = document.getElementById('sync-time-text');
         if (syncText) {{
-            syncText.innerText = "🔄 실시간 시세 동기화 중...";
+            syncText.innerText = "🔄 실시간 체결가 동기화 중...";
         }}
 
-        // 1. 코스피 / 코스닥 / 코스피200 실시간 지수 즉시 갱신
-        const naverIndices = [
-            {{ key: "KOSPI", code: "KOSPI" }},
-            {{ key: "KOSDAQ", code: "KOSDAQ" }},
-            {{ key: "KPI200", code: "KPI200" }}
-        ];
-        await Promise.all(naverIndices.map(async (item) => {{
-            const data = await fetchValidStockJson(`https://m.stock.naver.com/api/index/${{item.code}}/basic?t=${{Date.now()}}`);
-            if (data && data.closePrice) {{
-                const valEl = document.getElementById(`val-${{item.key}}`);
-                const badgeEl = document.getElementById(`badge-${{item.key}}`);
-                if (valEl && badgeEl) {{
-                    valEl.innerText = data.closePrice;
-                    const cd = String(data.compareToPreviousPrice?.code || "3");
+        // 1. 코스피·코스닥·코스피200 지수 초단위 실시간 폴링 (단 1회 묶음 요청)
+        const idxData = await fetchValidStockJson(`https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ,KPI200?_=${{Date.now()}}`);
+        if (idxData && Array.isArray(idxData.datas)) {{
+            for (const d of idxData.datas) {{
+                const key = d.itemCode;
+                const valEl = document.getElementById(`val-${{key}}`);
+                const badgeEl = document.getElementById(`badge-${{key}}`);
+                if (valEl && badgeEl && d.closePrice) {{
+                    valEl.innerText = d.closePrice;
+                    const cd = String(d.compareToPreviousPrice?.code || "3");
                     const isUp = ["1", "2"].includes(cd);
                     const isDown = ["4", "5"].includes(cd);
                     const sign = isUp ? "▲ +" : (isDown ? "▼ -" : "― ");
-                    const rate = Math.abs(parseFloat(data.fluctuationsRatio || 0)).toFixed(2);
-                    const diff = data.compareToPreviousClosePrice || "0";
+                    const rate = Math.abs(parseFloat(String(d.fluctuationsRatio || 0).replace(/,/g, ""))).toFixed(2);
+                    const diff = d.compareToPreviousClosePrice || "0";
                     badgeEl.innerText = `${{sign}}${{rate}}% (${{diff}})`;
                     badgeEl.className = `badge ${{isUp ? 'bg-up-light text-up' : (isDown ? 'bg-down-light text-down' : 'bg-gray-100 text-flat')}}`;
                 }}
             }}
-        }}));
+        }}
 
-        // 2. 코스피·코스닥 시가총액 상위 400개 종목 일괄 실시간 조회
+        // 2. 화면 내 모든 종목 + 섹터 소속 전체 종목 코드 수집 후 초단위 실시간 폴링 API 묶음 요청
+        const codeSet = new Set();
+        document.querySelectorAll('.stock-pill[data-stock-code]').forEach(el => {{
+            const c = el.getAttribute('data-stock-code');
+            if (c) codeSet.add(c);
+        }});
+        document.querySelectorAll('.sector-item[data-sector-codes]').forEach(el => {{
+            const codes = (el.getAttribute('data-sector-codes') || '').split(',');
+            codes.forEach(c => {{ if (c.trim()) codeSet.add(c.trim()); }});
+        }});
+
+        const allCodes = Array.from(codeSet);
         const liveStockMap = {{}};
-        const marketPages = [
-            {{ market: "KOSPI", page: 1 }},
-            {{ market: "KOSPI", page: 2 }},
-            {{ market: "KOSDAQ", page: 1 }},
-            {{ market: "KOSDAQ", page: 2 }}
-        ];
 
-        await Promise.all(marketPages.map(async (mp) => {{
-            const data = await fetchValidStockJson(`https://m.stock.naver.com/api/stocks/marketValue/${{mp.market}}?page=${{mp.page}}&pageSize=100&t=${{Date.now()}}`);
-            if (data && Array.isArray(data.stocks)) {{
-                for (const st of data.stocks) {{
+        const chunks = [];
+        for (let i = 0; i < allCodes.length; i += 50) {{
+            chunks.push(allCodes.slice(i, i + 50));
+        }}
+
+        await Promise.all(chunks.map(async (chunk) => {{
+            const url = `https://polling.finance.naver.com/api/realtime/domestic/stock/${{chunk.join(',')}}?_=${{Date.now()}}`;
+            const data = await fetchValidStockJson(url);
+            if (data && Array.isArray(data.datas)) {{
+                for (const st of data.datas) {{
                     const cd = String(st.compareToPreviousPrice?.code || "3");
                     const rawStr = String(st.fluctuationsRatio || "0").replace(/,/g, "");
                     const absRate = Math.abs(parseFloat(rawStr) || 0);
@@ -899,29 +940,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }}));
 
-        // 3. 화면에 표시된 각 종목 등락률 및 현재가 즉시 교체
-        const pills = document.querySelectorAll('.stock-pill');
-        await Promise.all(Array.from(pills).map(async (pill) => {{
+        // 3. 개별 종목 배지(현재가·등락률) 즉시 교체
+        document.querySelectorAll('.stock-pill').forEach(pill => {{
             const code = pill.getAttribute('data-stock-code');
             const name = pill.getAttribute('data-stock-name') || pill.querySelector('.stock-name')?.innerText?.trim();
-            let info = (code && liveStockMap[code]) || (name && liveStockMap[name]);
-
-            if (!info && code) {{
-                const single = await fetchValidStockJson(`https://m.stock.naver.com/api/stock/${{code}}/basic?t=${{Date.now()}}`);
-                if (single && single.closePrice) {{
-                    const cd = String(single.compareToPreviousPrice?.code || "3");
-                    const rawStr = String(single.fluctuationsRatio || "0").replace(/,/g, "");
-                    const absRate = Math.abs(parseFloat(rawStr) || 0);
-                    const isDown = ["4", "5"].includes(cd) || rawStr.startsWith("-");
-                    const isUp = ["1", "2"].includes(cd);
-                    info = {{
-                        price: String(single.closePrice || "0").replace(".0", ""),
-                        rate: isDown ? -absRate : (isUp ? absRate : 0),
-                        isUp: isUp,
-                        isDown: isDown
-                    }};
-                }}
-            }}
+            const info = (code && liveStockMap[code]) || (name && liveStockMap[name]);
 
             if (info) {{
                 const rateEl = pill.querySelector('.stock-rate');
@@ -935,15 +958,19 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     priceEl.innerText = `(${{info.price}}원)`;
                 }}
             }}
-        }}));
+        }});
 
-        // 4. 각 섹터 평균 등락률 실시간 재계산
+        // 4. 각 섹터 소속 '전체 종목' 기준 평균 등락률 실시간 재계산
         document.querySelectorAll('.sector-item').forEach(item => {{
-            const rateEls = item.querySelectorAll('.stock-rate[data-live-rate]');
-            if (rateEls.length > 0) {{
-                let sum = 0;
-                rateEls.forEach(el => sum += parseFloat(el.getAttribute('data-live-rate') || 0));
-                const avg = sum / rateEls.length;
+            const sectorCodes = (item.getAttribute('data-sector-codes') || '').split(',').map(s => s.trim()).filter(Boolean);
+            const rates = [];
+            for (const c of sectorCodes) {{
+                if (liveStockMap[c] !== undefined) {{
+                    rates.push(liveStockMap[c].rate);
+                }}
+            }}
+            if (rates.length > 0) {{
+                const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
                 const secRateEl = item.querySelector('.sector-rate');
                 if (secRateEl) {{
                     secRateEl.innerText = `${{avg >= 0 ? '+' : ''}}${{avg.toFixed(2)}}%`;
@@ -952,7 +979,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        // 5. 상단 기준 시각을 현재 새로고침 시각으로 즉시 업데이트
+        // 5. 상단 동기화 시각 표시
         const now = new Date();
         const yyyy = now.getFullYear();
         const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -961,7 +988,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         const mi = String(now.getMinutes()).padStart(2, '0');
         const ss = String(now.getSeconds()).padStart(2, '0');
         if (syncText) {{
-            syncText.innerText = `실시간 동기화 완료: ${{yyyy}}-${{mm}}-${{dd}} ${{hh}}:${{mi}}:${{ss}} (새로고침 시 즉시 갱신)`;
+            syncText.innerText = `실시간 동기화 완료: ${{yyyy}}-${{mm}}-${{dd}} ${{hh}}:${{mi}}:${{ss}} (KRX 실시간 체결 기준)`;
         }}
     }}
 
@@ -975,7 +1002,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        // 페이지 접속 및 새로고침(F5) 즉시 실시간 시세 강제 동기화 + 1분 주기 자동 갱신
+        // 접속 및 새로고침(F5) 즉시 실시간 체결가 동기화 + 1분마다 반복
         syncLiveMarketData();
         setInterval(syncLiveMarketData, 60000);
     }};
