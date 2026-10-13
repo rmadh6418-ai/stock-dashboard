@@ -56,7 +56,7 @@ KOSDAQ150_SECTORS = {
     "반도체 소부장": ["HPSP", "리노공업", "주성엔지니어링", "이오테크닉스", "솔브레인", "동진쎄미켐", "티씨케이", "ISC", "하나머티리얼즈", "대덕전자", "유진테크", "심텍", "원익IPS", "테크윙", "파크시스템스", "두산테스나", "필옵틱스", "씨엠티엑스", "원익QnC", "고영", "이녹스첨단소재", "에프에스티", "동운아나텍", "넥스틴", "가온칩스"],
     "엔터·미디어": ["JYP Ent.", "에스엠", "스튜디오드래곤", "CJ ENM", "와이지엔터테인먼트", "디어유", "초록뱀미디어", "삼화네트웍스"],
     "게임·소프트웨어": ["펄어비스", "카카오게임즈", "위메이드", "넥슨게임즈", "컴투스", "네오위즈", "웹젠", "엠게임", "안랩"],
-    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱s", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션"],
+    "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱스", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션"],
     "피팅·배관기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅"],
 }
 
@@ -77,7 +77,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     cache_file = "ai_summary_cache.json"
     cache_url = f"{DASHBOARD_URL.rstrip('/')}/ai_summary_cache.json"
-    cache_duration = 1800 # 30분 캐시 유지
+    cache_duration = 1800  # 30분 캐시 유지
 
     try:
         res = requests.get(f"{cache_url}?t={int(time.time())}", timeout=3)
@@ -89,7 +89,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                     with open(cache_file, "w", encoding="utf-8") as f:
                         json.dump(cache_data, f, ensure_ascii=False)
                     return text
-    except: pass
+    except:
+        pass
 
     if os.path.exists(cache_file):
         try:
@@ -99,7 +100,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                     text = cache_data.get("text", "")
                     if text and not text.startswith("[요약]") and not text.startswith("🚨") and not text.startswith("⏳"):
                         return text
-        except: pass
+        except:
+            pass
 
     prompt = f"""
     당신은 미국 월가의 상위 0.1% 퀀트 트레이너이자 날카로운 시각을 가진 주식시장 분석가입니다.
@@ -132,7 +134,8 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 try:
                     with open(cache_file, "w", encoding="utf-8") as f:
                         json.dump({"timestamp": time.time(), "text": result_text}, f, ensure_ascii=False)
-                except: pass
+                except:
+                    pass
                 return result_text
         except Exception as e:
             last_error = str(e)
@@ -143,18 +146,23 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
-        if bad in title: return -1
+        if bad in title:
+            return -1
         
     score = 10 
     aliases = [stock_name]
-    if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
-    elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
+    if stock_name == "S-Oil":
+        aliases.extend(["에쓰오일", "SOil", "S-OIL"])
+    elif "홀딩스" in stock_name:
+        aliases.append(stock_name.replace("홀딩스", ""))
 
     has_stock = any(alias in title for alias in aliases if len(alias) >= 2)
     has_biz = any(biz in title for biz in BUSINESS_NEWS_KEYWORDS)
 
-    if has_stock: score += 5
-    if has_biz: score += 4
+    if has_stock:
+        score += 5
+    if has_biz:
+        score += 4
     
     return score
 
@@ -183,7 +191,8 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             score = get_news_score(raw_title, keyword)
             if score > 0: 
                 candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
-    except: pass
+    except:
+        pass
 
     if len(candidates) < limit and stock_code:
         try:
@@ -199,7 +208,8 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     score = get_news_score(raw_title, keyword)
                     if score > 0: 
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
-        except: pass
+        except:
+            pass
 
     if stock_code:
         code = str(stock_code).zfill(6)
@@ -213,7 +223,8 @@ def fetch_real_news(keyword, stock_code="", limit=1):
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]', '', item['title']).strip()
         clean_title = re.sub(r'\W+', '', clean_title)
-        if not clean_title: clean_title = item['title']
+        if not clean_title:
+            clean_title = item['title']
 
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
@@ -384,7 +395,8 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
                 "change_rate": abs(float(data.get("fluctuationsRatio", 0))),
                 "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
             }
-    except: pass
+    except:
+        pass
 
     try:
         url = f"https://finance.naver.com/sise/sise_index.naver?code={pc_code}"
@@ -411,7 +423,8 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
                 "change_rate": abs(float(c_rate)),
                 "is_up": is_up, "is_down": is_down
             }
-    except: pass
+    except:
+        pass
 
     return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
@@ -421,23 +434,46 @@ def get_market_indices():
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ"))
     results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200"))
 
-    results.append(get_exchange_rate())         
-    results.append(get_jpy_krw_rate())          
-    results.append(get_us_10y_yield())          
-    results.append(get_us_30y_yield())          
-    results.append(get_gold_price())            
-    results.append(get_silver_price())          
-    results.append(get_oil_price())             
+    results.append(get_exchange_rate())           
+    results.append(get_jpy_krw_rate())            
+    results.append(get_us_10y_yield())            
+    results.append(get_us_30y_yield())            
+    results.append(get_gold_price())              
+    results.append(get_silver_price())            
+    results.append(get_oil_price())               
 
     return results
 
 def get_market_stocks():
     stocks = {}
+
+    # 1. 실시간 체결 반영이 빠른 다음(Daum) 금융 API (코스피 200개, 코스닥 200개) 우선 수집
+    daum_headers = get_headers(is_daum=True)
+    for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
+        try:
+            url = f"https://finance.daum.net/api/trend/market_capitalization?page=1&perPage=200&market={m_code}"
+            res = requests.get(url, headers=daum_headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                for item in data.get("data", []):
+                    name = item.get("name")
+                    price = f"{item.get('tradePrice', 0):,}"
+                    rate = float(item.get("changeRate", 0)) * 100
+                    if item.get("change") in ["FALL", "MINUS"]:
+                        rate = -abs(rate)
+                    elif item.get("change") in ["RISE", "PLUS"]:
+                        rate = abs(rate)
+                    code = item.get("symbolCode", "")[1:] 
+                    if name:
+                        stocks[name] = {"price": price, "rate": round(rate, 2), "code": code, "market": market}
+        except:
+            pass
+
+    # 2. 네이버 금융 시가총액 1~4페이지(각 200개 종목)로 최신화 및 누락 종목 보완
     urls = [
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=2", "KOSPI"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=1", "KOSDAQ"),
-        ("https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page=2", "KOSDAQ"),
+        (f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}", market)
+        for sosok, market in [(0, "KOSPI"), (1, "KOSDAQ")]
+        for page in range(1, 5)
     ]
 
     for u, market in urls:
@@ -459,27 +495,10 @@ def get_market_stocks():
                                 rate_text = tds[4].text.strip().replace("%", "").replace(",", "")
                                 try:
                                     stocks[name] = {"price": price, "rate": float(rate_text), "code": code, "market": market}
-                                except: pass
-        except: pass
-
-    if len(stocks) < 50:
-        daum_headers = get_headers(is_daum=True)
-        for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
-            try:
-                url = f"https://finance.daum.net/api/trend/market_capitalization?page=1&perPage=200&market={m_code}"
-                res = requests.get(url, headers=daum_headers, timeout=5)
-                if res.status_code == 200:
-                    data = res.json()
-                    for item in data.get("data", []):
-                        name = item.get("name")
-                        price = f"{item.get('tradePrice', 0):,}"
-                        rate = float(item.get("changeRate", 0)) * 100
-                        if item.get("change") in ["FALL", "MINUS"]:
-                            rate = -rate
-                        code = item.get("symbolCode", "")[1:] 
-                        if name:
-                            stocks[name] = {"price": price, "rate": round(rate, 2), "code": code, "market": market}
-            except: pass
+                                except:
+                                    pass
+        except:
+            pass
 
     return stocks
 
@@ -548,8 +567,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
             print(f"[ERROR] 카카오 토큰 갱신 실패: {t_res}")
             return
 
-        # ------------------------------------------------------------------
-        # 🚀 [핵심 추가] 카카오가 새 리프레시 토큰을 주면 낚아채서 깃허브로 넘기는 로직
+        # 카카오 리프레시 토큰 자동 갱신 감지 및 GitHub 환경변수 전달
         new_refresh_token = t_res.get("refresh_token") 
         if new_refresh_token:
             print("[INFO] 카카오 리프레시 토큰 만료 임박으로 자동 갱신됨")
@@ -557,7 +575,6 @@ def send_kakao_alert(indices, k200_top, k150_top):
             if env_file:
                 with open(env_file, "a") as f:
                     f.write(f"NEW_KAKAO_TOKEN={new_refresh_token}\n")
-        # ------------------------------------------------------------------
 
         kst_now = datetime.now(timezone(timedelta(hours=9)))
         date_str = kst_now.strftime("%m/%d 15:30 마감")
@@ -604,6 +621,8 @@ def send_kakao_alert(indices, k200_top, k150_top):
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary):
+    kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+
     index_cards = ""
     for idx in indices:
         sign = "▲ +" if idx["is_up"] else ("▼ -" if idx["is_down"] else "― ")
@@ -626,9 +645,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         for s in sectors:
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
-            stock_tags = "".join([f'<span class="stock-pill"><span class="stock-name">{st["name"]}</span> <b class="stock-rate {"text-up" if st["rate"]>0 else "text-down"}">{st["rate"]:+.2f}%</b> <span class="stock-price">({st["price"]}원)</span></span>' for st in s.get("stocks", [])])
+            stock_tags = "".join([
+                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}">'
+                f'<span class="stock-name">{st["name"]}</span> '
+                f'<b class="stock-rate {"text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")}">{st["rate"]:+.2f}%</b> '
+                f'<span class="stock-price">({st["price"]}원)</span>'
+                f'</span>'
+                for st in s.get("stocks", [])
+            ])
 
-            news_tags = news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" class="news-link">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
+            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
             html += f"""
             <div class="sector-item">
@@ -643,7 +669,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         return html
 
     raw_password = os.environ.get("DASHBOARD_PW", "4203").strip()
-    # 만약 비밀번호 환경변수가 완전히 공백으로 넘어온 경우를 대비한 안전장치
     if not raw_password:
         raw_password = "4203"
         
@@ -655,12 +680,18 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>실시간 국내 증시 대시보드</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }}
         header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
+        .sync-status {{ font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; }}
+        .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
+        @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }}
         .card-title {{ font-size: 0.80rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
@@ -704,6 +735,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
 </div>
 
+<header>
+    <h1>📊 실시간 국내 증시 대시보드</h1>
+    <div class="sync-status">
+        <span class="live-dot"></span>
+        <span id="sync-time-text">기준 시각: {kst_now} (접속 시 실시간 동기화 중...)</span>
+    </div>
+</header>
+
+<div class="grid-indices">{index_cards}</div>
+
+<div class="market-ai-box">
+    <div class="market-ai-header">🤖 주식시장 전체 AI 시황 분석</div>
+    <div class="market-ai-content">{ai_market_summary}</div>
+</div>
+
+<div class="group-title">🏢 코스피 200 업종 동향</div>
+<div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
+<div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
+
+<div class="group-title">🚀 코스닥 150 업종 동향</div>
+<div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{build_sector_list(k150_top)}</div>
+<div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{build_sector_list(k150_bot)}</div>
+
 <script>
     const TARGET_ARR = {obfuscated_pw};
     const XOR_KEY = {xor_key};
@@ -732,6 +786,96 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
+    async function fetchWithProxy(targetUrl) {{
+        const encoded = encodeURIComponent(targetUrl);
+        const proxies = [
+            `https://api.allorigins.win/raw?url=${{encoded}}`,
+            `https://corsproxy.io/?${{encoded}}`
+        ];
+        for (const p of proxies) {{
+            try {{
+                const res = await fetch(p, {{ cache: "no-store" }});
+                if (res.ok) return await res.json();
+            }} catch (e) {{}}
+        }}
+        return null;
+    }}
+
+    async function syncLiveMarketData() {{
+        // 1. 국내 3대 지수 실시간 동기화
+        const naverIndices = [
+            {{ key: "KOSPI", code: "KOSPI" }},
+            {{ key: "KOSDAQ", code: "KOSDAQ" }},
+            {{ key: "KPI200", code: "KPI200" }}
+        ];
+        for (const item of naverIndices) {{
+            const data = await fetchWithProxy(`https://m.stock.naver.com/api/index/${{item.code}}/basic?t=${{Date.now()}}`);
+            if (data && data.closePrice) {{
+                const valEl = document.getElementById(`val-${{item.key}}`);
+                const badgeEl = document.getElementById(`badge-${{item.key}}`);
+                if (valEl && badgeEl) {{
+                    valEl.innerText = data.closePrice;
+                    const cd = String(data.compareToPreviousPrice?.code || "3");
+                    const isUp = ["1", "2"].includes(cd);
+                    const isDown = ["4", "5"].includes(cd);
+                    const sign = isUp ? "▲ +" : (isDown ? "▼ -" : "― ");
+                    const rate = Math.abs(parseFloat(data.fluctuationsRatio || 0)).toFixed(2);
+                    const diff = data.compareToPreviousClosePrice || "0";
+                    badgeEl.innerText = `${{sign}}${{rate}}% (${{diff}})`;
+                    badgeEl.className = `badge ${{isUp ? 'bg-up-light text-up' : (isDown ? 'bg-down-light text-down' : 'bg-gray-100 text-flat')}}`;
+                }}
+            }}
+        }}
+
+        // 2. 개별 종목 실시간 주가·등락률 동기화 및 섹터 등락률 재계산
+        const pills = document.querySelectorAll('.stock-pill[data-stock-code]');
+        await Promise.all(Array.from(pills).map(async (pill) => {{
+            const code = pill.getAttribute('data-stock-code');
+            if (!code) return;
+            const data = await fetchWithProxy(`https://m.stock.naver.com/api/stock/${{code}}/basic?t=${{Date.now()}}`);
+            if (data && data.closePrice) {{
+                const cd = String(data.compareToPreviousPrice?.code || "3");
+                const isUp = ["1", "2"].includes(cd);
+                const isDown = ["4", "5"].includes(cd);
+                const rawRate = Math.abs(parseFloat(data.fluctuationsRatio || 0));
+                const signedRate = isDown ? -rawRate : (isUp ? rawRate : 0);
+
+                const rateEl = pill.querySelector('.stock-rate');
+                const priceEl = pill.querySelector('.stock-price');
+                if (rateEl) {{
+                    rateEl.innerText = `${{signedRate >= 0 ? '+' : ''}}${{signedRate.toFixed(2)}}%`;
+                    rateEl.className = `stock-rate ${{isUp ? 'text-up' : (isDown ? 'text-down' : 'text-flat')}}`;
+                    rateEl.setAttribute('data-live-rate', signedRate);
+                }}
+                if (priceEl) {{
+                    priceEl.innerText = `(${{data.closePrice}}원)`;
+                }}
+            }}
+        }}));
+
+        // 3. 각 섹터 평균 등락률 실시간 업데이트
+        document.querySelectorAll('.sector-item').forEach(item => {{
+            const rateEls = item.querySelectorAll('.stock-rate[data-live-rate]');
+            if (rateEls.length > 0) {{
+                let sum = 0;
+                rateEls.forEach(el => sum += parseFloat(el.getAttribute('data-live-rate') || 0));
+                const avg = sum / rateEls.length;
+                const secRateEl = item.querySelector('.sector-rate');
+                if (secRateEl) {{
+                    secRateEl.innerText = `${{avg >= 0 ? '+' : ''}}${{avg.toFixed(2)}}%`;
+                    secRateEl.className = `sector-rate ${{avg > 0 ? 'text-up' : (avg < 0 ? 'text-down' : 'text-flat')}}`;
+                }}
+            }}
+        }});
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('ko-KR', {{ hour12: false }});
+        const syncText = document.getElementById('sync-time-text');
+        if (syncText) {{
+            syncText.innerText = `실시간 동기화 완료: ${{timeStr}} (1분 주기 자동 갱신)`;
+        }}
+    }}
+
     window.onload = function() {{
         if (sessionStorage.getItem('isUnlocked') === 'true') {{
             document.getElementById('lock-screen').style.display = 'none';
@@ -741,24 +885,18 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 checkPassword();
             }}
         }});
-    }}
+
+        // 접속 즉시 실시간 시세 동기화 및 60초마다 반복
+        syncLiveMarketData();
+        setInterval(syncLiveMarketData, 60000);
+
+        // 5분마다 페이지 캐시 우회 새로고침
+        setTimeout(function() {{
+            const baseUrl = window.location.href.split('?')[0];
+            window.location.replace(baseUrl + '?t=' + Date.now());
+        }}, 300000);
+    }};
 </script>
-<!-- 🔐 비밀번호 잠금 화면 끝 -->
-    <header><h1>📊 실시간 국내 증시 대시보드</h1></header>
-    <div class="grid-indices">{index_cards}</div>
-
-    <div class="market-ai-box">
-        <div class="market-ai-header">🤖 주식시장 전체 AI 시황 분석</div>
-        <div class="market-ai-content">{ai_market_summary}</div>
-    </div>
-
-    <div class="group-title">🏢 코스피 200 업종 동향</div>
-    <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
-    <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
-
-    <div class="group-title">🚀 코스닥 150 업종 동향</div>
-    <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{build_sector_list(k150_top)}</div>
-    <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{build_sector_list(k150_bot)}</div>
 </body>
 </html>
 """
@@ -776,4 +914,12 @@ if __name__ == "__main__":
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary)
 
-    send_kakao_alert(indices, k200_top, k150_top)
+    # 장 마감 시간대(한국시간 15:20 ~ 16:10) 또는 수동 실행(workflow_dispatch)일 때만 카카오톡 발송
+    kst_now = datetime.now(timezone(timedelta(hours=9)))
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    is_close_time = (kst_now.hour == 15 and kst_now.minute >= 20) or (kst_now.hour == 16 and kst_now.minute <= 10)
+
+    if event_name == "workflow_dispatch" or is_close_time:
+        send_kakao_alert(indices, k200_top, k150_top)
+    else:
+        print(f"[INFO] 장중 대시보드 업데이트 완료 ({kst_now.strftime('%H:%M')}) - 마감 카톡 발송은 생략합니다.")
