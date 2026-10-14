@@ -7,9 +7,9 @@ on:
       - 'build_page.py'
       - '.github/workflows/update.yml'
   schedule:
-    # 장중 15분마다 실행 (한국시간 09:05 ~ 14:50)
+    # 평일 한국시간 09:05 ~ 14:50 사이 15분마다 장중 자동 업데이트 (UTC 00:05 ~ 05:50)
     - cron: '5,20,35,50 0-5 * * 1-5'
-    # 장 마감 시간대 (한국시간 15:05, 15:20, 15:35)
+    # 평일 한국시간 15:05, 15:20 장중 업데이트 및 15:35 정규장 마감 리포트/카톡 발송 (UTC 06:05, 06:20, 06:35)
     - cron: '5,20,35 6 * * 1-5'
   workflow_dispatch:
 
@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.MY_PAT || github.token }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -55,24 +57,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MY_PAT }}
 
+      # 충돌(Conflict) 없이 무조건 최신 생성된 index.html과 AI 캐시를 main 브랜치에 덮어쓰기
       - name: Commit and Push changes
+        env:
+          GH_TOKEN: ${{ secrets.MY_PAT || github.token }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          cp index.html /tmp/index.html
+          if [ -f ai_summary_cache.json ]; then cp ai_summary_cache.json /tmp/ai_summary_cache.json; fi
+          git fetch origin main
+          git reset --hard origin/main
+          cp /tmp/index.html index.html
+          if [ -f /tmp/ai_summary_cache.json ]; then cp /tmp/ai_summary_cache.json ai_summary_cache.json; fi
           git add index.html ai_summary_cache.json
-          git commit -m "업데이트: 실시간 데이터 및 AI 분석 반영" || echo "No changes to commit"
-          git pull --rebase origin main || true
-          git push origin main || true
+          git commit -m "업데이트: 실시간 금융 데이터 및 AI 시황 반영" || echo "No changes to commit"
+          git push origin main
+          gh api -X POST /repos/${{ github.repository }}/pages/builds || true
 
-      # 변경된 Source 설정에 맞춰 봇이 직접 GitHub Pages로 웹사이트를 쏴주는 배포 단계
+      # GitHub Pages Source가 'GitHub Actions'로 되어 있을 경우에도 자동 배포되도록 처리
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        continue-on-error: true
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
+        continue-on-error: true
         with:
           path: '.'
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
