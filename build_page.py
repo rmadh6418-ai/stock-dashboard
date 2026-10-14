@@ -146,7 +146,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
     """
 
-    available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash'-lite]
+    available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite']
     last_error = ""
 
     for model_name in available_models:
