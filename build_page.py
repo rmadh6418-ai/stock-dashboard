@@ -78,7 +78,11 @@ def call_gemini_rest_api(model_name, prompt, api_key):
     raise RuntimeError(f"HTTP {res.status_code}: {res.text[:200]}")
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
-    kst_now_str = datetime.now(timezone(timedelta(hours=9))).strftime("%H:%M")
+    now_kst = datetime.now(timezone(timedelta(hours=9)))
+    kst_now_str = now_kst.strftime("%H:%M")
+    today_str = now_kst.strftime("%Y-%m-%d")
+    is_after_close = (now_kst.hour > 15) or (now_kst.hour == 15 and now_kst.minute >= 30)
+
     kospi = next((x for x in indices if "코스피 (KOSPI)" in x["name"]), {})
     kosdaq = next((x for x in indices if "코스닥 (KOSDAQ)" in x["name"]), {})
 
@@ -88,58 +92,64 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     k150_weak = ", ".join([s['name'] for s in k150_bot]) if k150_bot else "특이사항 없음"
 
     fallback_text = (
-        f"[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 현재 "
-        f"{k200_strong} 및 {k150_strong} 섹터를 중심으로 흐름을 이어가고 있습니다."
+        f"[요약] 코스피({kospi.get('value')})와 코스닥({kosdaq.get('value')})은 오늘 "
+        f"{k200_strong} 및 {k150_strong} 섹터를 중심으로 흐름을 보였습니다."
     )
 
     if not API_KEY or API_KEY.strip() == "":
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}", kst_now_str
 
     cache_file = "ai_summary_cache.json"
-    # 15분 스케줄러가 2번째(30분째) 돌 때 몇 초 차이로 누락되지 않도록 25분(1500초)으로 설정
-    cache_duration = 1500
+    cache_duration = 1500  # 25분 캐시 (15분 스케줄러의 매 2번째 실행마다 정확히 갱신)
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
 
     old_cached_text = ""
     old_cached_time = kst_now_str
+    kakao_sent_date = ""
 
-    # 로컬 저장소의 캐시 파일 확인 (수동 실행이나 코드 푸시일 때는 캐시 무시하고 즉시 새로 생성)
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 old_cached_text = cache_data.get("text", "")
                 old_cached_time = cache_data.get("updated_at", kst_now_str)
+                kakao_sent_date = cache_data.get("kakao_sent_date", "")
                 elapsed = time.time() - cache_data.get("timestamp", 0)
-                if event_name not in ["workflow_dispatch", "push"] and elapsed < cache_duration:
+
+                # [핵심] 현재 15:30(장 마감) 이후인데 저장된 캐시가 15:30 이전(예: 15:20) 장중 분석이라면 캐시를 즉시 무시하고 마감 분석 새로 생성!
+                needs_closing_refresh = is_after_close and (old_cached_time < "15:30")
+
+                if event_name not in ["workflow_dispatch", "push"] and not needs_closing_refresh and elapsed < cache_duration:
                     if old_cached_text and not old_cached_text.startswith("[요약]") and not old_cached_text.startswith("🚨") and not old_cached_text.startswith("⏳"):
                         print(f"[INFO] AI 캐시 유지 중 (경과: {int(elapsed)}초 / 기준: {old_cached_time})")
                         return old_cached_text, old_cached_time
         except Exception:
             pass
 
+    market_phase = "정규장 마감 종합" if is_after_close else f"장중 실시간 ({kst_now_str} 기준)"
+    display_time_label = f"{kst_now_str} 마감 종합" if is_after_close else f"{kst_now_str}"
+
     prompt = f"""
     당신은 미국 월가의 상위 0.1% 퀀트 트레이너이자 날카로운 시각을 가진 주식시장 분석가입니다.
-    현재 시각({kst_now_str}) 기준 한국 주식시장(코스피, 코스닥) 실시간 데이터와 미국주식 시장 상황과 글로벌 거시경제 흐름을 바탕으로 시황을 상세하게 분석해주세요.
+    오늘 한국 주식시장(코스피, 코스닥) [{market_phase}] 데이터와 미국주식 시장 상황과 글로벌 거시경제 흐름을 바탕으로 시황을 아주 상세하게 분석해주세요.
 
-    [현재 시각 핵심 데이터 ({kst_now_str} 기준)]
+    [오늘의 핵심 데이터 - {market_phase}]
     - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {'+' if kospi.get('is_up') else ('-' if kospi.get('is_down') else '')}{kospi.get('change_rate')}%)
     - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {'+' if kosdaq.get('is_up') else ('-' if kosdaq.get('is_down') else '')}{kosdaq.get('change_rate')}%)
     - 코스피 강세 섹터: {k200_strong} / 약세 섹터: {k200_weak}
     - 코스닥 강세 섹터: {k150_strong} / 약세 섹터: {k150_weak}
 
     [작성 지침]
-    1. 현재 지수 수치와 강세·약세 주도 섹터의 수급 흐름을 바탕으로 시장 분위기를 깊이 있게 분석할 것.
-    2. 현재 주가 흐름에서 주의해야 할 리스크 요인과 포트폴리오 대응 전략을 구체적으로 제시할 것.
+    1. 지수 등락과 강세·약세 주도 섹터의 수급 흐름을 바탕으로 시장 분위기를 깊이 있게 분석할 것.
+    2. 현재 주가 흐름에서 주의해야 할 리스크 요인과 향후(야간 미국장 및 내일 장) 대응 전략을 구체적으로 제시할 것.
     3. 전체 분량은 8~10문장 분량으로 매끄러운 단일 문단 평문으로 작성할 것.
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
     """
 
-    available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite']
+    available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash'-lite]
     last_error = ""
 
     for model_name in available_models:
-        # 1순위: 패키지 버전 영향을 받지 않는 Gemini REST API 직통 호출
         try:
             print(f"[INFO] AI REST API 호출 시도: {model_name}")
             result_text = call_gemini_rest_api(model_name, prompt, API_KEY.strip())
@@ -148,16 +158,17 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump({
                         "timestamp": time.time(),
-                        "updated_at": kst_now_str,
+                        "updated_at": display_time_label,
+                        "date": today_str,
+                        "kakao_sent_date": kakao_sent_date,
                         "text": result_text
                     }, f, ensure_ascii=False)
-                print(f"[SUCCESS] {model_name} 시황 분석 생성 완료 ({kst_now_str})")
-                return result_text, kst_now_str
+                print(f"[SUCCESS] {model_name} 시황 분석 생성 완료 ({display_time_label})")
+                return result_text, display_time_label
         except Exception as e:
             last_error = str(e)
             print(f"[WARN] {model_name} REST 호출 실패 ({last_error}), SDK 호출로 재시도합니다.")
 
-        # 2순위: Python SDK 호출
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
@@ -166,21 +177,22 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump({
                         "timestamp": time.time(),
-                        "updated_at": kst_now_str,
+                        "updated_at": display_time_label,
+                        "date": today_str,
+                        "kakao_sent_date": kakao_sent_date,
                         "text": result_text
                     }, f, ensure_ascii=False)
-                print(f"[SUCCESS] {model_name} SDK 시황 분석 생성 완료 ({kst_now_str})")
-                return result_text, kst_now_str
+                print(f"[SUCCESS] {model_name} SDK 시황 분석 생성 완료 ({display_time_label})")
+                return result_text, display_time_label
         except Exception as e:
             last_error = str(e)
             print(f"[WARN] {model_name} SDK 호출 실패: {last_error}")
             continue
 
-    # 모든 모델이 일시적 할당량 초과일 경우 이전 정상 분석글이 있으면 유지
     if old_cached_text:
         return old_cached_text, old_cached_time
 
-    return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", kst_now_str
+    return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", display_time_label
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
@@ -877,7 +889,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             ? window.location.pathname
             : window.location.pathname.replace(/\/[^\/]*$/, '/');
 
-        // (1) AI 시황 분석 JSON 캐시 직접 호출 (브라우저 HTML 캐시 완벽 우회)
         try {{
             const aiRes = await fetch(`${{basePath}}ai_summary_cache.json?_=${{Date.now()}}`, {{
                 cache: "no-store",
@@ -896,7 +907,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }} catch (e) {{}}
 
-        // (2) 최신 index.html에서 거시지표(환율·국채·금·유가) 및 섹터/뉴스 구성 동기화
         try {{
             const htmlRes = await fetch(`${{basePath}}index.html?_=${{Date.now()}}`, {{
                 cache: "no-store",
@@ -928,7 +938,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }} catch (e) {{}}
     }}
 
-    // [1순위] 프록시 서버를 거치지 않는 네이버 공식 JSONP 직통 호출
     function fetchNaverDirectJsonp(queryStr) {{
         return new Promise((resolve) => {{
             const cbName = "__nv_cb_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
@@ -964,7 +973,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }});
     }}
 
-    // [2순위 백업] 캐시 무효화 프록시 폴링
     async function fetchProxyUncached(targetUrl) {{
         const bustUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + `_nocache=${{Date.now()}}_${{Math.random()}}`;
         const encoded = encodeURIComponent(bustUrl);
@@ -996,7 +1004,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             syncText.innerText = "🔄 실시간 체결가 및 최신 AI 분석 동기화 중...";
         }}
 
-        // 0단계: 서버의 최신 AI 시황 분석 캐시 및 섹터 구성 먼저 동기화
         await syncServerAiAndSectors();
 
         const codeSet = new Set();
@@ -1013,7 +1020,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         const liveStockMap = {{}};
         let updatedCount = 0;
 
-        // 1단계: 네이버 직통 JSONP로 지수 + 전 종목 시세 동시 수신
         const chunks = [];
         for (let i = 0; i < allCodes.length; i += 40) {{
             chunks.push(allCodes.slice(i, i + 40));
@@ -1087,7 +1093,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }}));
 
-        // 2단계: 화면 내 개별 종목 배지 즉시 갱신
         document.querySelectorAll('.stock-pill').forEach(pill => {{
             const code = pill.getAttribute('data-stock-code');
             const info = code && liveStockMap[code];
@@ -1105,7 +1110,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        // 3단계: 각 섹터 소속 전체 종목 평균 등락률 실시간 재계산
         document.querySelectorAll('.sector-item').forEach(item => {{
             const sectorCodes = (item.getAttribute('data-sector-codes') || '').split(',').map(s => s.trim()).filter(Boolean);
             const rates = [];
@@ -1147,7 +1151,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        // 접속 즉시 AI 캐시 + 네이버 직통 실시간 동기화 및 30초마다 반복
         syncLiveMarketData();
         setInterval(syncLiveMarketData, 30000);
     }};
@@ -1169,12 +1172,31 @@ if __name__ == "__main__":
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time)
 
-    # 하루 1번 장 마감 시점(15:30~16:10) 또는 수동 실행(workflow_dispatch)일 때만 카카오톡 발송
+    # 장 마감 이후(15:30~16:40) 오늘 아직 카톡을 보내지 않았거나, 수동 실행(workflow_dispatch)일 때만 1회 발송
     kst_now = datetime.now(timezone(timedelta(hours=9)))
+    today_str = kst_now.strftime("%Y-%m-%d")
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
-    is_close_time = (kst_now.hour == 15 and kst_now.minute >= 30) or (kst_now.hour == 16 and kst_now.minute <= 10)
+    is_close_window = (kst_now.hour == 15 and kst_now.minute >= 30) or (kst_now.hour == 16 and kst_now.minute <= 40)
 
-    if event_name == "workflow_dispatch" or is_close_time:
+    cache_file = "ai_summary_cache.json"
+    already_sent_today = False
+    cache_data = {}
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+                already_sent_today = (cache_data.get("kakao_sent_date") == today_str)
+        except Exception:
+            pass
+
+    if event_name == "workflow_dispatch" or (is_close_window and not already_sent_today):
         send_kakao_alert(indices, k200_top, k150_top)
+        if cache_data:
+            try:
+                cache_data["kakao_sent_date"] = today_str
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(cache_data, f, ensure_ascii=False)
+            except Exception:
+                pass
     else:
-        print(f"[INFO] 장중 대시보드 업데이트 완료 ({kst_now.strftime('%H:%M')}) - 마감 카톡 발송은 생략합니다.")
+        print(f"[INFO] 대시보드 업데이트 완료 ({kst_now.strftime('%H:%M')}) - 마감 카톡 발송 생략")
