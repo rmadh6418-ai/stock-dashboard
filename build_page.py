@@ -166,7 +166,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     available_models = get_candidate_models(API_KEY)
     last_error = ""
 
-    for model_name in available_models:
+for model_name in available_models:
         try:
             result_text = call_gemini_rest_api(model_name, prompt, API_KEY)
             if result_text:
@@ -182,14 +182,13 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 return result_text, display_time_label
         except Exception as e:
             last_error = str(e)
-            # API 연속 호출로 인한 Rate Limit(429) 연쇄 초과 방지
-            time.sleep(2)
+            time.sleep(3) # API 연속 차단 방지를 위한 지연 시간
             continue
 
-    # 모델 전체 실패 시, Silent Failure를 방지하고 화면에 에러 사유 명시
     if old_cached_text:
-        error_notice = f"<br><br><span style='color:#e11d48; font-size:0.85em; font-weight:700;'>⚠️ AI 갱신 지연 (사유: {last_error}) - 이전 시황을 유지합니다.</span>"
-        return old_cached_text + error_notice, old_cached_time
+        # 에러 발생 시 숨기지 않고 붉은 글씨로 사유를 명시하며, 갱신 시간은 현재 서버 시간으로 표출
+        error_msg = f"<br><br><span style='color:#e11d48; font-size:0.85em; font-weight:700;'>⚠️ API 일시 차단(사유: {last_error}) - 기존 시황 유지</span>"
+        return old_cached_text + error_msg, display_time_label
 
     return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", display_time_label
 
