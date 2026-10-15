@@ -166,6 +166,9 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     available_models = get_candidate_models(API_KEY)
     last_error = ""
 
+    # 👇 전 세계 봇(Bot)들이 몰리는 정시 트래픽 스파이크를 피하기 위해 15초 대기
+    time.sleep(15)
+    
     for model_name in available_models:
         try:
             result_text = call_gemini_rest_api(model_name, prompt, API_KEY)
