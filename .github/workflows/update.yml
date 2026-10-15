@@ -6,11 +6,7 @@ on:
     branches: [ main ]
     paths:
       - 'build_page.py'
-      - '.github/workflows/update.yml'
-  # 👇 봇이 캐시 파일이나 html을 수정해서 올릴 때는 push 트리거가 무한 반복으로 충돌 안 나게 예외 처리
-  paths-ignore:
-    - 'index.html'
-    - 'ai_summary_cache.json'    
+      - '.github/workflows/update.yml'    
   schedule:
     # 평일 한국시간 09:05 ~ 14:50 사이 15분마다 장중 자동 업데이트 (UTC 00:05 ~ 05:50)
     - cron: '5,20,35,50 0-5 * * 1-5'
