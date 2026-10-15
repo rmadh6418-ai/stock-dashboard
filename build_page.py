@@ -6,7 +6,6 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
-import google.generativeai as genai
 
 def get_headers(is_daum=False):
     headers = {
@@ -21,14 +20,10 @@ def get_headers(is_daum=False):
     return headers
 
 DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
-
-# Gemini API 초기화
-API_KEY = os.environ.get("GEMINI_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
+API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
-BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔루션", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
+BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔 জরিমানা", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사", "한화솔루션", "금호석유", "OCI홀딩스", "대한유화"],
@@ -61,7 +56,8 @@ KOSDAQ150_SECTORS = {
 }
 
 def call_gemini_rest_api(model_name, prompt, api_key):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+    clean_model = model_name.replace("models/", "").strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -75,7 +71,28 @@ def call_gemini_rest_api(model_name, prompt, api_key):
             parts = candidates[0].get("content", {}).get("parts", [])
             if parts and "text" in parts[0]:
                 return parts[0]["text"].strip().replace("\n", " ")
-    raise RuntimeError(f"HTTP {res.status_code}: {res.text[:200]}")
+    raise RuntimeError(f"HTTP {res.status_code}: {res.text[:180]}")
+
+def get_candidate_models(api_key):
+    base_models = [
+        'gemini-3.5-flash-lite',
+        'gemini-3.6-flash',
+        'gemini-3.1-flash-lite',
+    ]
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            models_data = res.json().get("models", [])
+            for m in models_data:
+                methods = m.get("supportedGenerationMethods", [])
+                m_name = m.get("name", "").replace("models/", "")
+                if "generateContent" in methods and "gemini" in m_name and "flash" in m_name:
+                    if m_name not in base_models:
+                        base_models.append(m_name)
+    except Exception:
+        pass
+    return base_models
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     now_kst = datetime.now(timezone(timedelta(hours=9)))
@@ -96,11 +113,11 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
         f"{k200_strong} 및 {k150_strong} 섹터를 중심으로 흐름을 보였습니다."
     )
 
-    if not API_KEY or API_KEY.strip() == "":
+    if not API_KEY:
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}", kst_now_str
 
     cache_file = "ai_summary_cache.json"
-    cache_duration = 1500  # 25분 캐시 (15분 스케줄러의 매 2번째 실행마다 정확히 갱신)
+    cache_duration = 1500  # 25분 유지
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
 
     old_cached_text = ""
@@ -112,16 +129,14 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 old_cached_text = cache_data.get("text", "")
-                old_cached_time = cache_data.get("updated_at", kst_now_str)
+                old_cached_time = str(cache_data.get("updated_at", kst_now_str))
                 kakao_sent_date = cache_data.get("kakao_sent_date", "")
                 elapsed = time.time() - cache_data.get("timestamp", 0)
 
-                # [핵심] 현재 15:30(장 마감) 이후인데 저장된 캐시가 15:30 이전(예: 15:20) 장중 분석이라면 캐시를 즉시 무시하고 마감 분석 새로 생성!
-                needs_closing_refresh = is_after_close and (old_cached_time < "15:30")
+                needs_closing_refresh = is_after_close and ("마감" not in old_cached_time)
 
                 if event_name not in ["workflow_dispatch", "push"] and not needs_closing_refresh and elapsed < cache_duration:
                     if old_cached_text and not old_cached_text.startswith("[요약]") and not old_cached_text.startswith("🚨") and not old_cached_text.startswith("⏳"):
-                        print(f"[INFO] AI 캐시 유지 중 (경과: {int(elapsed)}초 / 기준: {old_cached_time})")
                         return old_cached_text, old_cached_time
         except Exception:
             pass
@@ -146,13 +161,12 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
     """
 
-    available_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite']
+    available_models = get_candidate_models(API_KEY)
     last_error = ""
 
     for model_name in available_models:
         try:
-            print(f"[INFO] AI REST API 호출 시도: {model_name}")
-            result_text = call_gemini_rest_api(model_name, prompt, API_KEY.strip())
+            result_text = call_gemini_rest_api(model_name, prompt, API_KEY)
             if result_text:
                 result_text = re.sub(r'[*#`]+', '', result_text).strip()
                 with open(cache_file, "w", encoding="utf-8") as f:
@@ -163,30 +177,9 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                         "kakao_sent_date": kakao_sent_date,
                         "text": result_text
                     }, f, ensure_ascii=False)
-                print(f"[SUCCESS] {model_name} 시황 분석 생성 완료 ({display_time_label})")
                 return result_text, display_time_label
         except Exception as e:
             last_error = str(e)
-            print(f"[WARN] {model_name} REST 호출 실패 ({last_error}), SDK 호출로 재시도합니다.")
-
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            if response and hasattr(response, 'text') and response.text:
-                result_text = re.sub(r'[*#`]+', '', response.text).strip().replace('\n', ' ')
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump({
-                        "timestamp": time.time(),
-                        "updated_at": display_time_label,
-                        "date": today_str,
-                        "kakao_sent_date": kakao_sent_date,
-                        "text": result_text
-                    }, f, ensure_ascii=False)
-                print(f"[SUCCESS] {model_name} SDK 시황 분석 생성 완료 ({display_time_label})")
-                return result_text, display_time_label
-        except Exception as e:
-            last_error = str(e)
-            print(f"[WARN] {model_name} SDK 호출 실패: {last_error}")
             continue
 
     if old_cached_text:
@@ -486,6 +479,7 @@ def get_market_indices():
 def get_market_stocks():
     stocks = {}
 
+    # 1. 종목 코드 확보
     for market in ["KOSPI", "KOSDAQ"]:
         for page in range(1, 5):
             try:
@@ -512,15 +506,11 @@ def get_market_stocks():
                             rate = 0.0
 
                         if name:
-                            stocks[name] = {
-                                "price": price,
-                                "rate": round(rate, 2),
-                                "code": code,
-                                "market": market
-                            }
-            except Exception as e:
-                print(f"[WARN] 네이버 시총 API 오류 ({market} p.{page}): {e}")
+                            stocks[name] = {"price": price, "rate": round(rate, 2), "code": code, "market": market}
+            except:
+                pass
 
+    # 2. 누락 종목 다음(Daum) API 보완
     daum_headers = get_headers(is_daum=True)
     for market, m_code in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
         try:
@@ -542,15 +532,12 @@ def get_market_stocks():
         except:
             pass
 
+    # 3. 에러 발생을 막기 위해 네이버 실시간 폴링 API 안전하게 배치 호출
     target_names = set()
     for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
         target_names.update(s_list)
 
-    code_to_name = {
-        info["code"]: name
-        for name, info in stocks.items()
-        if name in target_names and info.get("code")
-    }
+    code_to_name = {info["code"]: name for name, info in stocks.items() if name in target_names and info.get("code")}
     target_codes = list(code_to_name.keys())
 
     for i in range(0, len(target_codes), 50):
@@ -578,10 +565,9 @@ def get_market_stocks():
                             rate = 0.0
                         stocks[name]["price"] = price
                         stocks[name]["rate"] = round(rate, 2)
-        except Exception as e:
-            print(f"[WARN] 실시간 폴링 배치 업데이트 오류: {e}")
+        except:
+            pass
 
-    print(f"[INFO] 총 {len(stocks)}개 종목 수집 완료")
     return stocks
 
 def calculate_sectors(sector_dict, stock_data):
@@ -883,7 +869,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // 0. 서버의 최신 AI 시황 캐시(ai_summary_cache.json) 및 최신 HTML(환율/섹터 구성)을 캐시 없이 직접 동기화
     async function syncServerAiAndSectors() {{
         const basePath = window.location.pathname.endsWith('/')
             ? window.location.pathname
@@ -1172,7 +1157,6 @@ if __name__ == "__main__":
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time)
 
-    # 장 마감 이후(15:30~16:40) 오늘 아직 카톡을 보내지 않았거나, 수동 실행(workflow_dispatch)일 때만 1회 발송
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     today_str = kst_now.strftime("%Y-%m-%d")
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
