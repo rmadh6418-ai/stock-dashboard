@@ -166,7 +166,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     available_models = get_candidate_models(API_KEY)
     last_error = ""
 
-for model_name in available_models:
+    for model_name in available_models:
         try:
             result_text = call_gemini_rest_api(model_name, prompt, API_KEY)
             if result_text:
