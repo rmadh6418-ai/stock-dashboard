@@ -81,7 +81,8 @@ def get_candidate_models(api_key):
     ]
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-        res = requests.get(url, timeout=5)
+        # 타임아웃을 5초에서 10초로 연장하여 정상 모델 동적 수집 누락 방지
+        res = requests.get(url, timeout=10)
         if res.status_code == 200:
             models_data = res.json().get("models", [])
             for m in models_data:
@@ -161,6 +162,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
     """
 
+# ... (기존 상단 로직 동일) ...
     available_models = get_candidate_models(API_KEY)
     last_error = ""
 
@@ -180,10 +182,14 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 return result_text, display_time_label
         except Exception as e:
             last_error = str(e)
+            # API 연속 호출로 인한 Rate Limit(429) 연쇄 초과 방지
+            time.sleep(2)
             continue
 
+    # 모델 전체 실패 시, Silent Failure를 방지하고 화면에 에러 사유 명시
     if old_cached_text:
-        return old_cached_text, old_cached_time
+        error_notice = f"<br><br><span style='color:#e11d48; font-size:0.85em; font-weight:700;'>⚠️ AI 갱신 지연 (사유: {last_error}) - 이전 시황을 유지합니다.</span>"
+        return old_cached_text + error_notice, old_cached_time
 
     return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", display_time_label
 
