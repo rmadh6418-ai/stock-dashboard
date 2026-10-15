@@ -118,7 +118,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
         return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}", kst_now_str
 
     cache_file = "ai_summary_cache.json"
-    cache_duration = 1500  # 25분 유지
+    cache_duration = 1080  # 18분 유지
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
 
     old_cached_text = ""
