@@ -65,7 +65,7 @@
         <h1>📊 실시간 국내 증시 대시보드</h1>
         <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
             <span class="live-dot"></span>
-            <span id="sync-time-text">기준 시각: 2026-10-16 02:02:45 (실시간 동기화 중...)</span>
+            <span id="sync-time-text">기준 시각: 2026-10-16 02:32:48 (실시간 동기화 중...)</span>
         </div>
     </header>
 
@@ -90,14 +90,14 @@
         
         <div class="card" data-index-target="FX_USDKRW">
             <div class="card-title">원·달러 환율</div>
-            <div class="card-value" id="val-FX_USDKRW">1,343.72원</div>
-            <div class="badge bg-up-light text-up" id="badge-FX_USDKRW">▲ +0.21% (+2.86원)</div>
+            <div class="card-value" id="val-FX_USDKRW">1,342.40원</div>
+            <div class="badge bg-up-light text-up" id="badge-FX_USDKRW">▲ +0.11% (+1.54원)</div>
         </div>
         
         <div class="card" data-index-target="JPYKRW">
             <div class="card-title">엔·원 환율 (100엔)</div>
-            <div class="card-value" id="val-JPYKRW">847.40원</div>
-            <div class="badge bg-up-light text-up" id="badge-JPYKRW">▲ +0.31% (+2.60원)</div>
+            <div class="card-value" id="val-JPYKRW">846.40원</div>
+            <div class="badge bg-up-light text-up" id="badge-JPYKRW">▲ +0.19% (+1.60원)</div>
         </div>
         
         <div class="card" data-index-target="US10Y">
@@ -108,20 +108,20 @@
         
         <div class="card" data-index-target="US30Y">
             <div class="card-title">미국채 30년물</div>
-            <div class="card-value" id="val-US30Y">5.426%</div>
-            <div class="badge bg-down-light text-down" id="badge-US30Y">▼ -1.79% (0.099bp)</div>
+            <div class="card-value" id="val-US30Y">5.425%</div>
+            <div class="badge bg-down-light text-down" id="badge-US30Y">▼ -1.81% (0.100bp)</div>
         </div>
         
         <div class="card" data-index-target="GOLD_DON">
             <div class="card-title">금시세 (1돈)</div>
-            <div class="card-value" id="val-GOLD_DON">675,710원</div>
-            <div class="badge bg-up-light text-up" id="badge-GOLD_DON">▲ +1.75% (+11,622원)</div>
+            <div class="card-value" id="val-GOLD_DON">675,225원</div>
+            <div class="badge bg-up-light text-up" id="badge-GOLD_DON">▲ +1.68% (+11,137원)</div>
         </div>
         
         <div class="card" data-index-target="SILVER_DON">
             <div class="card-title">은시세 (1돈)</div>
-            <div class="card-value" id="val-SILVER_DON">9,251원</div>
-            <div class="badge bg-up-light text-up" id="badge-SILVER_DON">▲ +2.41% (+218원)</div>
+            <div class="card-value" id="val-SILVER_DON">9,259원</div>
+            <div class="badge bg-up-light text-up" id="badge-SILVER_DON">▲ +2.50% (+226원)</div>
         </div>
         
         <div class="card" data-index-target="OIL">
@@ -134,9 +134,9 @@
     <div class="market-ai-box">
         <div class="market-ai-header">
             <span>🤖 주식시장 전체 AI 시황 분석</span>
-            <span class="ai-time-badge" id="ai-update-time">02:02 기준 (30분 주기 갱신)</span>
+            <span class="ai-time-badge" id="ai-update-time">02:32 기준 (30분 주기 갱신)</span>
         </div>
-        <div class="market-ai-content" id="ai-summary-text">현재 시각 오후 2시 2일을 지나고 있는 국내 주식시장은 코스피가 5554선으로 무려 7.57퍼센트 폭락하고 코스닥 역시 760선까지 7.65퍼센트 급락하는 등 역사적인 수준의 패닉 셀링 장세가 연출되고 있으며 이는 글로벌 매크로 불확실성과 미증시의 급격한 변동성이 투심을 완전히 얼어붙게 만든 결과로 풀이됩니다. 시장 전반에 서킷브레이커 수준의 강한 하방 압력이 가해지는 가운데 전기전자와 반도체 아이티를 비롯해 원전과 전력인프라 그리고 이차전지와 배터리 등 그간 국내 증시를 이끌어온 주도 섹터들이 외국인과 기관의 무차별적인 물량 출회로 인해 초토화되다시피 무너져 내렸습니다. 반면 그나마 화장품과 의류, 제약과 바이오, 음식료와 유통 그리고 엔터미디어와 미용의료 등 일부 방어적 성격의 업종만이 선방하는 양상을 보이고 있으나 이는 지수 전체의 낙폭을 방어하기에는 턱없이 부족한 제한적인 반등에 불과합니다. 이처럼 전 업종에 걸쳐 마진 콜과 반대매매 물량이 연쇄적으로 쏟아질 수 있는 극단적인 리스크 국면에 진입했으므로 현재 구간에서의 무분별한 저가 매수나 레버리지 활용은 치명적인 계좌 손실로 이어질 수 있음을 명심해야 합니다. 따라서 오늘 밤 예정된 미국 야간 선물 시장의 움직임과 주요 거시경제 지표 발표를 면밀히 모니터링하면서 철저한 현금 비중 확보와 함께 변동성이 진정될 때까지 보수적인 관점에서 리스크 관리 중심의 대응 전략을 취하는 것이 현명합니다.</div>
+        <div class="market-ai-content" id="ai-summary-text">현재 국내 증시는 코스피가 7퍼센트 넘게 폭락하며 5,554선까지 밀려났고 코스닥 역시 7퍼센트 이상의 급락세를 기록하는 등 전형적인 투매 양상의 패닉 마켓이 연출되고 있습니다. 전기전자와 반도체, 이차전지, 전력인프라 등 그동안 시장을 주도하던 핵심 성장주들이 일제히 무너져 내린 것은 글로벌 거시경제의 불확실성과 외국인 및 기관의 강한 위험회피 물량이 집중된 결과로 풀이됩니다. 반면 화장품과 바이오, 음식료 등 일부 방어적 성격의 섹터만이 상대적으로 버텨내며 시장의 처참한 하락 폭 속에서 제한적인 피난처 역할을 수행하고 있습니다. 이러한 급락 장세는 단순한 조정을 넘어 레버리지 물량의 반대매매 위험을 내포하고 있으므로 철저한 유동성 관리와 리스크 헤지가 최우선인 시점입니다. 미국 야간 시장의 흐름과 금리 및 환율 변동성을 면밀히 모니터링해야 하며 무리한 저가 매수보다는 현금 비중을 확보하고 추세가 진정될 때까지 보수적인 관점을 유지하는 것이 현명한 대응 전략입니다.</div>
     </div>
 
     <div id="sectors-root">
@@ -538,7 +538,7 @@
             if (updatedCount > 0) {
                 syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss} (클릭 또는 새로고침 시 즉시 갱신)`;
             } else {
-                syncText.innerText = `기준 시각: 2026-10-16 02:02:45 (네트워크 재연결 대기 중)`;
+                syncText.innerText = `기준 시각: 2026-10-16 02:32:48 (네트워크 재연결 대기 중)`;
             }
         }
     }
