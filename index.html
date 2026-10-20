@@ -6,13 +6,6 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    
-    <!-- PWA 및 모바일 최적화 Meta Tags -->
-    <meta name="theme-color" content="#f8fafc">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="증시 대시보드">
-    
     <title>실시간 국내 증시 대시보드</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -72,7 +65,7 @@
         <h1>📊 실시간 국내 증시 대시보드</h1>
         <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
             <span class="live-dot"></span>
-            <span id="sync-time-text">기준 시각: 2026-10-20 20:32:17 (실시간 동기화 중...)</span>
+            <span id="sync-time-text">기준 시각: 2026-10-20 22:06:41 (실시간 동기화 중...)</span>
         </div>
     </header>
 
@@ -97,53 +90,53 @@
         
         <div class="card" data-index-target="FX_USDKRW">
             <div class="card-title">원·달러 환율</div>
-            <div class="card-value" id="val-FX_USDKRW">1,327.68원</div>
-            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.39% (-5.17원)</div>
+            <div class="card-value" id="val-FX_USDKRW">1,326.49원</div>
+            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.48% (-6.36원)</div>
         </div>
         
         <div class="card" data-index-target="JPYKRW">
             <div class="card-title">엔·원 환율 (100엔)</div>
-            <div class="card-value" id="val-JPYKRW">837.00원</div>
-            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.21% (-1.80원)</div>
+            <div class="card-value" id="val-JPYKRW">837.50원</div>
+            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.15% (-1.30원)</div>
         </div>
         
         <div class="card" data-index-target="US10Y">
             <div class="card-title">미국채 10년물</div>
-            <div class="card-value" id="val-US10Y">5.136%</div>
-            <div class="badge bg-up-light text-up" id="badge-US10Y">▲ +0.75% (0.038bp)</div>
+            <div class="card-value" id="val-US10Y">5.106%</div>
+            <div class="badge bg-down-light text-down" id="badge-US10Y">▼ -0.58% (0.030bp)</div>
         </div>
         
         <div class="card" data-index-target="US30Y">
             <div class="card-title">미국채 30년물</div>
-            <div class="card-value" id="val-US30Y">5.472%</div>
-            <div class="badge bg-up-light text-up" id="badge-US30Y">▲ +0.66% (0.036bp)</div>
+            <div class="card-value" id="val-US30Y">5.429%</div>
+            <div class="badge bg-down-light text-down" id="badge-US30Y">▼ -0.79% (0.043bp)</div>
         </div>
         
         <div class="card" data-index-target="GOLD_DON">
             <div class="card-title">금시세 (1돈)</div>
-            <div class="card-value" id="val-GOLD_DON">662,971원</div>
-            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -0.83% (-5,538원)</div>
+            <div class="card-value" id="val-GOLD_DON">661,225원</div>
+            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -1.09% (-7,284원)</div>
         </div>
         
         <div class="card" data-index-target="SILVER_DON">
             <div class="card-title">은시세 (1돈)</div>
-            <div class="card-value" id="val-SILVER_DON">9,185원</div>
-            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.20% (-19원)</div>
+            <div class="card-value" id="val-SILVER_DON">9,138원</div>
+            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.72% (-66원)</div>
         </div>
         
         <div class="card" data-index-target="OIL">
             <div class="card-title">국제유가 (WTI)</div>
-            <div class="card-value" id="val-OIL">$100.59</div>
-            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +2.08% (+2.05)</div>
+            <div class="card-value" id="val-OIL">$99.68</div>
+            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +1.16% (+1.14)</div>
         </div>
         </div>
 
     <div class="market-ai-box">
         <div class="market-ai-header">
             <span>🤖 주식시장 전체 AI 시황 분석</span>
-            <span class="ai-time-badge" id="ai-update-time">20:31 마감 종합 기준 (30분 주기 갱신)</span>
+            <span class="ai-time-badge" id="ai-update-time">22:06 마감 종합 기준 (30분 주기 갱신)</span>
         </div>
-        <div class="market-ai-content" id="ai-summary-text">오늘 국내 증시는 코스피가 3.73퍼센트 급락한 5552.74포인트로, 코스닥이 3.33퍼센트 하락한 781.97포인트로 마감하며 투심이 극도로 얼어붙는 패닉 장세를 연출했습니다. 코스피 시장에서는 글로벌 거시경제 불확실성과 리스크 회피 심리가 고조되면서 방위산업, 원전, 화학 등 그간 시장을 주도했던 핵심 주도주들이 가파른 낙폭을 기록한 반면, 통신과 보험, 일부 인터넷 플랫폼주만이 상대적인 방어력을 보이며 지수 하방을 겨우 지지했습니다. 코스닥 역시 반도체 소부장과 이차전지, 장비기자재 등 기술 성장주 전반에 걸쳐 매물이 쏟아지며 체감 지표가 크게 악화된 가운데 제한적으로 게임과 제약 바이오 일부 종목만 순환매의 수혜를 입었습니다. 이러한 수급 이탈은 최근 글로벌 금리 인상 기조 재부각과 환율 변동성 확대, 그리고 외국인과 기관의 양시장 동반 순매도 공세가 겹친 결과로 풀이되며, 단기 과매도 국면에 진입했으나 추세 반전을 확신하기에는 매수세의 에너지와 모멘텀이 턱없이 부족한 상황입니다. 따라서 향후 전개될 야간 미국 증시의 기술주 흐름과 매크로 지표 발표 결과에 따라 국내 증시의 추가 변동성이 클 것으로 예상되므로, 무리한 저가 매수나 레버리지 확대보다는 현금 비중을 유지하며 리스크를 철저히 관리하는 보수적인 대응 전략이 그 어느 때보다 시급합니다.</div>
+        <div class="market-ai-content" id="ai-summary-text">오늘 국내 증시는 코스피가 3.73퍼센트 급락하며 5552선으로 밀려났고 코스닥 역시 3.33퍼센트 하락한 781선에 마감하며 양시장 모두 거센 투심 악화와 함께 깊은 조정을 피하지 못했습니다. 수급 면에서는 코스피의 경우 통신 네트워크와 금융, 일부 플랫폼주가 방어력을 보였으나 방산 우주항공과 원전 전력인프라 등 그간 시장을 주도하던 주도주들이 차익실현 매물에 무너졌고, 코스닥 역시 제약바이오와 게임 일부가 선방했으나 반도체 소부장과 이차전지 소재 등 핵심 성장주들이 일제히 급락세를 보이며 하방 압력을 가중시켰습니다. 이러한 급락은 글로벌 매크로 환경의 불확실성과 맞물려 그동안 누적된 밸류에이션 부담이 투매 양상으로 터져 나온 결과로 해석되며, 특히 외국인과 기관의 동반 매도세가 지수 하단을 강하게 압박하는 전형적인 패닉셀의 국면을 보여주고 있습니다. 따라서 현재의 주가 흐름에서는 저가 매수라는 안일한 접근보다는 추가적인 변동성 확대 가능성을 열어두고 현금 비중을 확보하는 보수적인 리스크 관리가 최우선 과제입니다. 야간에 열릴 미국 시장의 방향성과 주요 경제 지표 발표를 면밀히 모니터링해야 하며, 내일 장 초반에는 투매에 따른 기술적 반등이 시도될 수 있으나 주도 섹터의 수급이 회복되는지 확인하기 전까지는 신규 매수를 자제하고 리스크 관리 중심의 대응 전략을 고수해야 합니다.</div>
     </div>
 
     <div id="sectors-root">
@@ -266,57 +259,6 @@
 </div>
 
 <script>
-    // --- PWA 기능 단일 파일 내장 스크립트 시작 ---
-    (function initPWA() {
-        // 1. 기본 아이콘용 SVG 데이터 생성
-        const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#1d4ed8"/><text x="50" y="50" font-size="50" text-anchor="middle" dy=".3em" fill="white">📊</text></svg>`;
-        const iconBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(iconSvg)));
-
-        // 2. 동적 Manifest JSON 구성 (현재 URL 기준 시작)
-        const manifest = {
-            name: "실시간 국내 증시 대시보드",
-            short_name: "증시 대시보드",
-            start_url: window.location.href,
-            display: "standalone",
-            background_color: "#f8fafc",
-            theme_color: "#f8fafc",
-            icons: [
-                { src: iconBase64, sizes: "192x192", type: "image/svg+xml", purpose: "any maskable" },
-                { src: iconBase64, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
-            ]
-        };
-
-        // Manifest를 Blob으로 변환해 페이지에 삽입
-        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-        const manifestUrl = URL.createObjectURL(manifestBlob);
-        const link = document.createElement("link");
-        link.rel = "manifest";
-        link.href = manifestUrl;
-        document.head.appendChild(link);
-
-        // 3. Service Worker 동적 생성 및 등록 (실시간 데이터를 위해 오프라인 패스스루 방식 적용)
-        if ('serviceWorker' in navigator) {
-            const swCode = `
-                self.addEventListener('install', e => self.skipWaiting());
-                self.addEventListener('activate', e => self.clients.claim());
-                self.addEventListener('fetch', e => {
-                    // 실시간 앱이므로 항상 네트워크를 우선으로 시도 (Network First)
-                    e.respondWith(
-                        fetch(e.request).catch(() => new Response('오프라인 상태이거나 네트워크 오류입니다.', { status: 503 }))
-                    );
-                });
-            `;
-            const swBlob = new Blob([swCode], { type: 'application/javascript' });
-            const swUrl = URL.createObjectURL(swBlob);
-            
-            navigator.serviceWorker.register(swUrl)
-                .then(() => console.log("✅ PWA Service Worker 내장 등록 완료"))
-                .catch(err => console.error("❌ PWA Service Worker 등록 실패:", err));
-        }
-    })();
-    // --- PWA 기능 스크립트 끝 ---
-
-
     const TARGET_ARR = [79, 73, 75, 72];
     const XOR_KEY = 123;
 
@@ -596,7 +538,7 @@
             if (updatedCount > 0) {
                 syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss} (클릭 또는 새로고침 시 즉시 갱신)`;
             } else {
-                syncText.innerText = `기준 시각: 2026-10-20 20:32:17 (네트워크 재연결 대기 중)`;
+                syncText.innerText = `기준 시각: 2026-10-20 22:06:41 (네트워크 재연결 대기 중)`;
             }
         }
     }
