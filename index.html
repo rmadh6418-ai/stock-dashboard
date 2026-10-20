@@ -6,26 +6,14 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    
-    <!-- PWA 및 모바일 최적화 Meta Tags -->
-    <meta name="theme-color" content="#f8fafc">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="증시 대시보드">
-    
     <title>실시간 국내 증시 대시보드</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         body { background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }
         header { text-align: center; margin-bottom: 18px; }
         h1 { font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
-        
-        .header-buttons { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-        .sync-status { font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 6px 14px; border-radius: 999px; cursor: pointer; user-select: none; }
+        .sync-status { font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none; }
         .sync-status:hover { background: #cbd5e1; }
-        .btn-install { background: #2563eb; color: white; border: none; }
-        .btn-install:hover { background: #1d4ed8; }
-        
         .live-dot { width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
         .grid-indices { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }
@@ -75,12 +63,9 @@
 <div id="dashboard-root">
     <header>
         <h1>📊 실시간 국내 증시 대시보드</h1>
-        <div class="header-buttons">
-            <button id="install-btn" class="sync-status btn-install" style="display: none;">📱 앱 설치하기</button>
-            <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
-                <span class="live-dot"></span>
-                <span id="sync-time-text">데이터 동기화 대기 중...</span>
-            </div>
+        <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
+            <span class="live-dot"></span>
+            <span id="sync-time-text">기준 시각: 2026-10-20 22:14:54 (실시간 동기화 중...)</span>
         </div>
     </header>
 
@@ -105,53 +90,53 @@
         
         <div class="card" data-index-target="FX_USDKRW">
             <div class="card-title">원·달러 환율</div>
-            <div class="card-value" id="val-FX_USDKRW">1,327.68원</div>
-            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.39% (-5.17원)</div>
+            <div class="card-value" id="val-FX_USDKRW">1,327.78원</div>
+            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.38% (-5.07원)</div>
         </div>
         
         <div class="card" data-index-target="JPYKRW">
             <div class="card-title">엔·원 환율 (100엔)</div>
-            <div class="card-value" id="val-JPYKRW">837.00원</div>
-            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.21% (-1.80원)</div>
+            <div class="card-value" id="val-JPYKRW">837.60원</div>
+            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.14% (-1.20원)</div>
         </div>
         
         <div class="card" data-index-target="US10Y">
             <div class="card-title">미국채 10년물</div>
-            <div class="card-value" id="val-US10Y">5.136%</div>
-            <div class="badge bg-up-light text-up" id="badge-US10Y">▲ +0.75% (0.038bp)</div>
+            <div class="card-value" id="val-US10Y">5.109%</div>
+            <div class="badge bg-down-light text-down" id="badge-US10Y">▼ -0.53% (0.027bp)</div>
         </div>
         
         <div class="card" data-index-target="US30Y">
             <div class="card-title">미국채 30년물</div>
-            <div class="card-value" id="val-US30Y">5.472%</div>
-            <div class="badge bg-up-light text-up" id="badge-US30Y">▲ +0.66% (0.036bp)</div>
+            <div class="card-value" id="val-US30Y">5.429%</div>
+            <div class="badge bg-down-light text-down" id="badge-US30Y">▼ -0.79% (0.043bp)</div>
         </div>
         
         <div class="card" data-index-target="GOLD_DON">
             <div class="card-title">금시세 (1돈)</div>
-            <div class="card-value" id="val-GOLD_DON">662,971원</div>
-            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -0.83% (-5,538원)</div>
+            <div class="card-value" id="val-GOLD_DON">661,564원</div>
+            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -1.04% (-6,945원)</div>
         </div>
         
         <div class="card" data-index-target="SILVER_DON">
             <div class="card-title">은시세 (1돈)</div>
-            <div class="card-value" id="val-SILVER_DON">9,185원</div>
-            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.20% (-19원)</div>
+            <div class="card-value" id="val-SILVER_DON">9,151원</div>
+            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.57% (-52원)</div>
         </div>
         
         <div class="card" data-index-target="OIL">
             <div class="card-title">국제유가 (WTI)</div>
-            <div class="card-value" id="val-OIL">$100.59</div>
-            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +2.08% (+2.05)</div>
+            <div class="card-value" id="val-OIL">$100.04</div>
+            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +1.52% (+1.50)</div>
         </div>
         </div>
 
     <div class="market-ai-box">
         <div class="market-ai-header">
             <span>🤖 주식시장 전체 AI 시황 분석</span>
-            <span class="ai-time-badge" id="ai-update-time">20:31 마감 종합 기준 (30분 주기 갱신)</span>
+            <span class="ai-time-badge" id="ai-update-time">22:14 마감 종합 기준 (30분 주기 갱신)</span>
         </div>
-        <div class="market-ai-content" id="ai-summary-text">오늘 국내 증시는 코스피가 3.73퍼센트 급락한 5552.74포인트로, 코스닥이 3.33퍼센트 하락한 781.97포인트로 마감하며 투심이 극도로 얼어붙는 패닉 장세를 연출했습니다. 코스피 시장에서는 글로벌 거시경제 불확실성과 리스크 회피 심리가 고조되면서 방위산업, 원전, 화학 등 그간 시장을 주도했던 핵심 주도주들이 가파른 낙폭을 기록한 반면, 통신과 보험, 일부 인터넷 플랫폼주만이 상대적인 방어력을 보이며 지수 하방을 겨우 지지했습니다. 코스닥 역시 반도체 소부장과 이차전지, 장비기자재 등 기술 성장주 전반에 걸쳐 매물이 쏟아지며 체감 지표가 크게 악화된 가운데 제한적으로 게임과 제약 바이오 일부 종목만 순환매의 수혜를 입었습니다. 이러한 수급 이탈은 최근 글로벌 금리 인상 기조 재부각과 환율 변동성 확대, 그리고 외국인과 기관의 양시장 동반 순매도 공세가 겹친 결과로 풀이되며, 단기 과매도 국면에 진입했으나 추세 반전을 확신하기에는 매수세의 에너지와 모멘텀이 턱없이 부족한 상황입니다. 따라서 향후 전개될 야간 미국 증시의 기술주 흐름과 매크로 지표 발표 결과에 따라 국내 증시의 추가 변동성이 클 것으로 예상되므로, 무리한 저가 매수나 레버리지 확대보다는 현금 비중을 유지하며 리스크를 철저히 관리하는 보수적인 대응 전략이 그 어느 때보다 시급합니다.</div>
+        <div class="market-ai-content" id="ai-summary-text">오늘 국내 증시는 코스피가 3.73퍼센트 급락한 5552.74포인트로, 코스닥이 3.33퍼센트 하락한 781.97포인트로 마감하며 투심이 극도로 얼어붙는 패닉 장세를 연출했습니다. 코스피 시장에서는 그동안 지수를 견인하던 방위산업과 원전 및 전력인프라, 화학 및 에너지 등 주도주들이 강한 매물 폭탄을 맞으며 무너진 반면, 통신네트워크와 손해보험 및 생명보험, 인터넷과 게임 및 플랫폼 등 일부 경기 방어 및 낙폭 과대 섹터로만 선별적인 저가 매수세가 유입되었습니다. 코스닥 시장 역시 반도체 소부장과 이차전지 및 소재, 피팅 및 장비기자재 등 핵심 성장 섹터들이 일제히 급락세를 면치 못한 채 무너졌고, 그나마 게임 및 소프트웨어와 엔터 및 미디어, 제약 바이오 일부 종목만이 방어력을 보였습니다. 이러한 지수의 급격한 하락과 주도주의 붕괴는 글로벌 거시경제의 불확실성 확대와 미국 국채 금리 변동성, 그리고 외국인과 기관의 동반 대규모 현선물 순매도가 겹치면서 시장 전반에 유동성 경색 우려가 확산되었음을 방증합니다. 현재의 수급 구도와 기술적 지표로 볼 때 섣부른 저점 매수는 매우 위험하며, 추가적인 투매 물량이 출회될 가능성과 환율 변동성에 따른 외국인 수급 이탈 리스크를 철저히 경계해야 합니다. 따라서 야간 미국장의 매크로 지표 발표와 빅테크 실적 흐름을 면밀히 모니터링하면서 지수의 변동성이 진정될 때까지 현금 비중을 유지하고 리스크를 관리하는 보수적인 대응 전략이 필수적입니다. 내일 장 초반에는 투매에 따른 기술적 반등이 시도될 수 있으나, 이를 추격 매수의 기회로 삼기보다는 반등 시 포트폴리오 내 부실 자산을 정리하고 방어주 위주로 리스크를 축소하는 기회로 삼는 것이 퀀트 관점에서 가장 합리적인 대응입니다.</div>
     </div>
 
     <div id="sectors-root">
@@ -172,80 +157,119 @@
                     <span class="sector-rate text-down">-2.00%</span>
                 </div>
                 <div class="stock-container"><span class="stock-pill" data-stock-code="000370" data-stock-name="한화손해보험"><span class="stock-name">한화손해보험</span> <b class="stock-rate text-down" data-live-rate="-5.79">-5.79%</b> <span class="stock-price">(6,350원)</span></span><span class="stock-pill" data-stock-code="085620" data-stock-name="미래에셋생명"><span class="stock-name">미래에셋생명</span> <b class="stock-rate text-down" data-live-rate="-5.47">-5.47%</b> <span class="stock-price">(16,920원)</span></span><span class="stock-pill" data-stock-code="088350" data-stock-name="한화생명"><span class="stock-name">한화생명</span> <b class="stock-rate text-down" data-live-rate="-4.9">-4.90%</b> <span class="stock-price">(4,560원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/000370/news" class="news-link" target="_blank">[네이버금융] [한화손해보험] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/085620/news" class="news-link" target="_blank">[네이버금융] [미래에셋생명] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/088350/news" class="news-link" target="_blank">[네이버금융] [한화생명] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="035420,035720,259960,181710,251270">
+                <div class="sector-header">
+                    <span class="sector-name">인터넷·게임·플랫폼</span>
+                    <span class="sector-rate text-down">-2.21%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="035420" data-stock-name="NAVER"><span class="stock-name">NAVER</span> <b class="stock-rate text-down" data-live-rate="-3.34">-3.34%</b> <span class="stock-price">(176,800원)</span></span><span class="stock-pill" data-stock-code="035720" data-stock-name="카카오"><span class="stock-name">카카오</span> <b class="stock-rate text-down" data-live-rate="-2.34">-2.34%</b> <span class="stock-price">(31,350원)</span></span><span class="stock-pill" data-stock-code="259960" data-stock-name="크래프톤"><span class="stock-name">크래프톤</span> <b class="stock-rate text-down" data-live-rate="-2.34">-2.34%</b> <span class="stock-price">(196,300원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/035420/news" class="news-link" target="_blank">[네이버금융] [NAVER] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/035720/news" class="news-link" target="_blank">[네이버금융] [카카오] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/259960/news" class="news-link" target="_blank">[네이버금융] [크래프톤] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            </div>
+        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">
+            <div class="sector-item" data-sector-codes="064350,272210,012450,047810,000880,103140">
+                <div class="sector-header">
+                    <span class="sector-name">방위산업·우주항공</span>
+                    <span class="sector-rate text-down">-10.39%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="064350" data-stock-name="현대로템"><span class="stock-name">현대로템</span> <b class="stock-rate text-down" data-live-rate="-15.29">-15.29%</b> <span class="stock-price">(85,300원)</span></span><span class="stock-pill" data-stock-code="272210" data-stock-name="한화시스템"><span class="stock-name">한화시스템</span> <b class="stock-rate text-down" data-live-rate="-15.0">-15.00%</b> <span class="stock-price">(69,700원)</span></span><span class="stock-pill" data-stock-code="012450" data-stock-name="한화에어로스페이스"><span class="stock-name">한화에어로스페이스</span> <b class="stock-rate text-down" data-live-rate="-12.49">-12.49%</b> <span class="stock-price">(792,000원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/064350/news" class="news-link" target="_blank">[네이버금융] [현대로템] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/272210/news" class="news-link" target="_blank">[네이버금융] [한화시스템] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/012450/news" class="news-link" target="_blank">[네이버금융] [한화에어로스페이스] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="229640,103590,062040,267260,052690,006910,010120,034020,001440,006260,298040,015760,004800,051600">
+                <div class="sector-header">
+                    <span class="sector-name">원전·전력인프라</span>
+                    <span class="sector-rate text-down">-7.32%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="229640" data-stock-name="LS에코에너지"><span class="stock-name">LS에코에너지</span> <b class="stock-rate text-down" data-live-rate="-14.94">-14.94%</b> <span class="stock-price">(49,250원)</span></span><span class="stock-pill" data-stock-code="103590" data-stock-name="일진전기"><span class="stock-name">일진전기</span> <b class="stock-rate text-down" data-live-rate="-9.15">-9.15%</b> <span class="stock-price">(59,600원)</span></span><span class="stock-pill" data-stock-code="062040" data-stock-name="산일전기"><span class="stock-name">산일전기</span> <b class="stock-rate text-down" data-live-rate="-9.1">-9.10%</b> <span class="stock-price">(171,800원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/229640/news" class="news-link" target="_blank">[네이버금융] [LS에코에너지] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/103590/news" class="news-link" target="_blank">[네이버금융] [일진전기] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/062040/news" class="news-link" target="_blank">[네이버금융] [산일전기] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="009830,073240,002380,093370,011790,010060,096770,051910,010950,011170,120110,004000,078930,018670,298020,003240,036460">
+                <div class="sector-header">
+                    <span class="sector-name">화학·에너지</span>
+                    <span class="sector-rate text-down">-7.15%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="009830" data-stock-name="한화솔루션"><span class="stock-name">한화솔루션</span> <b class="stock-rate text-down" data-live-rate="-9.87">-9.87%</b> <span class="stock-price">(30,600원)</span></span><span class="stock-pill" data-stock-code="073240" data-stock-name="금호타이어"><span class="stock-name">금호타이어</span> <b class="stock-rate text-down" data-live-rate="-9.6">-9.60%</b> <span class="stock-price">(5,370원)</span></span><span class="stock-pill" data-stock-code="002380" data-stock-name="KCC"><span class="stock-name">KCC</span> <b class="stock-rate text-down" data-live-rate="-9.33">-9.33%</b> <span class="stock-price">(388,500원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/009830/news" class="news-link" target="_blank">[네이버금융] [한화솔루션] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/073240/news" class="news-link" target="_blank">[네이버금융] [금호타이어] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/002380/news" class="news-link" target="_blank">[네이버금융] [KCC] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            </div>
+
+        <div class="group-title">🚀 코스닥 150 업종 동향</div>
+        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">
+            <div class="sector-item" data-sector-codes="189300,032190,293490,112040,035600,078340,263750,069080,095660,225570,053800">
+                <div class="sector-header">
+                    <span class="sector-name">게임·소프트웨어</span>
+                    <span class="sector-rate text-down">-1.02%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="189300" data-stock-name="인텔리안테크"><span class="stock-name">인텔리안테크</span> <b class="stock-rate text-down" data-live-rate="-5.3">-5.30%</b> <span class="stock-price">(57,200원)</span></span><span class="stock-pill" data-stock-code="032190" data-stock-name="다우데이타"><span class="stock-name">다우데이타</span> <b class="stock-rate text-down" data-live-rate="-4.01">-4.01%</b> <span class="stock-price">(17,000원)</span></span><span class="stock-pill" data-stock-code="293490" data-stock-name="카카오게임즈"><span class="stock-name">카카오게임즈</span> <b class="stock-rate text-down" data-live-rate="-2.14">-2.14%</b> <span class="stock-price">(10,080원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/189300/news" class="news-link" target="_blank">[네이버금융] [인텔리안테크] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/032190/news" class="news-link" target="_blank">[네이버금융] [다우데이타] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/293490/news" class="news-link" target="_blank">[네이버금융] [카카오게임즈] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="138080,041510,122870,032500,035900,067160,035760,253450,376300">
+                <div class="sector-header">
+                    <span class="sector-name">엔터·미디어·통신</span>
+                    <span class="sector-rate text-down">-1.26%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="138080" data-stock-name="오이솔루션"><span class="stock-name">오이솔루션</span> <b class="stock-rate text-down" data-live-rate="-3.6">-3.60%</b> <span class="stock-price">(28,100원)</span></span><span class="stock-pill" data-stock-code="041510" data-stock-name="에스엠"><span class="stock-name">에스엠</span> <b class="stock-rate text-down" data-live-rate="-2.64">-2.64%</b> <span class="stock-price">(84,700원)</span></span><span class="stock-pill" data-stock-code="122870" data-stock-name="와이지엔터테인먼트"><span class="stock-name">와이지엔터테인먼트</span> <b class="stock-rate text-down" data-live-rate="-2.41">-2.41%</b> <span class="stock-price">(42,550원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/138080/news" class="news-link" target="_blank">[네이버금융] [오이솔루션] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/041510/news" class="news-link" target="_blank">[네이버금융] [에스엠] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/122870/news" class="news-link" target="_blank">[네이버금융] [와이지엔터테인먼트] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="290650,226950,298380,196170,000250,096530,214370,007390,064550,140410,206650,141080,243070,048410,082270,237690,195940,039200,068760,086450,085660,087010,174900,086900,028300,228760,310210,456160">
+                <div class="sector-header">
+                    <span class="sector-name">제약·바이오</span>
+                    <span class="sector-rate text-down">-2.33%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="290650" data-stock-name="엘앤씨바이오"><span class="stock-name">엘앤씨바이오</span> <b class="stock-rate text-down" data-live-rate="-6.89">-6.89%</b> <span class="stock-price">(62,200원)</span></span><span class="stock-pill" data-stock-code="226950" data-stock-name="올릭스"><span class="stock-name">올릭스</span> <b class="stock-rate text-down" data-live-rate="-4.72">-4.72%</b> <span class="stock-price">(96,900원)</span></span><span class="stock-pill" data-stock-code="298380" data-stock-name="에이비엘바이오"><span class="stock-name">에이비엘바이오</span> <b class="stock-rate text-down" data-live-rate="-4.72">-4.72%</b> <span class="stock-price">(44,450원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/290650/news" class="news-link" target="_blank">[네이버금융] [엘앤씨바이오] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/226950/news" class="news-link" target="_blank">[네이버금융] [올릭스] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/298380/news" class="news-link" target="_blank">[네이버금융] [에이비엘바이오] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            </div>
+        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">
+            <div class="sector-item" data-sector-codes="039440,131970,131290,084370,161580,033640,036930,183300,098460,357780,240810,403870,388210,348210,067310,005290,064760,399720,074600,319660,036810,104830,166090,039030,222800,089030,213420,272290,094170,095340,058470,079370,140860,144960">
+                <div class="sector-header">
+                    <span class="sector-name">반도체 소부장</span>
+                    <span class="sector-rate text-down">-6.30%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="039440" data-stock-name="에스티아이"><span class="stock-name">에스티아이</span> <b class="stock-rate text-down" data-live-rate="-11.5">-11.50%</b> <span class="stock-price">(26,550원)</span></span><span class="stock-pill" data-stock-code="131970" data-stock-name="두산테스나"><span class="stock-name">두산테스나</span> <b class="stock-rate text-down" data-live-rate="-9.91">-9.91%</b> <span class="stock-price">(99,100원)</span></span><span class="stock-pill" data-stock-code="131290" data-stock-name="티에스이"><span class="stock-name">티에스이</span> <b class="stock-rate text-down" data-live-rate="-9.29">-9.29%</b> <span class="stock-price">(254,000원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/039440/news" class="news-link" target="_blank">[네이버금융] [에스티아이] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/131970/news" class="news-link" target="_blank">[네이버금융] [두산테스나] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/131290/news" class="news-link" target="_blank">[네이버금융] [티에스이] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="393890,078600,247540,178320,086520,243840,348370,121600,137400,025900,089980,365340,383310,107640,278280">
+                <div class="sector-header">
+                    <span class="sector-name">이차전지·소재</span>
+                    <span class="sector-rate text-down">-6.16%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="393890" data-stock-name="더블유씨피"><span class="stock-name">더블유씨피</span> <b class="stock-rate text-down" data-live-rate="-9.65">-9.65%</b> <span class="stock-price">(9,550원)</span></span><span class="stock-pill" data-stock-code="078600" data-stock-name="대주전자재료"><span class="stock-name">대주전자재료</span> <b class="stock-rate text-down" data-live-rate="-9.33">-9.33%</b> <span class="stock-price">(102,100원)</span></span><span class="stock-pill" data-stock-code="247540" data-stock-name="에코프로비엠"><span class="stock-name">에코프로비엠</span> <b class="stock-rate text-down" data-live-rate="-9.07">-9.07%</b> <span class="stock-price">(105,300원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/393890/news" class="news-link" target="_blank">[네이버금융] [더블유씨피] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/078600/news" class="news-link" target="_blank">[네이버금융] [대주전자재료] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/247540/news" class="news-link" target="_blank">[네이버금융] [에코프로비엠] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="044490,014620,023160,013030,018000">
+                <div class="sector-header">
+                    <span class="sector-name">피팅·장비기자재</span>
+                    <span class="sector-rate text-down">-4.20%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="044490" data-stock-name="태웅"><span class="stock-name">태웅</span> <b class="stock-rate text-down" data-live-rate="-9.56">-9.56%</b> <span class="stock-price">(26,950원)</span></span><span class="stock-pill" data-stock-code="014620" data-stock-name="성광벤드"><span class="stock-name">성광벤드</span> <b class="stock-rate text-down" data-live-rate="-5.36">-5.36%</b> <span class="stock-price">(26,500원)</span></span><span class="stock-pill" data-stock-code="023160" data-stock-name="태광"><span class="stock-name">태광</span> <b class="stock-rate text-down" data-live-rate="-3.59">-3.59%</b> <span class="stock-price">(26,850원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/044490/news" class="news-link" target="_blank">[네이버금융] [태웅] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/014620/news" class="news-link" target="_blank">[네이버금융] [성광벤드] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/023160/news" class="news-link" target="_blank">[네이버금융] [태광] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             </div>
     </div>
 </div>
 
 <script>
-    // --- PWA 기능 단일 파일 내장 스크립트 (개선판) ---
-    (function initPWA() {
-        const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#1d4ed8"/><text x="50" y="50" font-size="50" text-anchor="middle" dy=".3em" fill="white">📊</text></svg>`;
-        const iconBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(iconSvg)));
-
-        // Data URI 방식 매니페스트 적용 (오류 방지를 위해 start_url은 현재 경로 지정)
-        const manifest = {
-            name: "실시간 국내 증시 대시보드",
-            short_name: "증시 대시보드",
-            start_url: ".",
-            display: "standalone",
-            background_color: "#f8fafc",
-            theme_color: "#f8fafc",
-            icons: [
-                { src: iconBase64, sizes: "192x192", type: "image/svg+xml", purpose: "any maskable" },
-                { src: iconBase64, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
-            ]
-        };
-
-        const manifestData = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest));
-        const link = document.createElement("link");
-        link.rel = "manifest";
-        link.href = manifestData;
-        document.head.appendChild(link);
-
-        if ('serviceWorker' in navigator) {
-            const swCode = `
-                self.addEventListener('install', e => self.skipWaiting());
-                self.addEventListener('activate', e => self.clients.claim());
-                self.addEventListener('fetch', e => {
-                    e.respondWith(fetch(e.request).catch(() => new Response('네트워크 연결이 끊겼습니다.', { status: 503 })));
-                });
-            `;
-            const swBlob = new Blob([swCode], { type: 'application/javascript' });
-            navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {});
-        }
-
-        // 설치 버튼 이벤트 바인딩 (안드로이드/PC 크롬 전용)
-        let deferredPrompt;
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            const installBtn = document.getElementById('install-btn');
-            installBtn.style.display = 'inline-flex';
-            
-            installBtn.addEventListener('click', async () => {
-                if (deferredPrompt) {
-                    deferredPrompt.prompt();
-                    const { outcome } = await deferredPrompt.userChoice;
-                    if (outcome === 'accepted') {
-                        installBtn.style.display = 'none';
-                    }
-                    deferredPrompt = null;
-                }
-            });
-        });
-    })();
-    // --- PWA 스크립트 끝 ---
-
     const TARGET_ARR = [79, 73, 75, 72];
     const XOR_KEY = 123;
 
     function checkPassword() {
         const input = document.getElementById('pw-input').value;
+        
         if (input.length !== TARGET_ARR.length) {
             document.getElementById('pw-error').style.display = 'block';
             return;
         }
+
         let isMatch = true;
         for (let i = 0; i < input.length; i++) {
             if ((input.charCodeAt(i) ^ XOR_KEY) !== TARGET_ARR[i]) {
@@ -253,6 +277,7 @@
                 break;
             }
         }
+
         if (isMatch) {
             document.getElementById('lock-screen').style.display = 'none';
             sessionStorage.setItem('isUnlocked', 'true');
@@ -262,7 +287,260 @@
     }
 
     async function syncServerAiAndSectors() {
-        // 기존과 동일한 동기화 코드 로직 유지 (생략 없이 작동하도록 최소화된 더미)
+        const basePath = window.location.pathname.endsWith('/')
+            ? window.location.pathname
+            : window.location.pathname.replace(/\/[^\/]*$/, '/');
+
+        try {
+            const aiRes = await fetch(`${basePath}ai_summary_cache.json?_=${Date.now()}`, {
+                cache: "no-store",
+                headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
+            });
+            if (aiRes.ok) {
+                const aiData = await aiRes.json();
+                const aiTextEl = document.getElementById("ai-summary-text");
+                const aiTimeEl = document.getElementById("ai-update-time");
+                if (aiData && aiData.text && aiTextEl) {
+                    aiTextEl.innerHTML = aiData.text;
+                }
+                if (aiData && aiData.updated_at && aiTimeEl) {
+                    aiTimeEl.innerText = `${aiData.updated_at} 기준 (30분 주기 갱신)`;
+                }
+            }
+        } catch (e) {}
+
+        try {
+            const htmlRes = await fetch(`${basePath}index.html?_=${Date.now()}`, {
+                cache: "no-store",
+                headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
+            });
+            if (htmlRes.ok) {
+                const htmlText = await htmlRes.text();
+                const doc = new DOMParser().parseFromString(htmlText, "text/html");
+
+                const newSectors = doc.getElementById("sectors-root");
+                const curSectors = document.getElementById("sectors-root");
+                if (newSectors && curSectors) {
+                    curSectors.innerHTML = newSectors.innerHTML;
+                }
+
+                const macroKeys = ["FX_USDKRW", "JPYKRW", "US10Y", "US30Y", "GOLD_DON", "SILVER_DON", "OIL"];
+                for (const key of macroKeys) {
+                    const newVal = doc.getElementById(`val-${key}`);
+                    const newBadge = doc.getElementById(`badge-${key}`);
+                    const curVal = document.getElementById(`val-${key}`);
+                    const curBadge = document.getElementById(`badge-${key}`);
+                    if (newVal && curVal) curVal.innerText = newVal.innerText;
+                    if (newBadge && curBadge) {
+                        curBadge.innerText = newBadge.innerText;
+                        curBadge.className = newBadge.className;
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+
+    function fetchNaverDirectJsonp(queryStr) {
+        return new Promise((resolve) => {
+            const cbName = "__nv_cb_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
+            const script = document.createElement("script");
+            const timer = setTimeout(() => {
+                cleanup();
+                resolve(null);
+            }, 3500);
+
+            function cleanup() {
+                clearTimeout(timer);
+                if (script.parentNode) script.parentNode.removeChild(script);
+                try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+            }
+
+            window[cbName] = function(res) {
+                cleanup();
+                if (res && res.result && Array.isArray(res.result.areas)) {
+                    resolve(res.result.areas);
+                } else {
+                    resolve(null);
+                }
+            };
+
+            script.onerror = function() {
+                cleanup();
+                resolve(null);
+            };
+
+            script.charset = "euc-kr";
+            script.src = `https://polling.finance.naver.com/api/realtime?query=${encodeURIComponent(queryStr)}&_callback=${cbName}&_=${Date.now()}_${Math.random()}`;
+            document.head.appendChild(script);
+        });
+    }
+
+    async function fetchProxyUncached(targetUrl) {
+        const bustUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + `_nocache=${Date.now()}_${Math.random()}`;
+        const encoded = encodeURIComponent(bustUrl);
+        const candidates = [
+            { url: `https://corsproxy.io/?${encoded}` },
+            { url: `https://api.allorigins.win/raw?url=${encoded}` },
+            { url: `https://api.codetabs.com/v1/proxy?quest=${encoded}` }
+        ];
+
+        for (const cand of candidates) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 3500);
+            try {
+                const res = await fetch(cand.url, { signal: controller.signal, cache: "no-store" });
+                clearTimeout(timer);
+                if (!res.ok) continue;
+                const data = await res.json();
+                if (data && Array.isArray(data.datas)) return data;
+            } catch (e) {
+                clearTimeout(timer);
+            }
+        }
+        return null;
+    }
+
+    async function syncLiveMarketData() {
+        const syncText = document.getElementById('sync-time-text');
+        if (syncText) {
+            syncText.innerText = "🔄 실시간 체결가 및 최신 AI 분석 동기화 중...";
+        }
+
+        await syncServerAiAndSectors();
+
+        const codeSet = new Set();
+        document.querySelectorAll('.stock-pill[data-stock-code]').forEach(el => {
+            const c = el.getAttribute('data-stock-code');
+            if (c) codeSet.add(c);
+        });
+        document.querySelectorAll('.sector-item[data-sector-codes]').forEach(el => {
+            const codes = (el.getAttribute('data-sector-codes') || '').split(',');
+            codes.forEach(c => { if (c.trim()) codeSet.add(c.trim()); });
+        });
+
+        const allCodes = Array.from(codeSet);
+        const liveStockMap = {};
+        let updatedCount = 0;
+
+        const chunks = [];
+        for (let i = 0; i < allCodes.length; i += 40) {
+            chunks.push(allCodes.slice(i, i + 40));
+        }
+
+        const indexAreas = await fetchNaverDirectJsonp("SERVICE_INDEX:KOSPI,KOSDAQ,KPI200");
+        if (indexAreas) {
+            for (const area of indexAreas) {
+                for (const d of (area.datas || [])) {
+                    const key = d.cd;
+                    const valEl = document.getElementById(`val-${key}`);
+                    const badgeEl = document.getElementById(`badge-${key}`);
+                    if (valEl && badgeEl && d.nv) {
+                        const rf = String(d.rf || "3");
+                        const isUp = ["1", "2"].includes(rf);
+                        const isDown = ["4", "5"].includes(rf);
+                        const sign = isUp ? "▲ +" : (isDown ? "▼ -" : "― ");
+                        const priceStr = (d.nv / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        const diffVal = (Math.abs(d.cv || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        const diffStr = isDown ? `-${diffVal}` : diffVal;
+                        const rateStr = Math.abs(parseFloat(d.cr || 0)).toFixed(2);
+
+                        valEl.innerText = priceStr;
+                        badgeEl.innerText = `${sign}${rateStr}% (${diffStr})`;
+                        badgeEl.className = `badge ${isUp ? 'bg-up-light text-up' : (isDown ? 'bg-down-light text-down' : 'bg-gray-100 text-flat')}`;
+                        updatedCount++;
+                    }
+                }
+            }
+        }
+
+        await Promise.all(chunks.map(async (chunk) => {
+            const areas = await fetchNaverDirectJsonp(`SERVICE_ITEM:${chunk.join(',')}`);
+            if (areas) {
+                for (const area of areas) {
+                    for (const st of (area.datas || [])) {
+                        if (!st.cd || !st.nv) continue;
+                        const rf = String(st.rf || "3");
+                        const isUp = ["1", "2"].includes(rf);
+                        const isDown = ["4", "5"].includes(rf);
+                        const absRate = Math.abs(parseFloat(st.cr || 0));
+                        const signedRate = isDown ? -absRate : (isUp ? absRate : 0);
+
+                        liveStockMap[st.cd] = {
+                            price: Number(st.nv).toLocaleString('ko-KR'),
+                            rate: signedRate,
+                            isUp: isUp,
+                            isDown: isDown
+                        };
+                        updatedCount++;
+                    }
+                }
+            } else {
+                const backup = await fetchProxyUncached(`https://polling.finance.naver.com/api/realtime/domestic/stock/${chunk.join(',')}`);
+                if (backup && Array.isArray(backup.datas)) {
+                    for (const st of backup.datas) {
+                        const cd = String(st.compareToPreviousPrice?.code || "3");
+                        const rawStr = String(st.fluctuationsRatio || "0").replace(/,/g, "");
+                        const absRate = Math.abs(parseFloat(rawStr) || 0);
+                        const isDown = ["4", "5"].includes(cd) || rawStr.startsWith("-");
+                        const isUp = ["1", "2"].includes(cd);
+                        liveStockMap[st.itemCode] = {
+                            price: String(st.closePrice || "0").replace(".0", ""),
+                            rate: isDown ? -absRate : (isUp ? absRate : 0),
+                            isUp: isUp,
+                            isDown: isDown
+                        };
+                        updatedCount++;
+                    }
+                }
+            }
+        }));
+
+        document.querySelectorAll('.stock-pill').forEach(pill => {
+            const code = pill.getAttribute('data-stock-code');
+            const info = code && liveStockMap[code];
+            if (info) {
+                const rateEl = pill.querySelector('.stock-rate');
+                const priceEl = pill.querySelector('.stock-price');
+                if (rateEl) {
+                    rateEl.innerText = `${info.rate >= 0 ? '+' : ''}${info.rate.toFixed(2)}%`;
+                    rateEl.className = `stock-rate ${info.isUp ? 'text-up' : (info.isDown ? 'text-down' : 'text-flat')}`;
+                    rateEl.setAttribute('data-live-rate', info.rate);
+                }
+                if (priceEl && info.price) {
+                    priceEl.innerText = `(${info.price}원)`;
+                }
+            }
+        });
+
+        document.querySelectorAll('.sector-item').forEach(item => {
+            const sectorCodes = (item.getAttribute('data-sector-codes') || '').split(',').map(s => s.trim()).filter(Boolean);
+            const rates = [];
+            for (const c of sectorCodes) {
+                if (liveStockMap[c] !== undefined) {
+                    rates.push(liveStockMap[c].rate);
+                }
+            }
+            if (rates.length > 0) {
+                const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
+                const secRateEl = item.querySelector('.sector-rate');
+                if (secRateEl) {
+                    secRateEl.innerText = `${avg >= 0 ? '+' : ''}${avg.toFixed(2)}%`;
+                    secRateEl.className = `sector-rate ${avg > 0 ? 'text-up' : (avg < 0 ? 'text-down' : 'text-flat')}`;
+                }
+            }
+        });
+
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mi = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        if (syncText) {
+            if (updatedCount > 0) {
+                syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss} (클릭 또는 새로고침 시 즉시 갱신)`;
+            } else {
+                syncText.innerText = `기준 시각: 2026-10-20 22:14:54 (네트워크 재연결 대기 중)`;
+            }
+        }
     }
 
     window.onload = function() {
@@ -270,8 +548,13 @@
             document.getElementById('lock-screen').style.display = 'none';
         }
         document.getElementById('pw-input').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') checkPassword();
+            if (e.key === 'Enter') {
+                checkPassword();
+            }
         });
+
+        syncLiveMarketData();
+        setInterval(syncLiveMarketData, 30000);
     };
 </script>
 </body>
