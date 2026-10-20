@@ -6,20 +6,6 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    
-    <!-- ✅ PWA 및 모바일 설정 (단일 파일 전체화면 강제) -->
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="증시 대시보드">
-    <meta name="theme-color" content="#f8fafc">
-    
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2933/2933116.png">
-    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2933/2933116.png">
-
-    <!-- 다른 파일 없이 단일 파일로 전체화면(앱 모드)을 강제하는 데이터 주입 코드 -->
-    <link rel="manifest" href='data:application/json;charset=utf-8,{"name":"증시 대시보드","short_name":"대시보드","start_url":".","display":"standalone","background_color":"#f8fafc","theme_color":"#f8fafc","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/2933/2933116.png","sizes":"512x512","type":"image/png"}]}'>
-
     <title>실시간 국내 증시 대시보드</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -79,7 +65,7 @@
         <h1>📊 실시간 국내 증시 대시보드</h1>
         <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
             <span class="live-dot"></span>
-            <span id="sync-time-text">기준 시각: 2026-10-20 20:32:17 (실시간 동기화 중...)</span>
+            <span id="sync-time-text">기준 시각: 2026-10-20 22:51:48 (실시간 동기화 중...)</span>
         </div>
     </header>
 
@@ -104,53 +90,53 @@
         
         <div class="card" data-index-target="FX_USDKRW">
             <div class="card-title">원·달러 환율</div>
-            <div class="card-value" id="val-FX_USDKRW">1,327.68원</div>
-            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.39% (-5.17원)</div>
+            <div class="card-value" id="val-FX_USDKRW">1,326.76원</div>
+            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.46% (-6.09원)</div>
         </div>
         
         <div class="card" data-index-target="JPYKRW">
             <div class="card-title">엔·원 환율 (100엔)</div>
-            <div class="card-value" id="val-JPYKRW">837.00원</div>
-            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.21% (-1.80원)</div>
+            <div class="card-value" id="val-JPYKRW">837.90원</div>
+            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.11% (-0.90원)</div>
         </div>
         
         <div class="card" data-index-target="US10Y">
             <div class="card-title">미국채 10년물</div>
-            <div class="card-value" id="val-US10Y">5.136%</div>
-            <div class="badge bg-up-light text-up" id="badge-US10Y">▲ +0.75% (0.038bp)</div>
+            <div class="card-value" id="val-US10Y">5.102%</div>
+            <div class="badge bg-down-light text-down" id="badge-US10Y">▼ -0.66% (0.034bp)</div>
         </div>
         
         <div class="card" data-index-target="US30Y">
             <div class="card-title">미국채 30년물</div>
-            <div class="card-value" id="val-US30Y">5.472%</div>
-            <div class="badge bg-up-light text-up" id="badge-US30Y">▲ +0.66% (0.036bp)</div>
+            <div class="card-value" id="val-US30Y">5.426%</div>
+            <div class="badge bg-down-light text-down" id="badge-US30Y">▼ -0.84% (0.046bp)</div>
         </div>
         
         <div class="card" data-index-target="GOLD_DON">
             <div class="card-title">금시세 (1돈)</div>
-            <div class="card-value" id="val-GOLD_DON">662,971원</div>
-            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -0.83% (-5,538원)</div>
+            <div class="card-value" id="val-GOLD_DON">663,119원</div>
+            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -0.81% (-5,390원)</div>
         </div>
         
         <div class="card" data-index-target="SILVER_DON">
             <div class="card-title">은시세 (1돈)</div>
-            <div class="card-value" id="val-SILVER_DON">9,185원</div>
-            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.20% (-19원)</div>
+            <div class="card-value" id="val-SILVER_DON">9,203원</div>
+            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.00% (-0원)</div>
         </div>
         
         <div class="card" data-index-target="OIL">
             <div class="card-title">국제유가 (WTI)</div>
-            <div class="card-value" id="val-OIL">$100.59</div>
-            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +2.08% (+2.05)</div>
+            <div class="card-value" id="val-OIL">$98.86</div>
+            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +0.32% (+0.32)</div>
         </div>
         </div>
 
     <div class="market-ai-box">
         <div class="market-ai-header">
             <span>🤖 주식시장 전체 AI 시황 분석</span>
-            <span class="ai-time-badge" id="ai-update-time">20:31 마감 종합 기준 (30분 주기 갱신)</span>
+            <span class="ai-time-badge" id="ai-update-time">22:51 마감 종합 기준 (30분 주기 갱신)</span>
         </div>
-        <div class="market-ai-content" id="ai-summary-text">오늘 국내 증시는 코스피가 3.73퍼센트 급락한 5552.74포인트로, 코스닥이 3.33퍼센트 하락한 781.97포인트로 마감하며 투심이 극도로 얼어붙는 패닉 장세를 연출했습니다. 코스피 시장에서는 글로벌 거시경제 불확실성과 리스크 회피 심리가 고조되면서 방위산업, 원전, 화학 등 그간 시장을 주도했던 핵심 주도주들이 가파른 낙폭을 기록한 반면, 통신과 보험, 일부 인터넷 플랫폼주만이 상대적인 방어력을 보이며 지수 하방을 겨우 지지했습니다. 코스닥 역시 반도체 소부장과 이차전지, 장비기자재 등 기술 성장주 전반에 걸쳐 매물이 쏟아지며 체감 지표가 크게 악화된 가운데 제한적으로 게임과 제약 바이오 일부 종목만 순환매의 수혜를 입었습니다. 이러한 수급 이탈은 최근 글로벌 금리 인상 기조 재부각과 환율 변동성 확대, 그리고 외국인과 기관의 양시장 동반 순매도 공세가 겹친 결과로 풀이되며, 단기 과매도 국면에 진입했으나 추세 반전을 확신하기에는 매수세의 에너지와 모멘텀이 턱없이 부족한 상황입니다. 따라서 향후 전개될 야간 미국 증시의 기술주 흐름과 매크로 지표 발표 결과에 따라 국내 증시의 추가 변동성이 클 것으로 예상되므로, 무리한 저가 매수나 레버리지 확대보다는 현금 비중을 유지하며 리스크를 철저히 관리하는 보수적인 대응 전략이 그 어느 때보다 시급합니다.</div>
+        <div class="market-ai-content" id="ai-summary-text">오늘 국내 증시는 코스피가 3.73퍼센트 폭락한 5552.74포인트로 마감하고 코스닥 역시 3.33퍼센트 하락한 781.97포인트로 주저앉으며 극심한 투심 위축을 여실히 드러냈습니다. 코스피 시장에서는 통신과 보험, 인터넷 일부 업종만이 방어주 성격의 수급을 유치하며 버텼을 뿐, 그간 시장을 주도하던 방산과 원전, 화학 등 핵심 주도주들이 가파른 매물 폭탄을 맞으며 지수 하방 압력을 키웠습니다. 코스닥 역시 게임과 바이오 일부가 선방했으나 반도체 소부장과 이차전지 소재 등 성장주 전반에 걸쳐 외국인과 기관의 동반 순매도가 출회되며 낙폭을 깊게 가져갔습니다. 이러한 급락세는 글로벌 거시경제 불확실성과 맞물려 그간의 가파른 상승에 따른 피로감이 한계에 달했음을 보여주는 전형적인 롱 리퀴데이션 국면으로 해석됩니다. 특히 외국인 선물 매도와 프로그램 비차익 매물이 동시다발적으로 쏟아지며 변동성 지수가 급등해, 단기 바닥을 예단하고 저가 매수에 가담하는 것은 매우 위험한 도박이 될 수 있습니다. 야간 미국장 역시 고금리 장기화 우려와 빅테크 차익실현 매물 압박에서 자유롭지 못할 것으로 보여, 국내 증시는 당분간 보수적인 관점에서 현금 비중을 극대화해야 합니다. 내일장 대응 전략으로는 지수 반등 시그널을 성급히 쫓아가기보다는, 환율 변동성과 외국인 현선물 수급 방향성을 최우선으로 모니터링하며 철저한 리스크 관리에 집중하는 것이 상위 0.1% 퀀트의 관점에서 가장 합리적인 선택입니다.</div>
     </div>
 
     <div id="sectors-root">
@@ -550,9 +536,9 @@
         const ss = String(now.getSeconds()).padStart(2, '0');
         if (syncText) {
             if (updatedCount > 0) {
-                syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss}`;
+                syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss} (클릭 또는 새로고침 시 즉시 갱신)`;
             } else {
-                syncText.innerText = `기준 시각: 2026-10-20 20:32:17 (네트워크 대기 중)`;
+                syncText.innerText = `기준 시각: 2026-10-20 22:51:48 (네트워크 재연결 대기 중)`;
             }
         }
     }
