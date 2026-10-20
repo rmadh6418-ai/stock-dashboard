@@ -2,11 +2,26 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 모바일 앱처럼 화면 확대/축소 방지 추가 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>실시간 국내 증시 대시보드</title>
+
+    <!-- 웹앱(PWA) 기본 설정 -->
+    <meta name="theme-color" content="#f8fafc">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- iOS (아이폰) 전용 앱 설정 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="국내증시">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2912/2912773.png">
+
+    <!-- Android (갤럭시 등) 전용 앱 설정 (인라인 Manifest) -->
+    <link rel="manifest" href='data:application/manifest+json;utf-8,{"name":"실시간 국내 증시 대시보드","short_name":"국내증시","display":"standalone","background_color":"#f8fafc","theme_color":"#f8fafc","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/2912/2912773.png","sizes":"512x512","type":"image/png"}]}'>
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         body { background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }
