@@ -2,14 +2,35 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 모바일 앱(PWA) 최적화 뷰포트 (노치 대응 및 확대 방지) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>실시간 국내 증시 대시보드</title>
+
+    <!-- PWA 및 모바일 앱 설정 -->
+    <meta name="theme-color" content="#f8fafc">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="증시 대시보드">
+    <link rel="apple-touch-icon" href="icon-192x192.png">
+    <link rel="manifest" href="manifest.json">
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; }
+        body { 
+            background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; 
+            /* 모바일 UX 개선 추가 */
+            -webkit-tap-highlight-color: transparent; 
+            -webkit-touch-callout: none; 
+            user-select: none; 
+            padding-bottom: env(safe-area-inset-bottom); 
+        }
+        /* 비밀번호 입력창은 텍스트 선택/입력이 가능해야 하므로 예외 처리 */
+        input { user-select: auto; }
+        
         header { text-align: center; margin-bottom: 18px; }
         h1 { font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
         .sync-status { font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none; }
@@ -556,6 +577,17 @@
         syncLiveMarketData();
         setInterval(syncLiveMarketData, 30000);
     };
+
+    // PWA 서비스 워커 등록 코드 추가됨
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').then(reg => {
+                console.log('Service Worker Registered!', reg);
+            }).catch(err => {
+                console.log('Service Worker registration failed: ', err);
+            });
+        });
+    }
 </script>
 </body>
 </html>
