@@ -81,39 +81,39 @@
         <h1>📊 실시간 국내 증시 대시보드</h1>
         <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
             <span class="live-dot"></span>
-            <span id="sync-time-text">기준 시각: 2026-10-28 10:02:50 (실시간 동기화 중...)</span>
+            <span id="sync-time-text">기준 시각: 2026-10-28 10:32:09 (실시간 동기화 중...)</span>
         </div>
     </header>
 
     <div class="grid-indices">
         <div class="card" data-index-target="KOSPI">
             <div class="card-title">코스피 (KOSPI)</div>
-            <div class="card-value" id="val-KOSPI">5,916.72</div>
-            <div class="badge bg-up-light text-up" id="badge-KOSPI">▲ +4.94% (278.38)</div>
+            <div class="card-value" id="val-KOSPI">5,955.91</div>
+            <div class="badge bg-up-light text-up" id="badge-KOSPI">▲ +5.63% (317.57)</div>
         </div>
         
         <div class="card" data-index-target="KOSDAQ">
             <div class="card-title">코스닥 (KOSDAQ)</div>
-            <div class="card-value" id="val-KOSDAQ">771.26</div>
-            <div class="badge bg-up-light text-up" id="badge-KOSDAQ">▲ +3.69% (27.43)</div>
+            <div class="card-value" id="val-KOSDAQ">767.31</div>
+            <div class="badge bg-up-light text-up" id="badge-KOSDAQ">▲ +3.16% (23.48)</div>
         </div>
         
         <div class="card" data-index-target="KPI200">
             <div class="card-title">코스피 200</div>
-            <div class="card-value" id="val-KPI200">928.49</div>
-            <div class="badge bg-up-light text-up" id="badge-KPI200">▲ +5.38% (47.42)</div>
+            <div class="card-value" id="val-KPI200">936.50</div>
+            <div class="badge bg-up-light text-up" id="badge-KPI200">▲ +6.29% (55.43)</div>
         </div>
         
         <div class="card" data-index-target="FX_USDKRW">
             <div class="card-title">원·달러 환율</div>
-            <div class="card-value" id="val-FX_USDKRW">1,332.28원</div>
-            <div class="badge bg-up-light text-up" id="badge-FX_USDKRW">▲ +0.41% (+5.45원)</div>
+            <div class="card-value" id="val-FX_USDKRW">1,335.18원</div>
+            <div class="badge bg-up-light text-up" id="badge-FX_USDKRW">▲ +0.63% (+8.35원)</div>
         </div>
         
         <div class="card" data-index-target="JPYKRW">
             <div class="card-title">엔·원 환율 (100엔)</div>
-            <div class="card-value" id="val-JPYKRW">841.70원</div>
-            <div class="badge bg-up-light text-up" id="badge-JPYKRW">▲ +0.45% (+3.80원)</div>
+            <div class="card-value" id="val-JPYKRW">843.40원</div>
+            <div class="badge bg-up-light text-up" id="badge-JPYKRW">▲ +0.66% (+5.50원)</div>
         </div>
         
         <div class="card" data-index-target="US10Y">
@@ -130,145 +130,145 @@
         
         <div class="card" data-index-target="GOLD_DON">
             <div class="card-title">금시세 (1돈)</div>
-            <div class="card-value" id="val-GOLD_DON">654,811원</div>
-            <div class="badge bg-up-light text-up" id="badge-GOLD_DON">▲ +0.46% (+2,999원)</div>
+            <div class="card-value" id="val-GOLD_DON">655,737원</div>
+            <div class="badge bg-up-light text-up" id="badge-GOLD_DON">▲ +0.60% (+3,925원)</div>
         </div>
         
         <div class="card" data-index-target="SILVER_DON">
             <div class="card-title">은시세 (1돈)</div>
-            <div class="card-value" id="val-SILVER_DON">8,750원</div>
-            <div class="badge bg-up-light text-up" id="badge-SILVER_DON">▲ +0.34% (+30원)</div>
+            <div class="card-value" id="val-SILVER_DON">8,748원</div>
+            <div class="badge bg-up-light text-up" id="badge-SILVER_DON">▲ +0.32% (+28원)</div>
         </div>
         
         <div class="card" data-index-target="OIL">
             <div class="card-title">국제유가 (WTI)</div>
-            <div class="card-value" id="val-OIL">$100.47</div>
-            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +0.57% (+0.57)</div>
+            <div class="card-value" id="val-OIL">$100.87</div>
+            <div class="badge bg-up-light text-up" id="badge-OIL">▲ +0.97% (+0.97)</div>
         </div>
         </div>
 
     <div class="market-ai-box">
         <div class="market-ai-header">
             <span>🤖 주식시장 전체 AI 시황 분석</span>
-            <span class="ai-time-badge" id="ai-update-time">10:02 기준 (30분 주기 갱신)</span>
+            <span class="ai-time-badge" id="ai-update-time">10:31 기준 (30분 주기 갱신)</span>
         </div>
-        <div class="market-ai-content" id="ai-summary-text">오늘 오전 10시 02분 기준 코스피 지수는 전일 대비 4.94퍼센트 폭등한 5,916.72를 기록하며 압도적인 강세장을 연출하고 있고 코스닥 역시 3.69퍼센트 급등한 771.26을 가리키며 시장 전반에 강력한 매수세가 유입되고 있습니다. 이러한 급등세의 중심에는 코스피의 전기전자와 이차전지, 그리고 코스닥의 로봇과 반도체 소부장 섹터가 자리잡고 있으며 글로벌 기술주 랠리와 맞물려 반도체 및 미래 성장 산업에 외국인과 기관의 막대한 유동성이 집중되는 양상입니다. 반면 코스피의 화장품과 조선, 코스닥의 미용의료와 게임 섹터는 차익실현 매물과 수급 소외로 인해 약세를 면치 못하며 철저한 종목 장세가 전개되고 있습니다. 월가 퀀트의 관점에서 코스피가 단기 급등하며 지수 변동성이 극단적으로 확대된 만큼 현재의 과열 국면은 언제든 차익실현 매물로 이어질 수 있는 기술적 리스크를 내포하고 있습니다. 특히 장 마감까지 외국인의 현선물 동반 순매수 기조가 유지되는지, 그리고 프로그램 매매 호가 잔량이 매수우위를 지속하는지 실시간으로 모니터링해야 합니다. 향후 야간 미국 증시의 고점 부담과 국채 금리 변동성에 대비해 레버리지 포지션은 일부 축소하고 현금 비중을 확보하는 보수적인 리스크 관리가 필요합니다. 내일 장 대응 전략으로는 지수 추종 매수보다는 실적이 담보된 주도 섹터 내 저PBR, 고ROE 종목 위주로 포트폴리오를 압축하는 것이 바람직합니다. 대외적으로는 미국의 물가 지표와 연방준비위원회의 통화정책 스탠스를 주시하며 글로벌 거시경제의 급격한 변곡점에 대비하는 유연한 태도를 유지해야 합니다.</div>
+        <div class="market-ai-content" id="ai-summary-text">현재 시각 오전 10시 31분 기준 코스피 지수는 5,955.91포인트로 전일 대비 5.63퍼센트 폭등하며 기록적인 랠리를 펼치고 있고 코스닥 역시 3.16퍼센트 상승한 767.31포인트를 기록하며 시장 전반에 강한 위험선호 심리가 유입되고 있습니다. 코스피 시장에서는 전기전자와 증권 및 보험 업종이 지수 상승을 견인하며 대형주 중심의 강한 자금 유입을 보여주는 반면 조선과 화장품 등은 차익실현 매물에 부딪혀 조정을 받고 있으며, 코스닥에서는 로봇과 반도체 소부장 및 이차전지 소재 관련주가 강세를 보이는 반면 바이오와 미용의료 섹터는 약세를 면치 못하고 있습니다. 이러한 폭발적인 지수 상승은 글로벌 거시경제의 유동성 완화 기대감과 맞물려 국내 증시로의 급격한 패시브 자금 유입을 시사하지만, 단기 과열 국면에 진입했다는 점에서 퀀트 관점의 철저한 리스크 관리가 반드시 동반되어야 하는 시점입니다. 특히 코스피가 단기간에 300포인트 이상 급등한 만큼 후장 전개 과정에서 기관과 외인의 선물 베이시스 변화에 따른 프로그램 매물 출회 가능성을 예의주시해야 합니다. 야간 미국장에서는 금리 선물 시장의 변동성과 주요 빅테크 실적 및 가이던스를 확인하며 포트폴리오 내 베타 값이 지나치게 높은 종목의 비중을 일부 축소하고 현금 비중을 소폭 확보하는 전략이 유효합니다. 내일 장 대응 전략으로는 오늘 급등한 주도 섹터의 추격 매수보다는 실적이 담보된 반도체 소부장과 로봇 등 구조적 성장 테마의 눌림목 구간을 분할 매수하는 접근이 바람직하며, 변동성 확대 장세에 대비해 스탑로스 라인을 타이트하게 설정하는 유연함이 요구됩니다.</div>
     </div>
 
     <div id="sectors-root">
         <div class="group-title">🏢 코스피 200 업종 동향</div>
         <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">
-            <div class="sector-item" data-sector-codes="195870,009150,005930,353200,042700,000660,000990,007660,018260,034220,066570,011070">
+            <div class="sector-item" data-sector-codes="195870,009150,005930,000660,353200,042700,007660,000990,018260,066570,034220,011070">
                 <div class="sector-header">
                     <span class="sector-name">전기·전자 (반도체/IT)</span>
-                    <span class="sector-rate text-up">+5.34%</span>
+                    <span class="sector-rate text-up">+6.12%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="195870" data-stock-name="해성디에스"><span class="stock-name">해성디에스</span> <b class="stock-rate text-up" data-live-rate="16.91">+16.91%</b> <span class="stock-price">(52,200원)</span></span><span class="stock-pill" data-stock-code="009150" data-stock-name="삼성전기"><span class="stock-name">삼성전기</span> <b class="stock-rate text-up" data-live-rate="7.91">+7.91%</b> <span class="stock-price">(1,296,000원)</span></span><span class="stock-pill" data-stock-code="005930" data-stock-name="삼성전자"><span class="stock-name">삼성전자</span> <b class="stock-rate text-up" data-live-rate="6.98">+6.98%</b> <span class="stock-price">(237,500원)</span></span></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="195870" data-stock-name="해성디에스"><span class="stock-name">해성디에스</span> <b class="stock-rate text-up" data-live-rate="19.37">+19.37%</b> <span class="stock-price">(53,300원)</span></span><span class="stock-pill" data-stock-code="009150" data-stock-name="삼성전기"><span class="stock-name">삼성전기</span> <b class="stock-rate text-up" data-live-rate="9.58">+9.58%</b> <span class="stock-price">(1,316,000원)</span></span><span class="stock-pill" data-stock-code="005930" data-stock-name="삼성전자"><span class="stock-name">삼성전자</span> <b class="stock-rate text-up" data-live-rate="8.33">+8.33%</b> <span class="stock-price">(240,500원)</span></span></div>
                 <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/195870/news" class="news-link" target="_blank">[네이버금융] [해성디에스] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/009150/news" class="news-link" target="_blank">[네이버금융] [삼성전기] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/005930/news" class="news-link" target="_blank">[네이버금융] [삼성전자] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             
-            <div class="sector-item" data-sector-codes="006800,039490,071050,016360,003530,005940,001720,003470,003540">
+            <div class="sector-item" data-sector-codes="006800,039490,071050,016360,003530,001720,005940,003470,003540">
                 <div class="sector-header">
                     <span class="sector-name">증권사</span>
-                    <span class="sector-rate text-up">+5.28%</span>
+                    <span class="sector-rate text-up">+4.99%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="006800" data-stock-name="미래에셋증권"><span class="stock-name">미래에셋증권</span> <b class="stock-rate text-up" data-live-rate="9.24">+9.24%</b> <span class="stock-price">(26,600원)</span></span><span class="stock-pill" data-stock-code="039490" data-stock-name="키움증권"><span class="stock-name">키움증권</span> <b class="stock-rate text-up" data-live-rate="7.18">+7.18%</b> <span class="stock-price">(231,500원)</span></span><span class="stock-pill" data-stock-code="071050" data-stock-name="한국금융지주"><span class="stock-name">한국금융지주</span> <b class="stock-rate text-up" data-live-rate="6.74">+6.74%</b> <span class="stock-price">(155,300원)</span></span></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="006800" data-stock-name="미래에셋증권"><span class="stock-name">미래에셋증권</span> <b class="stock-rate text-up" data-live-rate="7.8">+7.80%</b> <span class="stock-price">(26,250원)</span></span><span class="stock-pill" data-stock-code="039490" data-stock-name="키움증권"><span class="stock-name">키움증권</span> <b class="stock-rate text-up" data-live-rate="7.18">+7.18%</b> <span class="stock-price">(231,500원)</span></span><span class="stock-pill" data-stock-code="071050" data-stock-name="한국금융지주"><span class="stock-name">한국금융지주</span> <b class="stock-rate text-up" data-live-rate="6.19">+6.19%</b> <span class="stock-price">(154,500원)</span></span></div>
                 <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/006800/news" class="news-link" target="_blank">[네이버금융] [미래에셋증권] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/039490/news" class="news-link" target="_blank">[네이버금융] [키움증권] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/071050/news" class="news-link" target="_blank">[네이버금융] [한국금융지주] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             
-            <div class="sector-item" data-sector-codes="066970,003670,006400,450080,005070,005490,373220,047050">
+            <div class="sector-item" data-sector-codes="085620,032830,000810,000400,088350,005830,000370,000815,001450,003690,031210">
                 <div class="sector-header">
-                    <span class="sector-name">이차전지·배터리</span>
-                    <span class="sector-rate text-up">+3.78%</span>
+                    <span class="sector-name">손해보험·생명</span>
+                    <span class="sector-rate text-up">+3.47%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="066970" data-stock-name="엘앤에프"><span class="stock-name">엘앤에프</span> <b class="stock-rate text-up" data-live-rate="6.53">+6.53%</b> <span class="stock-price">(89,700원)</span></span><span class="stock-pill" data-stock-code="003670" data-stock-name="포스코퓨처엠"><span class="stock-name">포스코퓨처엠</span> <b class="stock-rate text-up" data-live-rate="5.86">+5.86%</b> <span class="stock-price">(169,900원)</span></span><span class="stock-pill" data-stock-code="006400" data-stock-name="삼성SDI"><span class="stock-name">삼성SDI</span> <b class="stock-rate text-up" data-live-rate="4.23">+4.23%</b> <span class="stock-price">(529,500원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/066970/news" class="news-link" target="_blank">[네이버금융] [엘앤에프] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/003670/news" class="news-link" target="_blank">[네이버금융] [포스코퓨처엠] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/006400/news" class="news-link" target="_blank">[네이버금융] [삼성SDI] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="085620" data-stock-name="미래에셋생명"><span class="stock-name">미래에셋생명</span> <b class="stock-rate text-up" data-live-rate="10.97">+10.97%</b> <span class="stock-price">(19,220원)</span></span><span class="stock-pill" data-stock-code="032830" data-stock-name="삼성생명"><span class="stock-name">삼성생명</span> <b class="stock-rate text-up" data-live-rate="8.43">+8.43%</b> <span class="stock-price">(276,500원)</span></span><span class="stock-pill" data-stock-code="000810" data-stock-name="삼성화재"><span class="stock-name">삼성화재</span> <b class="stock-rate text-up" data-live-rate="6.7">+6.70%</b> <span class="stock-price">(637,000원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/085620/news" class="news-link" target="_blank">[네이버금융] [미래에셋생명] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/032830/news" class="news-link" target="_blank">[네이버금융] [삼성생명] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/000810/news" class="news-link" target="_blank">[네이버금융] [삼성화재] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             </div>
         <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">
-            <div class="sector-item" data-sector-codes="090430,051900,161890,111770,383220,192820">
-                <div class="sector-header">
-                    <span class="sector-name">화장품·의류</span>
-                    <span class="sector-rate text-up">+0.10%</span>
-                </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="090430" data-stock-name="아모레퍼시픽"><span class="stock-name">아모레퍼시픽</span> <b class="stock-rate text-up" data-live-rate="1.69">+1.69%</b> <span class="stock-price">(126,400원)</span></span><span class="stock-pill" data-stock-code="051900" data-stock-name="LG생활건강"><span class="stock-name">LG생활건강</span> <b class="stock-rate text-up" data-live-rate="0.97">+0.97%</b> <span class="stock-price">(259,500원)</span></span><span class="stock-pill" data-stock-code="161890" data-stock-name="한국콜마"><span class="stock-name">한국콜마</span> <b class="stock-rate text-up" data-live-rate="0.6">+0.60%</b> <span class="stock-price">(117,800원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/090430/news" class="news-link" target="_blank">[네이버금융] [아모레퍼시픽] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/051900/news" class="news-link" target="_blank">[네이버금융] [LG생활건강] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/161890/news" class="news-link" target="_blank">[네이버금융] [한국콜마] 실시간 주요 뉴스 및 공시 보러가기</a></div>
-            </div>
-            
-            <div class="sector-item" data-sector-codes="267250,071970,443060,082740,009540,010140,439260,329180,011200,017960,028670,042660">
+            <div class="sector-item" data-sector-codes="042660,028670,329180,017960,010140,439260,011200,009540,082740,443060,071970,267250">
                 <div class="sector-header">
                     <span class="sector-name">조선·해운·중공업</span>
-                    <span class="sector-rate text-up">+0.57%</span>
+                    <span class="sector-rate text-down">-0.04%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="267250" data-stock-name="HD현대"><span class="stock-name">HD현대</span> <b class="stock-rate text-up" data-live-rate="3.38">+3.38%</b> <span class="stock-price">(140,800원)</span></span><span class="stock-pill" data-stock-code="071970" data-stock-name="HD현대마린엔진"><span class="stock-name">HD현대마린엔진</span> <b class="stock-rate text-up" data-live-rate="2.67">+2.67%</b> <span class="stock-price">(36,500원)</span></span><span class="stock-pill" data-stock-code="443060" data-stock-name="HD현대마린솔루션"><span class="stock-name">HD현대마린솔루션</span> <b class="stock-rate text-up" data-live-rate="2.38">+2.38%</b> <span class="stock-price">(180,900원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/267250/news" class="news-link" target="_blank">[네이버금융] [HD현대] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/071970/news" class="news-link" target="_blank">[네이버금융] [HD현대마린엔진] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/443060/news" class="news-link" target="_blank">[네이버금융] [HD현대마린솔루션] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="042660" data-stock-name="한화오션"><span class="stock-name">한화오션</span> <b class="stock-rate text-down" data-live-rate="-2.45">-2.45%</b> <span class="stock-price">(51,700원)</span></span><span class="stock-pill" data-stock-code="028670" data-stock-name="팬오션"><span class="stock-name">팬오션</span> <b class="stock-rate text-down" data-live-rate="-1.54">-1.54%</b> <span class="stock-price">(5,760원)</span></span><span class="stock-pill" data-stock-code="329180" data-stock-name="HD현대중공업"><span class="stock-name">HD현대중공업</span> <b class="stock-rate text-down" data-live-rate="-1.2">-1.20%</b> <span class="stock-price">(288,000원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/042660/news" class="news-link" target="_blank">[네이버금융] [한화오션] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/028670/news" class="news-link" target="_blank">[네이버금융] [팬오션] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/329180/news" class="news-link" target="_blank">[네이버금융] [HD현대중공업] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             
-            <div class="sector-item" data-sector-codes="020560,069960,003490,004170,139480,023530,000120,008770,005180,032350,097950,035250,003230,282330,271560,012750,004370,280360,000080">
+            <div class="sector-item" data-sector-codes="090430,051900,383220,161890,111770,192820">
+                <div class="sector-header">
+                    <span class="sector-name">화장품·의류</span>
+                    <span class="sector-rate text-up">+0.04%</span>
+                </div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="090430" data-stock-name="아모레퍼시픽"><span class="stock-name">아모레퍼시픽</span> <b class="stock-rate text-up" data-live-rate="1.05">+1.05%</b> <span class="stock-price">(125,600원)</span></span><span class="stock-pill" data-stock-code="051900" data-stock-name="LG생활건강"><span class="stock-name">LG생활건강</span> <b class="stock-rate text-up" data-live-rate="0.58">+0.58%</b> <span class="stock-price">(258,500원)</span></span><span class="stock-pill" data-stock-code="383220" data-stock-name="F&F"><span class="stock-name">F&F</span> <b class="stock-rate text-up" data-live-rate="0.49">+0.49%</b> <span class="stock-price">(61,500원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/090430/news" class="news-link" target="_blank">[네이버금융] [아모레퍼시픽] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/051900/news" class="news-link" target="_blank">[네이버금융] [LG생활건강] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/383220/news" class="news-link" target="_blank">[네이버금융] [F&F] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+            </div>
+            
+            <div class="sector-item" data-sector-codes="004170,069960,003490,020560,023530,139480,008770,003230,005180,000120,097950,032350,012750,035250,271560,282330,004370,280360,000080">
                 <div class="sector-header">
                     <span class="sector-name">음식료·유통·항공</span>
-                    <span class="sector-rate text-up">+0.87%</span>
+                    <span class="sector-rate text-up">+0.91%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="020560" data-stock-name="아시아나항공"><span class="stock-name">아시아나항공</span> <b class="stock-rate text-up" data-live-rate="3.34">+3.34%</b> <span class="stock-price">(7,120원)</span></span><span class="stock-pill" data-stock-code="069960" data-stock-name="현대백화점"><span class="stock-name">현대백화점</span> <b class="stock-rate text-up" data-live-rate="3.19">+3.19%</b> <span class="stock-price">(74,400원)</span></span><span class="stock-pill" data-stock-code="003490" data-stock-name="대한항공"><span class="stock-name">대한항공</span> <b class="stock-rate text-up" data-live-rate="3.13">+3.13%</b> <span class="stock-price">(26,350원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/020560/news" class="news-link" target="_blank">[네이버금융] [아시아나항공] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/069960/news" class="news-link" target="_blank">[네이버금융] [현대백화점] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/003490/news" class="news-link" target="_blank">[네이버금융] [대한항공] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="004170" data-stock-name="신세계"><span class="stock-name">신세계</span> <b class="stock-rate text-up" data-live-rate="4.29">+4.29%</b> <span class="stock-price">(255,500원)</span></span><span class="stock-pill" data-stock-code="069960" data-stock-name="현대백화점"><span class="stock-name">현대백화점</span> <b class="stock-rate text-up" data-live-rate="4.16">+4.16%</b> <span class="stock-price">(75,100원)</span></span><span class="stock-pill" data-stock-code="003490" data-stock-name="대한항공"><span class="stock-name">대한항공</span> <b class="stock-rate text-up" data-live-rate="2.54">+2.54%</b> <span class="stock-price">(26,200원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/004170/news" class="news-link" target="_blank">[네이버금융] [신세계] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/069960/news" class="news-link" target="_blank">[네이버금융] [현대백화점] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/003490/news" class="news-link" target="_blank">[네이버금융] [대한항공] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             </div>
 
         <div class="group-title">🚀 코스닥 150 업종 동향</div>
         <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">
-            <div class="sector-item" data-sector-codes="277810,108490,058610,090360,056080,090710,388720,348340,160190,437730,117730,099440">
+            <div class="sector-item" data-sector-codes="277810,108490,058610,090360,090710,056080,348340,388720,437730,160190,117730,099440">
                 <div class="sector-header">
                     <span class="sector-name">로봇·자동화</span>
-                    <span class="sector-rate text-up">+7.08%</span>
+                    <span class="sector-rate text-up">+6.45%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="277810" data-stock-name="레인보우로보틱스"><span class="stock-name">레인보우로보틱스</span> <b class="stock-rate text-up" data-live-rate="13.23">+13.23%</b> <span class="stock-price">(398,000원)</span></span><span class="stock-pill" data-stock-code="108490" data-stock-name="로보티즈"><span class="stock-name">로보티즈</span> <b class="stock-rate text-up" data-live-rate="10.56">+10.56%</b> <span class="stock-price">(277,500원)</span></span><span class="stock-pill" data-stock-code="058610" data-stock-name="에스피지"><span class="stock-name">에스피지</span> <b class="stock-rate text-up" data-live-rate="10.52">+10.52%</b> <span class="stock-price">(89,300원)</span></span></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="277810" data-stock-name="레인보우로보틱스"><span class="stock-name">레인보우로보틱스</span> <b class="stock-rate text-up" data-live-rate="14.08">+14.08%</b> <span class="stock-price">(401,000원)</span></span><span class="stock-pill" data-stock-code="108490" data-stock-name="로보티즈"><span class="stock-name">로보티즈</span> <b class="stock-rate text-up" data-live-rate="9.76">+9.76%</b> <span class="stock-price">(275,500원)</span></span><span class="stock-pill" data-stock-code="058610" data-stock-name="에스피지"><span class="stock-name">에스피지</span> <b class="stock-rate text-up" data-live-rate="9.16">+9.16%</b> <span class="stock-price">(88,200원)</span></span></div>
                 <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/277810/news" class="news-link" target="_blank">[네이버금융] [레인보우로보틱스] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/108490/news" class="news-link" target="_blank">[네이버금융] [로보티즈] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/058610/news" class="news-link" target="_blank">[네이버금융] [에스피지] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             
-            <div class="sector-item" data-sector-codes="039440,095340,144960,319660,005290,222800,036930,089030,240810,058470,067310,039030,036810,104830,084370,388210,098460,161580,399720,074600,131970,348210,403870,079370,183300,166090,094170,131290,272290,357780,140860,064760,033640,213420">
+            <div class="sector-item" data-sector-codes="039440,095340,222800,089030,005290,144960,319660,074600,388210,240810,058470,039030,084370,104830,036930,067310,131290,399720,036810,098460,131970,161580,183300,079370,348210,140860,403870,033640,272290,094170,166090,064760,357780,213420">
                 <div class="sector-header">
                     <span class="sector-name">반도체 소부장</span>
-                    <span class="sector-rate text-up">+4.90%</span>
+                    <span class="sector-rate text-up">+4.50%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="039440" data-stock-name="에스티아이"><span class="stock-name">에스티아이</span> <b class="stock-rate text-up" data-live-rate="12.62">+12.62%</b> <span class="stock-price">(28,550원)</span></span><span class="stock-pill" data-stock-code="095340" data-stock-name="ISC"><span class="stock-name">ISC</span> <b class="stock-rate text-up" data-live-rate="9.85">+9.85%</b> <span class="stock-price">(166,200원)</span></span><span class="stock-pill" data-stock-code="144960" data-stock-name="뉴파워프라즈마"><span class="stock-name">뉴파워프라즈마</span> <b class="stock-rate text-up" data-live-rate="8.44">+8.44%</b> <span class="stock-price">(15,810원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/039440/news" class="news-link" target="_blank">[네이버금융] [에스티아이] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/095340/news" class="news-link" target="_blank">[네이버금융] [ISC] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/144960/news" class="news-link" target="_blank">[네이버금융] [뉴파워프라즈마] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="039440" data-stock-name="에스티아이"><span class="stock-name">에스티아이</span> <b class="stock-rate text-up" data-live-rate="11.24">+11.24%</b> <span class="stock-price">(28,200원)</span></span><span class="stock-pill" data-stock-code="095340" data-stock-name="ISC"><span class="stock-name">ISC</span> <b class="stock-rate text-up" data-live-rate="10.91">+10.91%</b> <span class="stock-price">(167,800원)</span></span><span class="stock-pill" data-stock-code="222800" data-stock-name="심텍"><span class="stock-name">심텍</span> <b class="stock-rate text-up" data-live-rate="7.25">+7.25%</b> <span class="stock-price">(125,700원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/039440/news" class="news-link" target="_blank">[네이버금융] [에스티아이] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/095340/news" class="news-link" target="_blank">[네이버금융] [ISC] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/222800/news" class="news-link" target="_blank">[네이버금융] [심텍] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             
-            <div class="sector-item" data-sector-codes="243840,107640,178320,078600,086520,121600,393890,348370,247540,137400,365340,089980,025900,278280,383310">
+            <div class="sector-item" data-sector-codes="243840,107640,178320,078600,089980,086520,121600,348370,247540,137400,393890,365340,278280,025900,383310">
                 <div class="sector-header">
                     <span class="sector-name">이차전지·소재</span>
-                    <span class="sector-rate text-up">+3.88%</span>
+                    <span class="sector-rate text-up">+3.03%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="243840" data-stock-name="신흥에스이씨"><span class="stock-name">신흥에스이씨</span> <b class="stock-rate text-up" data-live-rate="8.65">+8.65%</b> <span class="stock-price">(6,530원)</span></span><span class="stock-pill" data-stock-code="107640" data-stock-name="한중엔시에스"><span class="stock-name">한중엔시에스</span> <b class="stock-rate text-up" data-live-rate="7.82">+7.82%</b> <span class="stock-price">(46,200원)</span></span><span class="stock-pill" data-stock-code="178320" data-stock-name="서진시스템"><span class="stock-name">서진시스템</span> <b class="stock-rate text-up" data-live-rate="5.5">+5.50%</b> <span class="stock-price">(31,650원)</span></span></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="243840" data-stock-name="신흥에스이씨"><span class="stock-name">신흥에스이씨</span> <b class="stock-rate text-up" data-live-rate="6.66">+6.66%</b> <span class="stock-price">(6,410원)</span></span><span class="stock-pill" data-stock-code="107640" data-stock-name="한중엔시에스"><span class="stock-name">한중엔시에스</span> <b class="stock-rate text-up" data-live-rate="6.53">+6.53%</b> <span class="stock-price">(45,650원)</span></span><span class="stock-pill" data-stock-code="178320" data-stock-name="서진시스템"><span class="stock-name">서진시스템</span> <b class="stock-rate text-up" data-live-rate="6.33">+6.33%</b> <span class="stock-price">(31,900원)</span></span></div>
                 <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/243840/news" class="news-link" target="_blank">[네이버금융] [신흥에스이씨] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/107640/news" class="news-link" target="_blank">[네이버금융] [한중엔시에스] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/178320/news" class="news-link" target="_blank">[네이버금융] [서진시스템] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             </div>
         <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">
-            <div class="sector-item" data-sector-codes="214150,336570,043150,237880,145020,018290,257720,439090,241710,214450">
+            <div class="sector-item" data-sector-codes="336570,214150,237880,043150,145020,439090,257720,018290,241710,214450">
                 <div class="sector-header">
                     <span class="sector-name">미용의료·화장품</span>
-                    <span class="sector-rate text-up">+0.99%</span>
+                    <span class="sector-rate text-up">+0.66%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="214150" data-stock-name="클래시스"><span class="stock-name">클래시스</span> <b class="stock-rate text-up" data-live-rate="2.83">+2.83%</b> <span class="stock-price">(27,250원)</span></span><span class="stock-pill" data-stock-code="336570" data-stock-name="원텍"><span class="stock-name">원텍</span> <b class="stock-rate text-up" data-live-rate="1.94">+1.94%</b> <span class="stock-price">(3,950원)</span></span><span class="stock-pill" data-stock-code="043150" data-stock-name="바텍"><span class="stock-name">바텍</span> <b class="stock-rate text-up" data-live-rate="1.46">+1.46%</b> <span class="stock-price">(16,710원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/214150/news" class="news-link" target="_blank">[네이버금융] [클래시스] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/336570/news" class="news-link" target="_blank">[네이버금융] [원텍] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/043150/news" class="news-link" target="_blank">[네이버금융] [바텍] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="336570" data-stock-name="원텍"><span class="stock-name">원텍</span> <b class="stock-rate text-up" data-live-rate="2.84">+2.84%</b> <span class="stock-price">(3,985원)</span></span><span class="stock-pill" data-stock-code="214150" data-stock-name="클래시스"><span class="stock-name">클래시스</span> <b class="stock-rate text-up" data-live-rate="1.7">+1.70%</b> <span class="stock-price">(26,950원)</span></span><span class="stock-pill" data-stock-code="237880" data-stock-name="클리오"><span class="stock-name">클리오</span> <b class="stock-rate text-up" data-live-rate="1.21">+1.21%</b> <span class="stock-price">(10,840원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/336570/news" class="news-link" target="_blank">[네이버금융] [원텍] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/214150/news" class="news-link" target="_blank">[네이버금융] [클래시스] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/237880/news" class="news-link" target="_blank">[네이버금융] [클리오] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             
-            <div class="sector-item" data-sector-codes="032190,189300,078340,112040,035600,225570,263750,095660,069080,053800,293490">
+            <div class="sector-item" data-sector-codes="189300,032190,078340,053800,035600,112040,263750,069080,095660,225570,293490">
                 <div class="sector-header">
                     <span class="sector-name">게임·소프트웨어</span>
-                    <span class="sector-rate text-up">+1.18%</span>
+                    <span class="sector-rate text-up">+0.92%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="032190" data-stock-name="다우데이타"><span class="stock-name">다우데이타</span> <b class="stock-rate text-up" data-live-rate="3.33">+3.33%</b> <span class="stock-price">(17,080원)</span></span><span class="stock-pill" data-stock-code="189300" data-stock-name="인텔리안테크"><span class="stock-name">인텔리안테크</span> <b class="stock-rate text-up" data-live-rate="3.21">+3.21%</b> <span class="stock-price">(54,600원)</span></span><span class="stock-pill" data-stock-code="078340" data-stock-name="컴투스"><span class="stock-name">컴투스</span> <b class="stock-rate text-up" data-live-rate="2.72">+2.72%</b> <span class="stock-price">(32,050원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/032190/news" class="news-link" target="_blank">[네이버금융] [다우데이타] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/189300/news" class="news-link" target="_blank">[네이버금융] [인텔리안테크] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/078340/news" class="news-link" target="_blank">[네이버금융] [컴투스] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="189300" data-stock-name="인텔리안테크"><span class="stock-name">인텔리안테크</span> <b class="stock-rate text-up" data-live-rate="3.21">+3.21%</b> <span class="stock-price">(54,600원)</span></span><span class="stock-pill" data-stock-code="032190" data-stock-name="다우데이타"><span class="stock-name">다우데이타</span> <b class="stock-rate text-up" data-live-rate="2.66">+2.66%</b> <span class="stock-price">(16,970원)</span></span><span class="stock-pill" data-stock-code="078340" data-stock-name="컴투스"><span class="stock-name">컴투스</span> <b class="stock-rate text-up" data-live-rate="1.92">+1.92%</b> <span class="stock-price">(31,800원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/189300/news" class="news-link" target="_blank">[네이버금융] [인텔리안테크] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/032190/news" class="news-link" target="_blank">[네이버금융] [다우데이타] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/078340/news" class="news-link" target="_blank">[네이버금융] [컴투스] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             
-            <div class="sector-item" data-sector-codes="044490,014620,013030,023160,018000">
+            <div class="sector-item" data-sector-codes="290650,226950,310210,228760,048410,214370,000250,141080,039200,096530,298380,196170,068760,085660,456160,243070,028300,195940,206650,082270,007390,174900,087010,086900,140410,086450,237690">
                 <div class="sector-header">
-                    <span class="sector-name">피팅·장비기자재</span>
-                    <span class="sector-rate text-up">+2.08%</span>
+                    <span class="sector-name">제약·바이오</span>
+                    <span class="sector-rate text-up">+1.15%</span>
                 </div>
-                <div class="stock-container"><span class="stock-pill" data-stock-code="044490" data-stock-name="태웅"><span class="stock-name">태웅</span> <b class="stock-rate text-up" data-live-rate="6.78">+6.78%</b> <span class="stock-price">(26,000원)</span></span><span class="stock-pill" data-stock-code="014620" data-stock-name="성광벤드"><span class="stock-name">성광벤드</span> <b class="stock-rate text-up" data-live-rate="2.15">+2.15%</b> <span class="stock-price">(26,150원)</span></span><span class="stock-pill" data-stock-code="013030" data-stock-name="하이록코리아"><span class="stock-name">하이록코리아</span> <b class="stock-rate text-up" data-live-rate="1.48">+1.48%</b> <span class="stock-price">(30,800원)</span></span></div>
-                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/044490/news" class="news-link" target="_blank">[네이버금융] [태웅] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/014620/news" class="news-link" target="_blank">[네이버금융] [성광벤드] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/013030/news" class="news-link" target="_blank">[네이버금융] [하이록코리아] 실시간 주요 뉴스 및 공시 보러가기</a></div>
+                <div class="stock-container"><span class="stock-pill" data-stock-code="290650" data-stock-name="엘앤씨바이오"><span class="stock-name">엘앤씨바이오</span> <b class="stock-rate text-up" data-live-rate="6.51">+6.51%</b> <span class="stock-price">(25,350원)</span></span><span class="stock-pill" data-stock-code="226950" data-stock-name="올릭스"><span class="stock-name">올릭스</span> <b class="stock-rate text-up" data-live-rate="5.3">+5.30%</b> <span class="stock-price">(95,400원)</span></span><span class="stock-pill" data-stock-code="310210" data-stock-name="보로노이"><span class="stock-name">보로노이</span> <b class="stock-rate text-up" data-live-rate="3.79">+3.79%</b> <span class="stock-price">(123,300원)</span></span></div>
+                <div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/290650/news" class="news-link" target="_blank">[네이버금융] [엘앤씨바이오] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/226950/news" class="news-link" target="_blank">[네이버금융] [올릭스] 실시간 주요 뉴스 및 공시 보러가기</a></div><div class="sector-news">📰 <a href="https://m.stock.naver.com/domestic/stock/310210/news" class="news-link" target="_blank">[네이버금융] [보로노이] 실시간 주요 뉴스 및 공시 보러가기</a></div>
             </div>
             </div>
     </div>
@@ -554,7 +554,7 @@
             if (updatedCount > 0) {
                 syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss} (클릭 또는 새로고침 시 즉시 갱신)`;
             } else {
-                syncText.innerText = `기준 시각: 2026-10-28 10:02:50 (네트워크 재연결 대기 중)`;
+                syncText.innerText = `기준 시각: 2026-10-28 10:32:09 (네트워크 재연결 대기 중)`;
             }
         }
     }
