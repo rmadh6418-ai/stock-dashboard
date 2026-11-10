@@ -903,7 +903,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <button id="chat-button" onclick="toggleChat()">💬</button>
     <div id="chat-window">
         <div id="chat-header">
-            <span>SECRET 경제연구소 비서</span>
+            <span>AI 국내증시 비서</span>
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
@@ -990,7 +990,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             const payload = {{
                 contents: chatHistory,
                 systemInstruction: {{
-                    parts: [{{ text: "당신은 'SECRET 경제연구소'의 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요. [현재 실시간 코스피: " + curKospi + " / 코스닥: " + curKosdaq + "]" }}]
+                    parts: [{{ text: "당신은 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요. [현재 실시간 코스피: " + curKospi + " / 코스닥: " + curKosdaq + "]" }}]
                 }}
             }};
 
