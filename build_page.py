@@ -250,7 +250,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             d_res = requests.get(d_url, headers=d_headers, timeout=4)
             if d_res.status_code == 200:
                 for item in d_res.json().get("data", []):
-                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('"', '"').replace('&', '&')
+                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
                     link = f"https://finance.daum.net/news/{item.get('newsId')}"
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
@@ -868,12 +868,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
     <div id="sectors-root">
         <div class="group-title">🏢 코스피 200 업종 동향</div>
-        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{{build_sector_list(k200_top)}}</div>
-        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{{build_sector_list(k200_bot)}}</div>
+        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
+        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
 
         <div class="group-title">🚀 코스닥 150 업종 동향</div>
-        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{{build_sector_list(k150_top)}}</div>
-        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{{build_sector_list(k150_bot)}}</div>
+        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{build_sector_list(k150_top)}</div>
+        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{build_sector_list(k150_bot)}</div>
     </div>
 </div>
 
@@ -950,7 +950,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 }}
             }};
 
-            // f-string 내부에 자바스크립트 변수 apiKey 렌더링
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${{apiKey}}`, {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
