@@ -882,7 +882,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <button id="chat-button" onclick="toggleChat()">💬</button>
     <div id="chat-window">
         <div id="chat-header">
-            <span>SECRET 경제연구소 비서</span>
+            <span>AI 국내증시 비서</span>
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
