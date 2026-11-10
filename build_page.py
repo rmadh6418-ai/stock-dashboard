@@ -818,11 +818,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .bg-up-light {{ background-color: #ffe4e6 !important; }}
         .bg-down-light {{ background-color: #dbeafe !important; }}
         .bg-gray-100 {{ background-color: #f1f5f9 !important; }}
+
+        /* --- AI Chat UI 스타일 --- */
+        #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
+        #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
+        #chat-button:hover {{ transform: scale(1.05); }}
+        #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; max-width: 90vw; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }}
+        #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
+        #chat-close {{ background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0; }}
+        #chat-messages {{ flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }}
+        .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; }}
+        .message.user {{ align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }}
+        .message.ai {{ align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }}
+        #chat-input-container {{ display: flex; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; gap: 8px; }}
+        #chat-input {{ flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 20px; outline: none; font-size: 0.95rem; }}
+        #chat-input:focus {{ border-color: #3b82f6; }}
+        #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
+        #chat-send:hover {{ background: #1d4ed8; }}
+        #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
     </style>
 </head>
 <body>
 <!-- 🔐 비밀번호 잠금 화면 시작 -->
-<div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #f3f4f6; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+<div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #f3f4f6; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
     <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center;">
         <h2 style="margin-top: 0; margin-bottom: 20px; color: #111827; font-weight: 800;">🔒 대시보드 잠금</h2>
         <input type="password" id="pw-input" placeholder="비밀번호를 입력하세요" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.1rem; border: 1.5px solid #d1d5db; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;">
@@ -861,9 +879,105 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
 </div>
 
+<!-- 💬 플로팅 AI 채팅창 UI -->
+<div id="chat-widget">
+    <button id="chat-button" onclick="toggleChat()">💬</button>
+    <div id="chat-window">
+        <div id="chat-header">
+            <span>SECRET 경제연구소 비서</span>
+            <button id="chat-close" onclick="toggleChat()">✖</button>
+        </div>
+        <div id="chat-messages">
+            <div class="message ai">안녕하세요! 국내 증시 및 주식 종목에 대해 궁금한 점을 편하게 물어보세요.<br><br>예) "오늘 삼성전자 주가 어때?", "코스닥 시황 요약해줘"</div>
+        </div>
+        <div id="chat-input-container">
+            <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
+            <button id="chat-send" onclick="sendChatMessage()">전송</button>
+        </div>
+    </div>
+</div>
+
 <script>
     const TARGET_ARR = {obfuscated_pw};
     const XOR_KEY = {xor_key};
+    
+    // --- AI Chat Logic ---
+    let chatHistory = [];
+    const GEMINI_API_KEY = "{API_KEY}"; // Python에서 가져온 API 키 주입
+
+    function toggleChat() {{
+        const win = document.getElementById('chat-window');
+        win.style.display = win.style.display === 'flex' ? 'none' : 'flex';
+        if (win.style.display === 'flex') {{
+            document.getElementById('chat-input').focus();
+        }}
+    }}
+
+    function handleChatEnter(e) {{
+        if (e.key === 'Enter') sendChatMessage();
+    }}
+
+    async function sendChatMessage() {{
+        const inputEl = document.getElementById('chat-input');
+        const btnEl = document.getElementById('chat-send');
+        const msg = inputEl.value.trim();
+        if (!msg) return;
+
+        addMessageToUI('user', msg);
+        inputEl.value = '';
+        btnEl.disabled = true;
+        inputEl.disabled = true;
+
+        chatHistory.push({{ role: "user", parts: [{{ text: msg }}] }});
+
+        try {{
+            // 대시보드 화면에 있는 실시간 지수를 가져와서 AI 프롬프트에 주입 (상황 인지력 향상)
+            const curKospi = document.getElementById('val-KOSPI') ? document.getElementById('val-KOSPI').innerText : '확인 불가';
+            const curKosdaq = document.getElementById('val-KOSDAQ') ? document.getElementById('val-KOSDAQ').innerText : '확인 불가';
+
+            const payload = {{
+                contents: chatHistory,
+                systemInstruction: {{
+                    parts: [{{ text: "당신은 'SECRET 경제연구소'의 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요. [현재 실시간 코스피: " + curKospi + " / 코스닥: " + curKosdaq + "]" }}]
+                }}
+            }};
+
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${{GEMINI_API_KEY}}`, {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify(payload)
+            }});
+
+            if (response.ok) {{
+                const data = await response.json();
+                const aiText = data.candidates[0].content.parts[0].text;
+                addMessageToUI('ai', aiText);
+                chatHistory.push({{ role: "model", parts: [{{ text: aiText }}] }});
+            }} else {{
+                addMessageToUI('ai', "앗, AI 호출 중 오류가 발생했어요. 다시 시도해주세요.");
+                chatHistory.pop();
+            }}
+        }} catch (error) {{
+            addMessageToUI('ai', "네트워크 오류가 발생했습니다.");
+            chatHistory.pop();
+        }} finally {{
+            btnEl.disabled = false;
+            inputEl.disabled = false;
+            inputEl.focus();
+        }}
+    }}
+
+    function addMessageToUI(sender, text) {{
+        const container = document.getElementById('chat-messages');
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${{sender}}`;
+        // 간단한 마크다운(볼드체, 줄바꿈) 처리
+        let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+        msgDiv.innerHTML = formattedText;
+        container.appendChild(msgDiv);
+        container.scrollTop = container.scrollHeight;
+    }}
+    // ----------------------
 
     function checkPassword() {{
         const input = document.getElementById('pw-input').value;
