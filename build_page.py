@@ -737,12 +737,10 @@ def send_kakao_alert(indices, k200_top, k150_top):
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1. 패스워드 하드코딩 제거 및 암호화 적용
     raw_password = os.environ.get("DASHBOARD_PW")
     if not raw_password:
-        raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다. 하드코딩된 비밀번호를 제거했으므로 반드시 GitHub Secrets에 DASHBOARD_PW를 등록해주세요.")
+        raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
     
-    # 비밀번호 원문을 HTML에 넣지 않고 SHA-256 해시값만 넘겨줍니다.
     pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
     index_cards = ""
@@ -924,8 +922,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div class="market-ai-content" id="ai-summary-text">{ai_market_summary}</div>
     </div>
 
-    <!-- 숨겨진 DART 공시 데이터 (AI 컨텍스트용) -->
+    <!-- 숨겨진 DART 공시 및 캘린더 데이터 (AI 컨텍스트용) -->
     <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
+    <div id="calendar-data" style="display: none;"></div>
 
     <div id="sectors-root">
         <div class="group-title">🏢 코스피 200 업종 동향</div>
@@ -947,7 +946,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 DART 공시와 증시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "오늘 삼성전자 공시 나온거 있어?", "코스피 시황 요약해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 반도체 관련 뉴스 요약해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1021,14 +1020,35 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '생각 중...', loadingId);
 
         try {{
-            // 화면의 실시간 지수 및 숨겨둔 DART 공시 정보를 시스템 프롬프트에 주입
-            const curKospi = document.getElementById('val-KOSPI') ? document.getElementById('val-KOSPI').innerText : '확인 불가';
-            const curKosdaq = document.getElementById('val-KOSDAQ') ? document.getElementById('val-KOSDAQ').innerText : '확인 불가';
+            // 1. DART 공시 데이터 수집
             const dartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
 
-            const systemText = `당신은 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요.\n\n` + 
-                               `[현재 실시간 코스피: ${{curKospi}} / 코스닥: ${{curKosdaq}}]\n` +
-                               `[오늘자 DART 주요 실시간 공시 정보]\n${{dartData}}\n\n사용자가 공시를 물어보면 위 목록에서 확인해서 답변해주세요.`;
+            // 2. 화면의 지수 및 거시경제 지표 데이터 수집
+            let indicesData = "";
+            document.querySelectorAll('.grid-indices .card').forEach(card => {{
+                const title = card.querySelector('.card-title') ? card.querySelector('.card-title').innerText : '';
+                const val = card.querySelector('.card-value') ? card.querySelector('.card-value').innerText : '';
+                const badge = card.querySelector('.badge') ? card.querySelector('.badge').innerText : '';
+                if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}})\\n`;
+            }});
+
+            // 3. 화면의 경제/섹터 속보 뉴스 수집
+            let newsData = "";
+            document.querySelectorAll('.sector-news a').forEach(news => {{
+                newsData += `- ${{news.innerText}}\\n`;
+            }});
+            if (!newsData) newsData = "뉴스 정보 없음";
+
+            // 4. 경제 지표 캘린더 데이터 수집
+            const calendarDataEl = document.getElementById('calendar-data');
+            const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
+
+            const systemText = `당신은 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요.\\n\\n` + 
+                               `[실시간 주요 지수 및 거시경제 지표]\\n${{indicesData}}\\n` +
+                               `[오늘자 DART 주요 실시간 공시 정보]\\n${{dartData}}\\n\\n` +
+                               `[실시간 주요 경제/종목 속보 뉴스]\\n${{newsData}}\\n\\n` +
+                               `[경제 지표 캘린더 데이터]\\n${{calendarData}}\\n\\n` +
+                               `사용자가 공시, 뉴스, 경제 지표, 시장 상황 등을 물어보면 위 수집된 데이터 목록을 바탕으로 정확하고 상세하게 답변해주세요.`;
 
             const payload = {{
                 contents: chatHistory,
@@ -1085,16 +1105,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     async function checkPassword() {{
         const input = document.getElementById('pw-input').value;
         try {{
-            // 입력값을 SHA-256으로 해싱
             const encoder = new TextEncoder();
             const data = encoder.encode(input);
             const hashBuffer = await crypto.subtle.digest('SHA-256', data);
             
-            // 해시 버퍼를 Hex 문자열로 변환
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-            // 서버에서 넘어온 해시값과 비교 (원문 노출 방지)
             if (hashHex === TARGET_HASH) {{
                 document.getElementById('lock-screen').style.display = 'none';
                 sessionStorage.setItem('isUnlocked', 'true');
