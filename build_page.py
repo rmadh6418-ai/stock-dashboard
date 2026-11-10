@@ -3,6 +3,7 @@ import os
 import re
 import time
 import urllib.parse
+import hashlib
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -55,6 +56,43 @@ KOSDAQ150_SECTORS = {
     "로봇·자동화": ["레인보우로보틱스", "로보티즈", "에스에프에이", "휴림로봇", "로보스타", "에스피지", "하이젠알앤엠", "삼현", "유일로보틱스", "티로보틱스", "에브리봇", "뉴로메카", "알에스오토메이션", "유진로봇", "스맥", "고영테크놀러지"],
     "피팅·장비기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅", "동국S&C", "씨에스베어링", "유니슨", "삼강엠앤티"]
 }
+
+# ----------------- 새로 추가된 DART 정보 가져오기 함수 -----------------
+def fetch_dart_disclosures():
+    dart_key = os.environ.get("DART_API_KEY", "").strip()
+    if not dart_key:
+        return "DART_API_KEY가 환경변수에 설정되지 않아 공시 정보를 불러올 수 없습니다."
+
+    now_kst = datetime.now(timezone(timedelta(hours=9)))
+    today_str = now_kst.strftime("%Y%m%d")
+
+    # 최근 공시 조회 API 엔드포인트
+    url = f"https://opendart.fss.or.kr/api/list.json?crtfc_key={dart_key}&bgn_de={today_str}&end_de={today_str}&page_count=30"
+
+    try:
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("status") == "000":
+                filings = data.get("list", [])
+                if not filings:
+                    return "오늘 접수된 주요 DART 공시가 아직 없습니다."
+                
+                summary = []
+                for f in filings[:20]: # 상위 20개만 요약 생성
+                    corp_name = f.get("corp_name", "")
+                    report_nm = f.get("report_nm", "")
+                    time_val = f.get("rcept_dt", "")
+                    time_format = f"{time_val[:4]}-{time_val[4:6]}-{time_val[6:8]}"
+                    summary.append(f"[{time_format}] {corp_name}: {report_nm}")
+                return "\n".join(summary)
+            else:
+                return f"DART 응답 오류: {data.get('message')}"
+    except Exception as e:
+        return f"DART 연동 중 오류 발생: {str(e)}"
+    
+    return "DART 데이터를 가져오지 못했습니다."
+# ----------------------------------------------------------------------
 
 def call_gemini_rest_api(model_name, prompt, api_key):
     clean_model = model_name.replace("models/", "").strip()
@@ -695,8 +733,17 @@ def send_kakao_alert(indices, k200_top, k150_top):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time):
+# --- HTML 렌더링 영역 (보안 해싱 및 DART 공시 주입 반영) ---
+def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. 패스워드 하드코딩 제거 및 암호화 적용
+    raw_password = os.environ.get("DASHBOARD_PW")
+    if not raw_password:
+        raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다. 하드코딩된 비밀번호를 제거했으므로 반드시 GitHub Secrets에 DASHBOARD_PW를 등록해주세요.")
+    
+    # 비밀번호 원문을 HTML에 넣지 않고 SHA-256 해시값만 넘겨줍니다.
+    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
     index_cards = ""
     for idx in indices:
@@ -744,13 +791,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
-    raw_password = os.environ.get("DASHBOARD_PW", "4203").strip()
-    if not raw_password:
-        raw_password = "4203"
-        
-    xor_key = 123 
-    obfuscated_pw = [ord(char) ^ xor_key for char in raw_password]
-
     template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -761,7 +801,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <meta http-equiv="Expires" content="0">
     <title>실시간 국내 증시 대시보드</title>
 
-    <!-- PWA 및 모바일 앱 설정 -->
     <meta name="theme-color" content="#f8fafc">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -777,7 +816,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             user-select: none; 
             padding-bottom: env(safe-area-inset-bottom); 
         }}
-        /* 모바일 터치 및 클릭 문제를 막기 위해 입력 요소는 user-select 허용 */
         input, button, .message {{ user-select: auto !important; }}
         
         header {{ text-align: center; margin-bottom: 18px; }}
@@ -836,7 +874,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-send:hover {{ background: #1d4ed8; }}
         #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
 
-        /* 반응형: 모바일 기기 창 잘림 현상 방지 */
         @media (max-width: 768px) {{
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
         }}
@@ -887,6 +924,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div class="market-ai-content" id="ai-summary-text">{ai_market_summary}</div>
     </div>
 
+    <!-- 숨겨진 DART 공시 데이터 (AI 컨텍스트용) -->
+    <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
+
     <div id="sectors-root">
         <div class="group-title">🏢 코스피 200 업종 동향</div>
         <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
@@ -907,7 +947,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 국내 증시 및 주식 종목에 대해 궁금한 점을 편하게 물어보세요.<br><br>예) "오늘 삼성전자 주가 어때?", "코스닥 시황 요약해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 DART 공시와 증시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "오늘 삼성전자 공시 나온거 있어?", "코스피 시황 요약해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -917,8 +957,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    const TARGET_ARR = {obfuscated_pw};
-    const XOR_KEY = {xor_key};
+    // 서버에서 전달받은 SHA-256 해시값 (비밀번호 원문 노출 완벽 차단)
+    const TARGET_HASH = "{pw_hash}";
     
     // --- AI Chat Logic ---
     let chatHistory = [];
@@ -938,7 +978,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
     function closeApiModal() {{
         document.getElementById('api-modal').style.display = 'none';
-        pendingMessage = ""; // 모달 닫으면 보류된 메시지도 초기화
+        pendingMessage = ""; 
     }}
 
     function saveApiModal() {{
@@ -946,7 +986,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         if(val) {{
             localStorage.setItem('gemini_api_key', val);
             document.getElementById('api-modal').style.display = 'none';
-            // 보류된 메시지가 있다면 닫힌 직후 바로 전송 시작
             if (pendingMessage) {{
                 document.getElementById('chat-input').value = pendingMessage;
                 pendingMessage = "";
@@ -962,7 +1001,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         
         if (!msg) return;
 
-        // 키가 없으면 기본 prompt() 대신 자체 제작한 모바일 친화적 모달창 띄우기
         if (!apiKey) {{
             pendingMessage = msg;
             document.getElementById('api-modal').style.display = 'flex';
@@ -983,15 +1021,18 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '생각 중...', loadingId);
 
         try {{
-            // 대시보드 화면에 있는 실시간 지수를 가져와서 AI 프롬프트에 주입
+            // 화면의 실시간 지수 및 숨겨둔 DART 공시 정보를 시스템 프롬프트에 주입
             const curKospi = document.getElementById('val-KOSPI') ? document.getElementById('val-KOSPI').innerText : '확인 불가';
             const curKosdaq = document.getElementById('val-KOSDAQ') ? document.getElementById('val-KOSDAQ').innerText : '확인 불가';
+            const dartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
+
+            const systemText = `당신은 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요.\n\n` + 
+                               `[현재 실시간 코스피: ${{curKospi}} / 코스닥: ${{curKosdaq}}]\n` +
+                               `[오늘자 DART 주요 실시간 공시 정보]\n${{dartData}}\n\n사용자가 공시를 물어보면 위 목록에서 확인해서 답변해주세요.`;
 
             const payload = {{
                 contents: chatHistory,
-                systemInstruction: {{
-                    parts: [{{ text: "당신은 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요. [현재 실시간 코스피: " + curKospi + " / 코스닥: " + curKosdaq + "]" }}]
-                }}
+                systemInstruction: {{ parts: [{{ text: systemText }}] }}
             }};
 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${{apiKey}}`, {{
@@ -1039,28 +1080,30 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             msgDiv.innerHTML = formattedText;
         }}
     }}
-    // ----------------------
 
-    function checkPassword() {{
+    // --- Web Crypto API를 활용한 안전한 패스워드 검증 ---
+    async function checkPassword() {{
         const input = document.getElementById('pw-input').value;
-        
-        if (input.length !== TARGET_ARR.length) {{
-            document.getElementById('pw-error').style.display = 'block';
-            return;
-        }}
+        try {{
+            // 입력값을 SHA-256으로 해싱
+            const encoder = new TextEncoder();
+            const data = encoder.encode(input);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            
+            // 해시 버퍼를 Hex 문자열로 변환
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-        let isMatch = true;
-        for (let i = 0; i < input.length; i++) {{
-            if ((input.charCodeAt(i) ^ XOR_KEY) !== TARGET_ARR[i]) {{
-                isMatch = false;
-                break;
+            // 서버에서 넘어온 해시값과 비교 (원문 노출 방지)
+            if (hashHex === TARGET_HASH) {{
+                document.getElementById('lock-screen').style.display = 'none';
+                sessionStorage.setItem('isUnlocked', 'true');
+            }} else {{
+                document.getElementById('pw-error').style.display = 'block';
             }}
-        }}
-
-        if (isMatch) {{
-            document.getElementById('lock-screen').style.display = 'none';
-            sessionStorage.setItem('isUnlocked', 'true');
-        }} else {{
+        }} catch (e) {{
+            console.error("Hash error:", e);
+            document.getElementById('pw-error').innerText = "보안 인증 처리 중 오류가 발생했습니다.";
             document.getElementById('pw-error').style.display = 'block';
         }}
     }}
@@ -1068,7 +1111,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     async function syncServerAiAndSectors() {{
         const basePath = window.location.pathname.endsWith('/')
             ? window.location.pathname
-            : window.location.pathname.replace(/\/[^\/]*$/, '/');
+            : window.location.pathname.replace(/\\/[^\\/]*$/, '/');
 
         try {{
             const aiRes = await fetch(`${{basePath}}ai_summary_cache.json?_=${{Date.now()}}`, {{
@@ -1336,7 +1379,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         setInterval(syncLiveMarketData, 30000);
     }};
 
-    // PWA 서비스 워커 등록
     if ('serviceWorker' in navigator) {{
         window.addEventListener('load', () => {{
             navigator.serviceWorker.register('./sw.js').then(reg => {{
@@ -1361,8 +1403,11 @@ if __name__ == "__main__":
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
     ai_market_summary, ai_updated_time = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
+    
+    # DART 정보 패치 후 HTML에 전달
+    dart_summary = fetch_dart_disclosures()
 
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time)
+    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
 
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     today_str = kst_now.strftime("%Y-%m-%d")
