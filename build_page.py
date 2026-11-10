@@ -25,7 +25,6 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
 BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "솔 জরিমানা", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
 
-# 대폭 확장된 코스피 200 섹터 딕셔너리
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사", "한화솔루션", "금호석유", "OCI홀딩스", "대한유화", "SKC", "효성첨단소재", "효성티앤씨", "코오롱인더", "태광산업", "롯데정밀화학", "후성", "애경케미칼", "KCC", "금호타이어", "넥센타이어"],
     "이차전지·배터리": ["LG에너지솔루션", "POSCO홀딩스", "포스코퓨처엠", "삼성SDI", "엘앤에프", "에코프로머티", "코스모신소재", "포스코인터내셔널", "솔루스첨단소재", "금양", "코스모화학", "TCC스틸", "디아이씨"],
@@ -46,7 +45,6 @@ KOSPI200_SECTORS = {
     "음식료·유통·항공": ["삼양식품", "CJ제일제당", "오리온", "농심", "BGF리테일", "이마트", "롯데쇼핑", "신세계", "하이트진로", "대한항공", "아시아나항공", "제주항공", "진에어", "티웨이항공", "호텔신라", "강원랜드", "빙그레", "대상", "롯데웰푸드", "삼양사", "현대백화점", "롯데관광개발", "GKL", "에스원", "CJ대한통운", "신세계백화점"]
 }
 
-# 대폭 확장된 코스닥 150 섹터 딕셔너리
 KOSDAQ150_SECTORS = {
     "제약·바이오": ["알테오젠", "HLB", "삼천당제약", "리가켐바이오", "에스티팜", "HK이노엔", "동국제약", "지투지바이오", "디엔디파마텍", "올릭스", "에이비엘바이오", "펩트론", "오스코텍", "엘앤씨바이오", "셀트리온제약", "차바이오텍", "메디톡스", "보로노이", "지노믹트리", "케어젠", "씨젠", "바이오니아", "메지온", "네이처셀", "휴온스", "유바이오로직스", "젬백스", "엔케이맥스", "인트론바이오", "앱클론", "현대바이오", "레고켐바이오"],
     "미용의료·화장품": ["휴젤", "클래시스", "실리콘투", "파마리서치", "제이시스메디칼", "원텍", "브이티", "아이패밀리에스씨", "마녀공장", "코스메카코리아", "클리오", "인터로조", "바텍", "덴티움", "비올", "이루다", "하이로닉", "메디아나"],
@@ -252,7 +250,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             d_res = requests.get(d_url, headers=d_headers, timeout=4)
             if d_res.status_code == 200:
                 for item in d_res.json().get("data", []):
-                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
+                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('"', '"').replace('&', '&')
                     link = f"https://finance.daum.net/news/{item.get('newsId')}"
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
@@ -870,12 +868,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
     <div id="sectors-root">
         <div class="group-title">🏢 코스피 200 업종 동향</div>
-        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
-        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
+        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{{build_sector_list(k200_top)}}</div>
+        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{{build_sector_list(k200_bot)}}</div>
 
         <div class="group-title">🚀 코스닥 150 업종 동향</div>
-        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{build_sector_list(k150_top)}</div>
-        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{build_sector_list(k150_bot)}</div>
+        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{{build_sector_list(k150_top)}}</div>
+        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{{build_sector_list(k150_bot)}}</div>
     </div>
 </div>
 
@@ -903,7 +901,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     
     // --- AI Chat Logic ---
     let chatHistory = [];
-    const GEMINI_API_KEY = "{API_KEY}"; // Python에서 가져온 API 키 주입
 
     function toggleChat() {{
         const win = document.getElementById('chat-window');
@@ -918,6 +915,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     }}
 
     async function sendChatMessage() {{
+        // 브라우저 로컬 스토리지에서 API 키 확인, 없으면 팝업으로 요청
+        let apiKey = localStorage.getItem('gemini_api_key');
+        if (!apiKey) {{
+            apiKey = prompt("AI 채팅을 사용하려면 Gemini API 키를 입력해주세요.\\n(키는 서버에 전송되지 않고 현재 기기(브라우저)에만 안전하게 저장됩니다.)");
+            if (!apiKey) return;
+            localStorage.setItem('gemini_api_key', apiKey.trim());
+        }}
+
         const inputEl = document.getElementById('chat-input');
         const btnEl = document.getElementById('chat-send');
         const msg = inputEl.value.trim();
@@ -930,8 +935,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         chatHistory.push({{ role: "user", parts: [{{ text: msg }}] }});
 
+        const loadingId = 'msg-' + Date.now();
+        addMessageToUI('ai', '생각 중...', loadingId);
+
         try {{
-            // 대시보드 화면에 있는 실시간 지수를 가져와서 AI 프롬프트에 주입 (상황 인지력 향상)
+            // 대시보드 화면에 있는 실시간 지수를 가져와서 AI 프롬프트에 주입
             const curKospi = document.getElementById('val-KOSPI') ? document.getElementById('val-KOSPI').innerText : '확인 불가';
             const curKosdaq = document.getElementById('val-KOSDAQ') ? document.getElementById('val-KOSDAQ').innerText : '확인 불가';
 
@@ -942,24 +950,27 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 }}
             }};
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${{GEMINI_API_KEY}}`, {{
+            // f-string 내부에 자바스크립트 변수 apiKey 렌더링
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${{apiKey}}`, {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify(payload)
             }});
 
-            if (response.ok) {{
-                const data = await response.json();
-                const aiText = data.candidates[0].content.parts[0].text;
-                addMessageToUI('ai', aiText);
-                chatHistory.push({{ role: "model", parts: [{{ text: aiText }}] }});
-            }} else {{
-                addMessageToUI('ai', "앗, AI 호출 중 오류가 발생했어요. 다시 시도해주세요.");
-                chatHistory.pop();
+            const data = await response.json();
+
+            if (!response.ok) {{
+                throw new Error(data.error?.message || '알 수 없는 API 오류가 발생했습니다.');
             }}
+
+            const aiText = data.candidates[0].content.parts[0].text;
+            chatHistory.push({{ role: "model", parts: [{{ text: aiText }}] }});
+            updateMessageUI(loadingId, aiText);
+
         }} catch (error) {{
-            addMessageToUI('ai', "네트워크 오류가 발생했습니다.");
             chatHistory.pop();
+            updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 오류가 발생했습니다. 브라우저 캐시를 지우거나 새로고침하여 키를 다시 입력해주세요.`);
+            localStorage.removeItem('gemini_api_key');
         }} finally {{
             btnEl.disabled = false;
             inputEl.disabled = false;
@@ -967,15 +978,23 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    function addMessageToUI(sender, text) {{
+    function addMessageToUI(sender, text, id = null) {{
         const container = document.getElementById('chat-messages');
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${{sender}}`;
-        // 간단한 마크다운(볼드체, 줄바꿈) 처리
-        let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+        if (id) msgDiv.id = id;
+        let formattedText = text.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>').replace(/\\n/g, '<br>');
         msgDiv.innerHTML = formattedText;
         container.appendChild(msgDiv);
         container.scrollTop = container.scrollHeight;
+    }}
+
+    function updateMessageUI(id, text) {{
+        const msgDiv = document.getElementById(id);
+        if (msgDiv) {{
+            let formattedText = text.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>').replace(/\\n/g, '<br>');
+            msgDiv.innerHTML = formattedText;
+        }}
     }}
     // ----------------------
 
