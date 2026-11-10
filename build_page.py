@@ -159,7 +159,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 것.
     2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
     3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
-    4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
+    4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 일 것.
     """
 
     available_models = get_candidate_models(API_KEY)
@@ -250,7 +250,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             d_res = requests.get(d_url, headers=d_headers, timeout=4)
             if d_res.status_code == 200:
                 for item in d_res.json().get("data", []):
-                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('&quot;', '"').replace('&amp;', '&')
+                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('"', '"').replace('&', '&')
                     link = f"https://finance.daum.net/news/{item.get('newsId')}"
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
@@ -777,7 +777,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             user-select: none; 
             padding-bottom: env(safe-area-inset-bottom); 
         }}
-        input {{ user-select: auto; }}
+        /* 모바일 터치 및 클릭 문제를 막기 위해 입력 요소는 user-select 허용 */
+        input, button, .message {{ user-select: auto !important; }}
         
         header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
@@ -821,7 +822,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
         #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
         #chat-button:hover {{ transform: scale(1.05); }}
-        #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; max-width: 90vw; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }}
+        #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }}
         #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
         #chat-close {{ background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0; }}
         #chat-messages {{ flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }}
@@ -834,6 +835,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
         #chat-send:hover {{ background: #1d4ed8; }}
         #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
+
+        /* 반응형: 모바일 기기 창 잘림 현상 방지 */
+        @media (max-width: 768px) {{
+            #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
+        }}
     </style>
 </head>
 <body>
@@ -844,6 +850,21 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <input type="password" id="pw-input" placeholder="비밀번호를 입력하세요" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.1rem; border: 1.5px solid #d1d5db; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;">
         <button onclick="checkPassword()" style="width: 100%; padding: 12px; font-size: 1.1rem; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">입장하기</button>
         <p id="pw-error" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 틀렸습니다.</p>
+    </div>
+</div>
+
+<!-- 🔑 모바일 호환 API 입력 모달창 -->
+<div id="api-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100002; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 25px; border-radius: 12px; width: 85%; max-width: 340px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b;">🔑 API 키 등록</h3>
+        <p style="font-size: 0.9rem; color: #475569; margin-bottom: 20px; line-height: 1.4; word-break: keep-all;">
+            모바일 환경에서는 기본 팝업창이 차단될 수 있어 여기서 입력받습니다.<br>Gemini API 키를 붙여넣어 주세요.
+        </p>
+        <input type="password" id="custom-api-key-input" placeholder="API Key..." style="width: 100%; padding: 12px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; outline: none; font-size: 1rem;">
+        <div style="display: flex; gap: 10px;">
+            <button onclick="closeApiModal()" style="flex: 1; padding: 12px; background: #94a3b8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem;">취소</button>
+            <button onclick="saveApiModal()" style="flex: 1; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem;">저장</button>
+        </div>
     </div>
 </div>
 
@@ -882,7 +903,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <button id="chat-button" onclick="toggleChat()">💬</button>
     <div id="chat-window">
         <div id="chat-header">
-            <span>AI 국내증시 비서</span>
+            <span>SECRET 경제연구소 비서</span>
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
@@ -901,6 +922,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     
     // --- AI Chat Logic ---
     let chatHistory = [];
+    let pendingMessage = "";
 
     function toggleChat() {{
         const win = document.getElementById('chat-window');
@@ -914,20 +936,42 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         if (e.key === 'Enter') sendChatMessage();
     }}
 
-    async function sendChatMessage() {{
-        // 브라우저 로컬 스토리지에서 API 키 확인, 없으면 팝업으로 요청
-        let apiKey = localStorage.getItem('gemini_api_key');
-        if (!apiKey) {{
-            apiKey = prompt("AI 채팅을 사용하려면 Gemini API 키를 입력해주세요.\\n(키는 서버에 전송되지 않고 현재 기기(브라우저)에만 안전하게 저장됩니다.)");
-            if (!apiKey) return;
-            localStorage.setItem('gemini_api_key', apiKey.trim());
-        }}
+    function closeApiModal() {{
+        document.getElementById('api-modal').style.display = 'none';
+        pendingMessage = ""; // 모달 닫으면 보류된 메시지도 초기화
+    }}
 
+    function saveApiModal() {{
+        const val = document.getElementById('custom-api-key-input').value.trim();
+        if(val) {{
+            localStorage.setItem('gemini_api_key', val);
+            document.getElementById('api-modal').style.display = 'none';
+            // 보류된 메시지가 있다면 닫힌 직후 바로 전송 시작
+            if (pendingMessage) {{
+                document.getElementById('chat-input').value = pendingMessage;
+                pendingMessage = "";
+                sendChatMessage();
+            }}
+        }}
+    }}
+
+    async function sendChatMessage() {{
+        let apiKey = localStorage.getItem('gemini_api_key');
         const inputEl = document.getElementById('chat-input');
-        const btnEl = document.getElementById('chat-send');
         const msg = inputEl.value.trim();
+        
         if (!msg) return;
 
+        // 키가 없으면 기본 prompt() 대신 자체 제작한 모바일 친화적 모달창 띄우기
+        if (!apiKey) {{
+            pendingMessage = msg;
+            document.getElementById('api-modal').style.display = 'flex';
+            document.getElementById('custom-api-key-input').focus();
+            return;
+        }}
+
+        const btnEl = document.getElementById('chat-send');
+        
         addMessageToUI('user', msg);
         inputEl.value = '';
         btnEl.disabled = true;
@@ -968,7 +1012,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         }} catch (error) {{
             chatHistory.pop();
-            updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 오류가 발생했습니다. 브라우저 캐시를 지우거나 새로고침하여 키를 다시 입력해주세요.`);
+            updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 오류가 발생했습니다. 키를 다시 입력해주세요.`);
             localStorage.removeItem('gemini_api_key');
         }} finally {{
             btnEl.disabled = false;
