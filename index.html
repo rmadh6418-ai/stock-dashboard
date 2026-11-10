@@ -117,7 +117,7 @@
         <h1>📊 실시간 국내 증시 대시보드</h1>
         <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
             <span class="live-dot"></span>
-            <span id="sync-time-text">기준 시각: 2026-11-10 20:02:53 (실시간 동기화 중...)</span>
+            <span id="sync-time-text">기준 시각: 2026-11-10 20:32:43 (실시간 동기화 중...)</span>
         </div>
     </header>
 
@@ -142,14 +142,14 @@
         
         <div class="card" data-index-target="FX_USDKRW">
             <div class="card-title">원·달러 환율</div>
-            <div class="card-value" id="val-FX_USDKRW">1,337.92원</div>
-            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.18% (-2.36원)</div>
+            <div class="card-value" id="val-FX_USDKRW">1,338.88원</div>
+            <div class="badge bg-down-light text-down" id="badge-FX_USDKRW">▼ -0.10% (-1.40원)</div>
         </div>
         
         <div class="card" data-index-target="JPYKRW">
             <div class="card-title">엔·원 환율 (100엔)</div>
-            <div class="card-value" id="val-JPYKRW">844.40원</div>
-            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.27% (-2.30원)</div>
+            <div class="card-value" id="val-JPYKRW">844.10원</div>
+            <div class="badge bg-down-light text-down" id="badge-JPYKRW">▼ -0.31% (-2.60원)</div>
         </div>
         
         <div class="card" data-index-target="US10Y">
@@ -166,29 +166,29 @@
         
         <div class="card" data-index-target="GOLD_DON">
             <div class="card-title">금시세 (1돈)</div>
-            <div class="card-value" id="val-GOLD_DON">658,583원</div>
-            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -0.95% (-6,284원)</div>
+            <div class="card-value" id="val-GOLD_DON">659,201원</div>
+            <div class="badge bg-down-light text-down" id="badge-GOLD_DON">▼ -0.85% (-5,666원)</div>
         </div>
         
         <div class="card" data-index-target="SILVER_DON">
             <div class="card-title">은시세 (1돈)</div>
-            <div class="card-value" id="val-SILVER_DON">8,447원</div>
-            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.80% (-68원)</div>
+            <div class="card-value" id="val-SILVER_DON">8,461원</div>
+            <div class="badge bg-down-light text-down" id="badge-SILVER_DON">▼ -0.63% (-54원)</div>
         </div>
         
         <div class="card" data-index-target="OIL">
             <div class="card-title">국제유가 (WTI)</div>
-            <div class="card-value" id="val-OIL">$85.39</div>
-            <div class="badge bg-down-light text-down" id="badge-OIL">▼ -1.68% (-1.46)</div>
+            <div class="card-value" id="val-OIL">$85.90</div>
+            <div class="badge bg-down-light text-down" id="badge-OIL">▼ -1.09% (-0.95)</div>
         </div>
         </div>
 
     <div class="market-ai-box">
         <div class="market-ai-header">
             <span>🤖 주식시장 전체 AI 시황 분석</span>
-            <span class="ai-time-badge" id="ai-update-time">20:02 마감 종합 기준 (30분 주기 갱신)</span>
+            <span class="ai-time-badge" id="ai-update-time">20:32 마감 종합 기준 (30분 주기 갱신)</span>
         </div>
-        <div class="market-ai-content" id="ai-summary-text">오늘 국내 증시는 코스피가 5239.13으로 4.39퍼센트 급등하고 코스닥 역시</div>
+        <div class="market-ai-content" id="ai-summary-text">오늘 한국 주식시장은 코스피 지수가 5,239.13으로 전일 대비 220.28포인트 급등한 4.39퍼센트의 강력한 상승률을 기록했고 코스닥 지수 역시 667.61로 28.64포인트 오르며 4.48퍼센트 동반 폭등세를 연출하며 정규장을 화려하게 마감했습니다. 코스피 시장에서는 건설과 시공, 원전과 전력인프라, 인터넷과 게임과 플랫폼 섹터가 매수세를 강하게 주도한 반면 화장품과 의류, 손해보험과 생명, 통신과 네트워크 섹터는 차익실현 매물에 부딪히며 약세를 보</div>
     </div>
 
     <!-- 숨겨진 DART 공시 및 캘린더 데이터 (AI 컨텍스트용) -->
@@ -773,7 +773,7 @@
             if (updatedCount > 0) {
                 syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss} (클릭 또는 새로고침 시 즉시 갱신)`;
             } else {
-                syncText.innerText = `기준 시각: 2026-11-10 20:02:53 (네트워크 재연결 대기 중)`;
+                syncText.innerText = `기준 시각: 2026-11-10 20:32:43 (네트워크 재연결 대기 중)`;
             }
         }
     }
