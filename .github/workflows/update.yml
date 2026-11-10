@@ -49,6 +49,7 @@ jobs:
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
           DASHBOARD_PW: ${{ secrets.DASHBOARD_PW }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python build_page.py
 
       - name: Update Kakao Secret (If Renewed)
