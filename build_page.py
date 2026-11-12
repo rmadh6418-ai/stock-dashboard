@@ -946,7 +946,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 반도체 관련 뉴스 요약해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 반도체 관련 뉴스 요약해줘", "현재 거시경제 흐름상 리스크는 뭐야?"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1043,16 +1043,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
 
-            const systemText = `당신은 AI 주식 비서입니다. 주식과 경제 상황에 대해 전문적이고 친절한 한국어로 답변하세요. 마크다운을 적절히 써서 가독성을 높이세요.\\n\\n` + 
-                               `[실시간 주요 지수 및 거시경제 지표]\\n${{indicesData}}\\n` +
-                               `[오늘자 DART 주요 실시간 공시 정보]\\n${{dartData}}\\n\\n` +
-                               `[실시간 주요 경제/종목 속보 뉴스]\\n${{newsData}}\\n\\n` +
-                               `[경제 지표 캘린더 데이터]\\n${{calendarData}}\\n\\n` +
-                               `사용자가 공시, 뉴스, 경제 지표, 시장 상황 등을 물어보면 위 수집된 데이터 목록을 바탕으로 정확하고 상세하게 답변해주세요.`;
+            // 🌟 챗봇 대화 범위를 확장하고 할루시네이션(거짓 정보)을 차단하는 강력한 프롬프트 적용
+            const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
+                               `제공되는 [실시간 컨텍스트 데이터]를 최우선으로 반영하되, 당신이 학습한 방대한 경제, 금융, 기업, 정부 정책, 글로벌 리스크에 대한 전문 지식을 적극 활용하여 답변하세요.\\n\\n` +
+                               `[실시간 컨텍스트 데이터]\\n` +
+                               `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
+                               `- DART 주요 공시:\\n${{dartData}}\\n` +
+                               `- 주요 속보 뉴스:\\n${{newsData}}\\n` +
+                               `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
+                               `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
+                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요.\\n` +
+                               `2. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 구체적인 실적/매출 액수는 절대 지어내지 마세요. 모르는 내용은 "정확한 수치는 확인이 필요합니다" 또는 "일반적인 흐름상..."으로 명확히 선을 그어 팩트와 전망을 구분하세요.\\n` +
+                               `3. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하며, 무조건적인 긍정이나 직접적인 매수/매도 추천은 피하고 객관적인 입장을 유지하세요.\\n` +
+                               `4. 가독성: 마크다운(굵은 글씨, 목록 기호 등)을 적극 사용하여 가독성 높게 답변하세요.`;
 
+            // 🌟 API 호출 파라미터 조정 (창의성을 살짝 낮추어 거짓말 방지)
             const payload = {{
                 contents: chatHistory,
-                systemInstruction: {{ parts: [{{ text: systemText }}] }}
+                systemInstruction: {{ parts: [{{ text: systemText }}] }},
+                generationConfig: {{
+                    temperature: 0.35, // 환각 방지를 위해 온도(창의성) 조절
+                    topK: 20,
+                    topP: 0.8
+                }}
             }};
 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${{apiKey}}`, {{
