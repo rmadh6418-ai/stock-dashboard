@@ -746,6 +746,8 @@ def calculate_sectors(sector_dict, stock_data):
     if not sector_stats:
         return [], []
 
+    # ... (calculate_sectors 함수 상단부는 기존과 완전히 동일) ...
+
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
@@ -755,7 +757,8 @@ def calculate_sectors(sector_dict, stock_data):
     # -----------------------------------------------------
     def _fetch_stock_news(sector_ref, stock):
         """병렬로 실행될 뉴스 수집 작업 함수"""
-        news = fetch_real_news(stock["name"], stock.get("code", ""), limit=1)
+        # 💡 limit=1 을 limit=3 으로 변경하여 종목당 최대 3개의 뉴스를 가져옵니다.
+        news = fetch_real_news(stock["name"], stock.get("code", ""), limit=3)
         return sector_ref, news
 
     # max_workers=10으로 최대 10개의 스레드를 동시에 돌려 속도 극대화
