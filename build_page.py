@@ -59,7 +59,7 @@ KOSDAQ150_SECTORS = {
     "피팅·장비기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅", "동국S&C", "씨에스베어링", "유니슨", "삼강엠앤티"]
 }
 
-# ----------------- 스마트 스파크 차트 & 추세 생성 함수 -----------------
+# ----------------- 스마트 스파크 차트 & 추세 생성 함수 (레이아웃 최적화) -----------------
 def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     if not data or len(data) < 20:
         return "", ""
@@ -79,7 +79,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     else:
         trend = "횡보/혼조 ↔️"
 
-    # SVG 차트 그리기 최적화 계산
+    # SVG 차트 그리기 최적화 계산 (차트를 상하단 30% 영역으로 압축하여 텍스트 공간 확보)
     min_val = min(valid_data)
     max_val = max(valid_data)
     val_range = max_val - min_val if max_val != min_val else 1
@@ -88,11 +88,10 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     pts = []
     for i, val in enumerate(valid_data):
         x = (i / (n - 1)) * 100
-        # 여백을 주어 텍스트가 밖으로 나가지 않도록 (30% ~ 70% 구간에만 차트를 그림)
-        y = 70 - ((val - min_val) / val_range) * 40 
+        y = 70 - ((val - min_val) / val_range) * 40  # Y를 30(상단) ~ 70(하단) 범위로 제한
         pts.append(f"{x:.1f},{y:.1f}")
     
-    # 최고점/최저점 마커 좌표
+    # 최고점/최저점 마커 좌표 계산
     min_idx = valid_data.index(min_val)
     max_idx = valid_data.index(max_val)
     
@@ -107,7 +106,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     min_str = fmt.format(min_val)
     max_str = fmt.format(max_val)
 
-    # 등락에 따른 그라데이션 컬러 (한국식: 상승=Red, 하락=Blue)
     if diff > 0:
         stop1, stop2 = "#fca5a5", "#dc2626"
     elif diff < 0:
@@ -118,7 +116,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     grad_id = f"grad_{code_key}"
 
     svg_html = f'''
-    <div style="width: 100%; height: 75px; position: relative; margin-top: 10px;">
+    <div style="width: 100%; height: 75px; position: relative; margin-top: 5px;">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 100%; position: absolute; top:0; left:0; overflow: visible;">
             <defs>
                 <linearGradient id="{grad_id}" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -128,18 +126,17 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             </defs>
             <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{" ".join(pts)}"></polyline>
             
-            <!-- 라인 위 포인트 닷 -->
             <circle cx="{min_x}%" cy="70%" r="3" fill="#2563eb" stroke="#fff" stroke-width="1.5" />
             <circle cx="{max_x}%" cy="30%" r="3" fill="#dc2626" stroke="#fff" stroke-width="1.5" />
         </svg>
         
-        <!-- 최저점 마커 (차트 하단 박스 안에 갇히도록 위치 조정) -->
-        <div style="position: absolute; left: {label_min_x}%; top: 85%; transform: translateX(-50%); font-size: 0.72rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.9); padding: 2px 5px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 10;">
+        <!-- 최저점 마커 (차트 하단 안전 영역에 배치) -->
+        <div style="position: absolute; left: {label_min_x}%; top: 75%; transform: translateX(-50%); font-size: 0.68rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.95); padding: 2px 4px; border-radius: 4px; z-index: 10; line-height: 1;">
             최저 {min_str}
         </div>
 
-        <!-- 최고점 마커 (차트 상단 박스 안에 갇히도록 위치 조정) -->
-        <div style="position: absolute; left: {label_max_x}%; top: 15%; transform: translateX(-50%) translateY(-100%); font-size: 0.72rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.9); padding: 2px 5px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 10;">
+        <!-- 최고점 마커 (차트 상단 안전 영역에 배치) -->
+        <div style="position: absolute; left: {label_max_x}%; top: 25%; transform: translateX(-50%) translateY(-100%); font-size: 0.68rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.95); padding: 2px 4px; border-radius: 4px; z-index: 10; line-height: 1;">
             최고 {max_str}
         </div>
     </div>
@@ -322,72 +319,62 @@ def get_news_score(title, stock_name):
     if has_biz: score += 4
     return score
 
+# --- 뉴스 본문 직결 및 AI용 원문 추출 함수 ---
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
-    try:
-        search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
-        encoded_query = urllib.parse.quote(search_query)
-        url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        res = requests.get(url, headers=headers, timeout=4)
-        soup = BeautifulSoup(res.text, "html.parser")
-        
-        tit_tags = soup.find_all("a", class_="news_tit")
-        dsc_tags = soup.find_all("div", class_="news_dsc") # 뉴스 스니펫(요약) 영역
-        
-        for i, tit_tag in enumerate(tit_tags):
-            raw_title = tit_tag.text.strip()
-            link = tit_tag.get("href", "")
-            press = "관련뉴스"
-            parent = tit_tag.find_parent("div", class_="news_wrap")
-            if parent:
-                press_tag = parent.find("a", class_="info press")
-                if press_tag: press = press_tag.text.replace("언론사 선정", "").strip()
-            
-            score = get_news_score(raw_title, keyword)
-            
-            # 본문 요약 데이터 추출 로직
-            content_preview = ""
-            if i < len(dsc_tags):
-                content_preview = dsc_tags[i].text.strip()
-            
-            if score > 0:
-                try:
-                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도 (타임아웃 1.5초)
-                    article_res = requests.get(link, headers=headers, timeout=1.5)
-                    if article_res.status_code == 200:
-                        article_soup = BeautifulSoup(article_res.text, "html.parser")
-                        paragraphs = article_soup.find_all('p')
-                        article_text = " ".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
-                        if article_text:
-                            content_preview = article_text[:500]
-                except: pass
-                
-                content_preview = content_preview.replace('"', "'").replace('\n', ' ')
-                candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
-    except: pass
-
-    if len(candidates) < limit and stock_code:
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    
+    # 1. 네이버 금융 종목 뉴스 API 우선 탐색 (가장 정확한 기사 원문 제공)
+    if stock_code:
         try:
             code = str(stock_code).zfill(6)
-            d_url = f"https://finance.daum.net/api/quotes/A{code}/news?page=1&perPage=10"
-            d_headers = {"User-Agent": "Mozilla/5.0", "Referer": f"https://finance.daum.net/quotes/A{code}", "Accept": "application/json"}
-            d_res = requests.get(d_url, headers=d_headers, timeout=4)
-            if d_res.status_code == 200:
-                for item in d_res.json().get("data", []):
-                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('"', '"').replace('&', '&')
-                    link = f"https://finance.daum.net/news/{item.get('newsId')}"
-                    press = item.get("cpKorName", "증권뉴스")
-                    score = get_news_score(raw_title, keyword)
+            url = f"https://m.stock.naver.com/api/news/stock/{code}?pageSize=5&page=1"
+            res = requests.get(url, headers=headers, timeout=3)
+            if res.status_code == 200:
+                data = res.json()
+                for item in data:
+                    raw_title = item.get("title", "").replace(""", "'").replace("<b>", "").replace("</b>", "")
+                    oid = item.get("officeId")
+                    aid = item.get("articleId")
+                    press = item.get("officeName", "네이버뉴스")
+                    content_preview = item.get("body", "")[:500].replace('"', "'").replace('\n', ' ')
                     
-                    content_preview = item.get("summary", "").replace('"', "'").replace('\n', ' ')
-                    
-                    if score > 0: 
+                    if oid and aid:
+                        link = f"https://n.news.naver.com/article/{oid}/{aid}"
+                        score = get_news_score(raw_title, keyword) + 2  # 종목 API 매칭이므로 가산점
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
         except: pass
 
-    # ※ 주의: 챗봇이 목록만 읽는 문제를 해결하기 위해 '뉴스 리스트 및 공시보기' 가짜(fallback) 링크를 완전히 제거했습니다.
-    # 오직 기사 본문이 있는 진짜 뉴스만 리스트에 추가됩니다.
+    # 2. 일반 네이버 검색 (보조 수단)
+    if len(candidates) < limit:
+        try:
+            search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
+            encoded_query = urllib.parse.quote(search_query)
+            url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
+            res = requests.get(url, headers=headers, timeout=4)
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            tit_tags = soup.find_all("a", class_="news_tit")
+            dsc_tags = soup.find_all("div", class_="news_dsc")
+            
+            for i, tit_tag in enumerate(tit_tags):
+                raw_title = tit_tag.text.strip()
+                link = tit_tag.get("href", "")
+                press = "관련뉴스"
+                parent = tit_tag.find_parent("div", class_="news_wrap")
+                if parent:
+                    press_tag = parent.find("a", class_="info press")
+                    if press_tag: press = press_tag.text.replace("언론사 선정", "").strip()
+                
+                score = get_news_score(raw_title, keyword)
+                content_preview = ""
+                if i < len(dsc_tags):
+                    content_preview = dsc_tags[i].text.strip()
+                
+                if score > 0:
+                    content_preview = content_preview.replace('"', "'").replace('\n', ' ')
+                    candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
+        except: pass
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
@@ -899,16 +886,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
         
-        # 상승추세/하락추세 배지 HTML 조립
-        trend_html = f'<div><span class="trend-badge">{idx["trend"]}</span></div>' if idx.get('trend') else ''
+        # 상승추세/하락추세 배지를 등락률 뱃지와 나란히 배치하기 위한 HTML 구조
+        trend_html = f'<div class="trend-badge">{idx["trend"]}</div>' if idx.get('trend') else ''
 
-        # 새 창으로 트레이딩뷰 차트가 바로 열리도록 onclick 연결
         index_cards += f"""
         <div class="card clickable" data-index-target="{idx['code_key']}" onclick="openTradingView('{tv_symbol}')" title="클릭하여 실시간 차트 보기">
             <div class="card-title">{idx['name']}</div>
             <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
-            <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
-            {trend_html}
+            <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom:4px;">
+                <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
+                {trend_html}
+            </div>
             {sparkline_svg}
         </div>
         """
@@ -922,7 +910,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             all_codes_str = ",".join(s.get("all_codes", []))
             
-            # 종목 클릭 시 트레이딩뷰 새 창으로 열리도록 연결
             stock_tags = "".join([
                 f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\')" title="클릭하여 실시간 차트 보기">'
                 f'<span class="stock-name">{st["name"]}</span> '
@@ -932,7 +919,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            # 뉴스 본문 요약 데이터(data-content)를 HTML에 삽입하여 AI가 깊이 있게 읽을 수 있도록 함
             news_tags = "".join([f'<div class="sector-news" data-content="{n.get("content", "")}">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
             html += f"""
@@ -985,17 +971,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
-        /* 클릭 가능한 카드 디자인 */
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
 
         .card-title {{ font-size: 0.80rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
         .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; align-self: center; }}
+        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
         
-        /* 추세 배지 스타일 */
-        .trend-badge {{ font-size: 0.85rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; margin-top: 8px; color: #475569; }}
+        /* 📈 추세 배지 스타일 수정 */
+        .trend-badge {{ font-size: 0.75rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; color: #475569; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }}
