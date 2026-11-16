@@ -67,12 +67,10 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     valid_data = [float(d) for d in data if pd.notnull(d)]
     if len(valid_data) < 20: return "", ""
 
-    # 추세 계산 (최근가, 5일 이평선, 20일 이평선)
     current = valid_data[-1]
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
     
-    # OS 이모지 강제 색상을 피하기 위해 텍스트 기호(▲, ▼, ━)를 사용하여 CSS 컬러가 적용되도록 수정
     if current >= ma5 and ma5 >= ma20:
         trend = "상승추세 ▲"
         trend_color = "#e11d48"
@@ -83,7 +81,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
         trend = "횡보/혼조 ━"
         trend_color = "#64748b"
 
-    # SVG 차트 그리기 최적화 계산
     min_val = min(valid_data)
     max_val = max(valid_data)
     val_range = max_val - min_val if max_val != min_val else 1
@@ -95,7 +92,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
         y = 90 - ((val - min_val) / val_range) * 80 
         pts.append(f"{x:.1f},{y:.1f}")
     
-    # 최고점/최저점 마커 좌표
     min_idx = valid_data.index(min_val)
     max_idx = valid_data.index(max_val)
     
@@ -108,11 +104,9 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     min_str = fmt.format(min_val)
     max_str = fmt.format(max_val)
 
-    # 위치별 라벨 겹침 방지 (화면 바깥으로 나가는 것 방지)
     min_x_translate = "0%" if min_x < 20 else ("-100%" if min_x > 80 else "-50%")
     max_x_translate = "0%" if max_x < 20 else ("-100%" if max_x > 80 else "-50%")
 
-    # 등락에 따른 그라데이션 컬러 (한국식: 상승=Red, 하락=Blue)
     if diff > 0:
         stop1, stop2 = "#fca5a5", "#dc2626"
     elif diff < 0:
@@ -154,7 +148,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
-# ----------------------------------------------------------------------
 
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
@@ -281,7 +274,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     [작성 지침]
     1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 것.
     2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
-    3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
+    3. 전체 분량은 15문장 분량으로 매끄러 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
     5. [핵심 주의사항] 제공된 핵심 데이터(수치, 섹터명 등)를 절대 변경하거나 지어내지 마세요. 불확실한 종목이나 실적 수치 등 환각이 발생하지 않도록 철저히 팩트 기반으로만 분석하세요.
     """
