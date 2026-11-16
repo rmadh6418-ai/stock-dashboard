@@ -3,6 +3,7 @@ import os
 import re
 import time
 import urllib.parse
+import hashlib
 import concurrent.futures 
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
@@ -842,9 +843,16 @@ def send_kakao_alert(indices, k200_top, k150_top):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-# 💡 템플릿 충돌(f-string 에러)과 로컬 보안 차단(Crypto API 먹통)을 원천 차단한 HTML 렌더러
+# 💡 문자열 치환(.replace) 방식을 이용해 파이썬 템플릿 에러 원천 차단
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+
+    raw_password = os.environ.get("DASHBOARD_PW")
+    if not raw_password:
+        raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
+    
+    # 깃허브 시크릿 비밀번호를 기반으로 안전한 SHA-256 해시 생성
+    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
     index_cards = ""
     for idx in indices:
@@ -911,7 +919,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
-    # f-string 대신 문자열로 정의하여 JS의 { } 중괄호 오류를 완벽 차단
+    # JS 코드의 중괄호({})로 인한 Python f-string 에러를 막기 위해 일반 문자열 선언
     template = """<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -988,6 +996,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .bg-down-light { background-color: #dbeafe !important; }
         .bg-gray-100 { background-color: #f1f5f9 !important; }
 
+        /* --- 로그인 버튼 애니메이션 효과 추가 --- */
+        #login-btn { transition: all 0.15s ease; cursor: pointer; }
+        #login-btn:active { transform: scale(0.95); background-color: #1d4ed8; }
+
         /* --- AI Chat UI 스타일 --- */
         #chat-widget { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
         #chat-button { width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
@@ -1013,15 +1025,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </style>
 </head>
 <body>
-<!-- 🔐 오류 없는 로컬 잠금 화면 (대표님의 AI퀀트 대시보드 로직 100% 반영) -->
-<div id="lockScreen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #0f172a; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+<!-- 🔐 오류 없는 견고한 암호 화면 (아이디 및 로직 완전 일치) -->
+<div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #0f172a; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
     <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); text-align: center; max-width: 350px; width: 90%;">
         <div style="font-size: 3.5rem; margin-bottom: 15px;">🔐</div>
         <h2 style="margin-top: 0; margin-bottom: 20px; color: #1e293b; font-weight: 800;">시스템 접속 제한</h2>
         <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 25px; line-height: 1.5;">인가된 사용자만 접근할 수 있습니다.<br>비밀번호를 입력하세요.</p>
-        <input type="password" id="lockPin" onkeypress="if(event.key==='Enter') checkPassword()" placeholder="비밀번호 입력" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.2rem; font-weight: bold; letter-spacing: 2px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;" autocomplete="off">
-        <button onclick="checkPassword()" style="width: 100%; padding: 14px; font-size: 1.1rem; background-color: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: background 0.2s;">접속하기</button>
-        <p id="lockError" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 일치하지 않습니다.</p>
+        
+        <input type="password" id="pw-input" onkeypress="if(event.key==='Enter') checkPassword()" placeholder="비밀번호 입력" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.2rem; font-weight: bold; letter-spacing: 2px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;" autocomplete="off">
+        <button id="login-btn" onclick="checkPassword()" style="width: 100%; padding: 14px; font-size: 1.1rem; background-color: #2563eb; color: white; border: none; border-radius: 8px; font-weight: bold;">접속하기</button>
+        
+        <p id="pw-error" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 일치하지 않습니다.</p>
     </div>
 </div>
 
@@ -1093,38 +1107,50 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
+    // 파이썬에서 제공하는 깃허브 DASHBOARD_PW 해시값
+    const TARGET_HASH = "__PW_HASH__";
+    
     function openTradingView(symbol) {
         if(!symbol) return;
         const tvUrl = `https://kr.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
         window.open(tvUrl, '_blank');
     }
 
-    // 💡 오류 없는 대표님의 XOR 잠금 로직 그대로 이식
-    function checkPassword() {
-        const pin = document.getElementById('lockPin').value.trim();
-        const errorMsg = document.getElementById('lockError');
+    // 💡 완벽하게 매칭 및 예외처리된 SHA-256 잠금 로직
+    async function checkPassword() {
+        const inputEl = document.getElementById('pw-input');
+        const errorMsg = document.getElementById('pw-error');
+        const input = inputEl.value.trim();
+        
+        if (!input) return;
 
-        const secretHash = [73, 64, 89, 91, 70, 75, 68, 89, 27, 11, 106];
-        const xorKey = 42;
-
-        let isValid = (pin.length === secretHash.length);
-
-        if (isValid) {
-            for (let i = 0; i < pin.length; i++) {
-                if ((pin.charCodeAt(i) ^ xorKey) !== secretHash[i]) {
-                    isValid = false;
-                    break;
-                }
+        try {
+            // 로컬(file://) 등 보안 환경이 제한된 경우 친절한 알림창 발생
+            if (!crypto || !crypto.subtle) {
+                alert("로컬 환경(file://)에서는 보안 정책상 로그인이 제한됩니다. 깃허브 페이지 주소(https://)로 접속해주세요.");
+                return;
             }
-        }
 
-        if (isValid) { 
-            sessionStorage.setItem('isUnlocked', 'true');
-            document.getElementById('lockScreen').style.display = 'none';
-        } else {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(input);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            if (hashHex === TARGET_HASH) {
+                document.getElementById('lock-screen').style.display = 'none';
+                sessionStorage.setItem('isUnlocked', 'true');
+            } else {
+                errorMsg.innerText = "비밀번호가 일치하지 않습니다.";
+                errorMsg.style.display = 'block';
+                inputEl.value = '';
+                inputEl.focus();
+            }
+        } catch (e) {
+            console.error("Hash error:", e);
+            errorMsg.innerText = "보안 모듈 오류가 발생했습니다. (HTTPS 접속 필요)";
             errorMsg.style.display = 'block';
-            document.getElementById('lockPin').value = '';
-            document.getElementById('lockPin').focus();
         }
     }
 
@@ -1560,7 +1586,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
     window.onload = function() {
         if (sessionStorage.getItem('isUnlocked') === 'true') {
-            document.getElementById('lockScreen').style.display = 'none';
+            document.getElementById('lock-screen').style.display = 'none';
         }
         
         syncLiveMarketData();
@@ -1580,7 +1606,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </body>
 </html>"""
 
-    # 변수 치환(문자열 대입 방식)
+    # 생성된 문자열에 파이썬 변수 매핑 (.replace 활용)
+    template = template.replace("__PW_HASH__", pw_hash)
     template = template.replace("__KST_NOW__", kst_now)
     template = template.replace("__INDEX_CARDS__", index_cards)
     template = template.replace("__AI_UPDATED_TIME__", ai_updated_time)
