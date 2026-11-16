@@ -1002,7 +1002,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .stock-pill:active {{ background: #e2e8f0; transform: scale(0.96); }}
         .stock-pill:hover {{ border-color: #94a3b8; }}
 
-        /* 💡 뉴스 그룹핑 및 토글 스타일 */
         .news-group {{ margin-bottom: 10px; background: #f8fafc; border-radius: 8px; padding: 10px; border: 1px solid #e2e8f0; }}
         .news-group-title {{ font-size: 0.85rem; font-weight: 800; color: #334155; margin-bottom: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }}
         .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }}
@@ -1020,7 +1019,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .bg-down-light {{ background-color: #dbeafe !important; }}
         .bg-gray-100 {{ background-color: #f1f5f9 !important; }}
 
-        /* --- AI Chat UI 스타일 --- */
         #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
         #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
         #chat-button:hover {{ transform: scale(1.05); }}
@@ -1096,12 +1094,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <a href="https://rmadh6418-ai.github.io/dart-dashboard/" target="_blank" class="btn-dart-link">새 창으로 보기 ↗</a>
         </div>
         <div style="padding: 18px;">
-            <!-- 사용자의 DART 대시보드를 직접 띄움 -->
             <iframe src="https://rmadh6418-ai.github.io/dart-dashboard/" width="100%" height="450px" style="border: 1px solid #cbd5e1; border-radius: 8px; display: block;" title="DART 실시간 대시보드"></iframe>
         </div>
     </div>
     
-    <!-- 챗봇이 읽어들이는 데이터용 숨김 div -->
     <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
     <div id="calendar-data" style="display: none;"></div>
 
@@ -1219,21 +1215,40 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...', loadingId);
 
         try {{
-            // 공시 대시보드의 텍스트를 실시간으로 직접 긁어오거나, 실패시 숨겨진 div에서 불러옴
             let liveDartData = "실시간 공시 데이터를 찾을 수 없습니다.";
+            
+            // 💡 1순위: 화면에 렌더링된 iframe 내부의 데이터를 직접 복사해 스크래핑 (SPA 렌더링 문제 완벽 해결)
             try {{
-                const dartRes = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://rmadh6418-ai.github.io/dart-dashboard/?_=' + Date.now()));
-                if (dartRes.ok) {{
-                    const dartJson = await dartRes.json();
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(dartJson.contents, "text/html");
-                    doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
-                    liveDartData = doc.body.innerText.replace(/\\s+/g, ' ').substring(0, 3500);
-                    if(liveDartData.length < 20) liveDartData = "수집된 공시 데이터 내용이 너무 짧거나 없습니다.";
+                const dartIframe = document.querySelector('iframe[title="DART 실시간 대시보드"]');
+                if (dartIframe && dartIframe.contentWindow && dartIframe.contentWindow.document) {{
+                    const iframeDoc = dartIframe.contentWindow.document;
+                    const cloneBody = iframeDoc.body.cloneNode(true);
+                    cloneBody.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
+                    const extractedText = cloneBody.innerText.replace(/\\s+/g, ' ').trim();
+                    
+                    if (extractedText.length > 20) {{
+                        liveDartData = extractedText.substring(0, 3500);
+                    }}
                 }}
-            }} catch(e) {{
-                console.error("DART 실시간 스크래핑 실패:", e);
-                liveDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
+            }} catch (e) {{
+                console.warn("iframe DOM 직접 접근 실패 (CORS 등), 우회 스크래핑 시도:", e);
+            }}
+
+            // 2순위: 접근 실패 시 기존 Proxy 방식으로 폴백
+            if (liveDartData.includes("찾을 수 없") || liveDartData.length < 20) {{
+                try {{
+                    const dartRes = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://rmadh6418-ai.github.io/dart-dashboard/?_=' + Date.now()));
+                    if (dartRes.ok) {{
+                        const dartJson = await dartRes.json();
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(dartJson.contents, "text/html");
+                        doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
+                        const proxyText = doc.body.innerText.replace(/\\s+/g, ' ').trim();
+                        if(proxyText.length > 20) liveDartData = proxyText.substring(0, 3500);
+                    }}
+                }} catch(e) {{
+                    liveDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
+                }}
             }}
 
             let indicesData = "";
