@@ -7,6 +7,8 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
+import pandas as pd
+import yfinance as yf  # 야후 파이낸스 API (데이터 차단 우회 및 스파크 차트용)
 
 def get_headers(is_daum=False):
     headers = {
@@ -60,7 +62,7 @@ KOSDAQ150_SECTORS = {
 # ----------------- 1년 스파크 차트 (SVG) 생성 함수 -----------------
 def create_sparkline_svg(data):
     if not data or len(data) < 2: return ""
-    valid_data = [float(d) for d in data if d is not None]
+    valid_data = [float(d) for d in data if pd.notnull(d)]
     if len(valid_data) < 2: return ""
 
     min_val = min(valid_data)
@@ -93,18 +95,6 @@ def create_sparkline_svg(data):
     '''
     return svg
 # ----------------------------------------------------------------------
-
-# 야후 파이낸스를 이용해 안정적으로 1년치 차트를 가져오는 공통 헬퍼
-def get_yahoo_sparkline(symbol):
-    try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1y&interval=1d"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            closes = res.json()['chart']['result'][0]['indicators']['quote'][0]['close']
-            return create_sparkline_svg(closes)
-    except:
-        pass
-    return ""
 
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
@@ -339,205 +329,181 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
     return unique_news
 
-# --- 야후 파이낸스 데이터 안전 추출기 ---
+# --- 야후 파이낸스(yfinance)를 통한 거시경제 데이터 및 스파크차트 안전 추출기 ---
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "FX_IDC:USDKRW"}
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?range=1y&interval=1d"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            data = res.json()['chart']['result'][0]
-            meta = data['meta']
-            price = meta['regularMarketPrice']
-            prev = meta['previousClose']
+        hist = yf.Ticker("KRW=X").history(period="1y")
+        closes = hist['Close'].dropna()
+        if len(closes) >= 2:
+            price = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
             diff = price - prev
-            rate = (diff / prev) * 100 if prev else 0
-            
+            rate = (diff / prev) * 100 if prev != 0 else 0
             base.update({
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
-                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
+                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
+                "sparkline": create_sparkline_svg(closes.tolist())
             })
-            try:
-                closes = data['indicators']['quote'][0]['close']
-                base["sparkline"] = create_sparkline_svg(closes)
-            except: pass
     except: pass
     return base
 
 def get_us_10y_yield():
     base = {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "TVC:US10Y"}
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX?range=1y&interval=1d"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            data = res.json()['chart']['result'][0]
-            meta = data['meta']
-            price = meta['regularMarketPrice']
-            prev = meta['previousClose']
+        hist = yf.Ticker("^TNX").history(period="1y")
+        closes = hist['Close'].dropna()
+        if len(closes) >= 2:
+            price = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
             diff = price - prev
-            rate = (diff / prev) * 100 if prev else 0
-            
+            rate = (diff / prev) * 100 if prev != 0 else 0
             base.update({
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
-                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
+                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
+                "sparkline": create_sparkline_svg(closes.tolist())
             })
-            try:
-                closes = data['indicators']['quote'][0]['close']
-                base["sparkline"] = create_sparkline_svg(closes)
-            except: pass
     except: pass
     return base
 
 def get_us_30y_yield():
     base = {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "TVC:US30Y"}
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TYX?range=1y&interval=1d"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            data = res.json()['chart']['result'][0]
-            meta = data['meta']
-            price = meta['regularMarketPrice']
-            prev = meta['previousClose']
+        hist = yf.Ticker("^TYX").history(period="1y")
+        closes = hist['Close'].dropna()
+        if len(closes) >= 2:
+            price = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
             diff = price - prev
-            rate = (diff / prev) * 100 if prev else 0
-            
+            rate = (diff / prev) * 100 if prev != 0 else 0
             base.update({
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
-                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
+                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
+                "sparkline": create_sparkline_svg(closes.tolist())
             })
-            try:
-                closes = data['indicators']['quote'][0]['close']
-                base["sparkline"] = create_sparkline_svg(closes)
-            except: pass
     except: pass
     return base
 
 def get_gold_price():
     base = {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "COMEX:GC1!"}
     try:
-        url_gold = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1y&interval=1d"
-        res_gold = requests.get(url_gold, headers=get_headers(), timeout=5)
-        if res_gold.status_code == 200:
-            data_gold = res_gold.json()['chart']['result'][0]
-            meta_gold = data_gold['meta']
-            gold_price_usd = meta_gold['regularMarketPrice']
-            gold_prev_usd = meta_gold['previousClose']
+        hist_gold = yf.Ticker("GC=F").history(period="1y")
+        hist_krw = yf.Ticker("KRW=X").history(period="1y")
+        
+        gold_closes = hist_gold['Close'].dropna()
+        krw_closes = hist_krw['Close'].dropna()
+        
+        if len(gold_closes) >= 2 and len(krw_closes) >= 2:
+            gold_price = float(gold_closes.iloc[-1])
+            gold_prev = float(gold_closes.iloc[-2])
+            krw_price = float(krw_closes.iloc[-1])
+            krw_prev = float(krw_closes.iloc[-2])
 
-            url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
-            res_krw = requests.get(url_krw, headers=get_headers(), timeout=5).json()
-            krw_rate = res_krw['chart']['result'][0]['meta']['regularMarketPrice']
-            krw_prev = res_krw['chart']['result'][0]['meta']['previousClose']
-
-            price_krw_per_don = (gold_price_usd / 31.1034768) * 3.75 * krw_rate
-            prev_krw_per_don = (gold_prev_usd / 31.1034768) * 3.75 * krw_prev
+            price_krw_per_don = (gold_price / 31.1034768) * 3.75 * krw_price
+            prev_krw_per_don = (gold_prev / 31.1034768) * 3.75 * krw_prev
             diff = price_krw_per_don - prev_krw_per_don
-            rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don else 0
+            rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don != 0 else 0
 
             base.update({
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
-                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
+                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
+                "sparkline": create_sparkline_svg(gold_closes.tolist())
             })
-            try:
-                closes = data_gold['indicators']['quote'][0]['close']
-                base["sparkline"] = create_sparkline_svg(closes)
-            except: pass
     except: pass
     return base
 
 def get_silver_price():
     base = {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "COMEX:SI1!"}
     try:
-        url_silver = "https://query1.finance.yahoo.com/v8/finance/chart/SI=F?range=1y&interval=1d"
-        res_silver = requests.get(url_silver, headers=get_headers(), timeout=5)
-        if res_silver.status_code == 200:
-            data_silver = res_silver.json()['chart']['result'][0]
-            meta_silver = data_silver['meta']
-            silver_price_usd = meta_silver['regularMarketPrice']
-            silver_prev_usd = meta_silver['previousClose']
+        hist_silver = yf.Ticker("SI=F").history(period="1y")
+        hist_krw = yf.Ticker("KRW=X").history(period="1y")
+        
+        silver_closes = hist_silver['Close'].dropna()
+        krw_closes = hist_krw['Close'].dropna()
+        
+        if len(silver_closes) >= 2 and len(krw_closes) >= 2:
+            silver_price = float(silver_closes.iloc[-1])
+            silver_prev = float(silver_closes.iloc[-2])
+            krw_price = float(krw_closes.iloc[-1])
+            krw_prev = float(krw_closes.iloc[-2])
 
-            url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
-            res_krw = requests.get(url_krw, headers=get_headers(), timeout=5).json()
-            krw_rate = res_krw['chart']['result'][0]['meta']['regularMarketPrice']
-            krw_prev = res_krw['chart']['result'][0]['meta']['previousClose']
-
-            price_krw_per_don = (silver_price_usd / 31.1034768) * 3.75 * krw_rate
-            prev_krw_per_don = (silver_prev_usd / 31.1034768) * 3.75 * krw_prev
+            price_krw_per_don = (silver_price / 31.1034768) * 3.75 * krw_price
+            prev_krw_per_don = (silver_prev / 31.1034768) * 3.75 * krw_prev
             diff = price_krw_per_don - prev_krw_per_don
-            rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don else 0
+            rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don != 0 else 0
 
             base.update({
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
-                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
+                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
+                "sparkline": create_sparkline_svg(silver_closes.tolist())
             })
-            try:
-                closes = data_silver['indicators']['quote'][0]['close']
-                base["sparkline"] = create_sparkline_svg(closes)
-            except: pass
     except: pass
     return base
 
 def get_oil_price():
     base = {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "NYMEX:CL1!"}
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F?range=1y&interval=1d"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            data = res.json()['chart']['result'][0]
-            meta = data['meta']
-            price = meta['regularMarketPrice']
-            prev = meta['previousClose']
+        hist = yf.Ticker("CL=F").history(period="1y")
+        closes = hist['Close'].dropna()
+        if len(closes) >= 2:
+            price = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
             diff = price - prev
-            rate = (diff / prev) * 100 if prev else 0
-            
+            rate = (diff / prev) * 100 if prev != 0 else 0
             base.update({
                 "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
-                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
+                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
+                "sparkline": create_sparkline_svg(closes.tolist())
             })
-            try:
-                closes = data['indicators']['quote'][0]['close']
-                base["sparkline"] = create_sparkline_svg(closes)
-            except: pass
     except: pass
     return base
 
 def get_jpy_krw_rate():
     base = {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "FX_IDC:JPYKRW"}
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/JPYKRW=X?range=1y&interval=1d"
-        res = requests.get(url, headers=get_headers(), timeout=5)
-        if res.status_code == 200:
-            data = res.json()['chart']['result'][0]
-            meta = data['meta']
-            price = meta['regularMarketPrice'] * 100
-            prev = meta['previousClose'] * 100
+        hist = yf.Ticker("JPYKRW=X").history(period="1y")
+        closes = hist['Close'].dropna() * 100
+        if len(closes) >= 2:
+            price = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
             diff = price - prev
-            rate = (diff / prev) * 100 if prev else 0
-            
+            rate = (diff / prev) * 100 if prev != 0 else 0
             base.update({
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
-                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
+                "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
+                "sparkline": create_sparkline_svg(closes.tolist())
             })
-            try:
-                closes = data['indicators']['quote'][0]['close']
-                valid_closes = [c * 100 for c in closes if c is not None]
-                base["sparkline"] = create_sparkline_svg(valid_closes)
-            except: pass
     except: pass
     return base
 
 def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
     base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": tv_symbol}
     
-    # 야후 파이낸스에서 지수용 안전한 스파크 차트 확보
-    yh_symbol = ""
-    if mobile_code == "KOSPI": yh_symbol = "^KS11"
-    elif mobile_code == "KOSDAQ": yh_symbol = "^KQ11"
-    elif mobile_code == "KPI200": yh_symbol = "^KS200"
-    
-    if yh_symbol:
-        base["sparkline"] = get_yahoo_sparkline(yh_symbol)
+    # 1. 네이버에서 1년치 역사적 데이터 가져와 스파크 차트 생성 시도
+    try:
+        h_url = f"https://m.stock.naver.com/api/index/{mobile_code}/price?pageSize=250&page=1"
+        h_res = requests.get(h_url, headers=get_headers(), timeout=3)
+        if h_res.status_code == 200:
+            h_data = h_res.json()
+            prices = [float(item['closePrice'].replace(',', '')) for item in h_data if 'closePrice' in item]
+            prices.reverse()  
+            base["sparkline"] = create_sparkline_svg(prices)
+    except: pass
 
-    # 네이버에서 실시간 현재가 확보
+    # 2. 실패 시 야후 파이낸스(yfinance) 우회 데이터 사용
+    if not base["sparkline"]:
+        yh_symbol = ""
+        if mobile_code == "KOSPI": yh_symbol = "^KS11"
+        elif mobile_code == "KOSDAQ": yh_symbol = "^KQ11"
+        elif mobile_code == "KPI200": yh_symbol = "^KS200"
+        if yh_symbol:
+            try:
+                hist = yf.Ticker(yh_symbol).history(period="1y")
+                closes = hist['Close'].dropna().tolist()
+                if closes: base["sparkline"] = create_sparkline_svg(closes)
+            except: pass
+
+    # 3. 실시간 현재가 확보
     try:
         url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{mobile_code}"
         res = requests.get(url, headers=get_headers(), timeout=3)
