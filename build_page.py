@@ -72,12 +72,16 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
     
+    # 한국 증시 기준 명확한 색상/아이콘 적용 (상승=빨강, 하락=파랑)
     if current >= ma5 and ma5 >= ma20:
-        trend = "상승추세 📈"
+        trend = "상승추세 🔺"
+        trend_color = "#e11d48"
     elif current < ma5 and ma5 < ma20:
-        trend = "하락추세 📉"
+        trend = "하락추세 🔻"
+        trend_color = "#2563eb"
     else:
-        trend = "횡보/혼조 ↔️"
+        trend = "횡보/혼조 ➖"
+        trend_color = "#64748b"
 
     # SVG 차트 그리기 최적화 계산
     min_val = min(valid_data)
@@ -105,6 +109,10 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     min_str = fmt.format(min_val)
     max_str = fmt.format(max_val)
 
+    # 위치별 라벨 겹침 방지 (화면 바깥으로 나가는 것 방지)
+    min_x_translate = "0%" if min_x < 20 else ("-100%" if min_x > 80 else "-50%")
+    max_x_translate = "0%" if max_x < 20 else ("-100%" if max_x > 80 else "-50%")
+
     # 등락에 따른 그라데이션 컬러 (한국식: 상승=Red, 하락=Blue)
     if diff > 0:
         stop1, stop2 = "#fca5a5", "#dc2626"
@@ -127,24 +135,27 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{" ".join(pts)}"></polyline>
         </svg>
         
-        <!-- 최저점 마커 -->
-        <div style="position: absolute; left: {min_x}%; top: {min_y}%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5;">
-            <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; margin: 0 auto;"></div>
-            <div style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
+        <!-- 최저점 마커 (라벨이 바닥을 뚫지 않도록 점 위쪽으로 배치) -->
+        <div style="position: absolute; left: {min_x}%; top: {min_y}%; z-index: 5; pointer-events: none;">
+            <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
+            <div style="position: absolute; bottom: 6px; transform: translateX({min_x_translate}); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
                 최저 {min_str}
             </div>
         </div>
 
-        <!-- 최고점 마커 -->
-        <div style="position: absolute; left: {max_x}%; top: {max_y}%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5;">
-            <div style="width: 6px; height: 6px; background: #dc2626; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; margin: 0 auto;"></div>
-            <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
+        <!-- 최고점 마커 (라벨이 천장을 뚫지 않도록 점 아래쪽으로 배치) -->
+        <div style="position: absolute; left: {max_x}%; top: {max_y}%; z-index: 5; pointer-events: none;">
+            <div style="width: 6px; height: 6px; background: #dc2626; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
+            <div style="position: absolute; top: 6px; transform: translateX({max_x_translate}); font-size: 0.7rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
                 최고 {max_str}
             </div>
         </div>
     </div>
     '''
-    return svg_html, trend
+    
+    # 색상 적용한 추세 뱃지 데이터 전달
+    trend_data = {"text": trend, "color": trend_color}
+    return svg_html, trend_data
 # ----------------------------------------------------------------------
 
 def fetch_dart_disclosures():
@@ -270,7 +281,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     - 코스닥 강세 섹터: {k150_strong} / 약세 섹터: {k150_weak}
 
     [작성 지침]
-    1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 정.
+    1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 것.
     2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
     3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
@@ -333,27 +344,30 @@ def fetch_real_news(keyword, stock_code="", limit=1):
         soup = BeautifulSoup(res.text, "html.parser")
         
         tit_tags = soup.find_all("a", class_="news_tit")
-        dsc_tags = soup.find_all("div", class_="news_dsc") # 뉴스 스니펫(요약) 영역
         
         for i, tit_tag in enumerate(tit_tags):
             raw_title = tit_tag.text.strip()
             link = tit_tag.get("href", "")
             press = "관련뉴스"
             parent = tit_tag.find_parent("div", class_="news_wrap")
+            
+            content_preview = ""
             if parent:
                 press_tag = parent.find("a", class_="info press")
                 if press_tag: press = press_tag.text.replace("언론사 선정", "").strip()
+                
+                # 네이버 뉴스 구조 변경 대응 (본문 요약 스크래핑 안정화)
+                snippet_tag = parent.find("a", class_="api_txt_lines dsc_txt_wrap")
+                if not snippet_tag:
+                    snippet_tag = parent.find("div", class_="news_dsc")
+                if snippet_tag:
+                    content_preview = snippet_tag.text.strip()
             
             score = get_news_score(raw_title, keyword)
             
-            # 본문 요약 데이터 추출 로직 추가
-            content_preview = ""
-            if i < len(dsc_tags):
-                content_preview = dsc_tags[i].text.strip()
-            
             if score > 0:
                 try:
-                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도 (타임아웃 1.5초 짧게)
+                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도
                     article_res = requests.get(link, headers=headers, timeout=1.5)
                     if article_res.status_code == 200:
                         article_soup = BeautifulSoup(article_res.text, "html.parser")
@@ -363,7 +377,8 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                             content_preview = article_text[:500]
                 except: pass
                 
-                content_preview = content_preview.replace('"', "'").replace('\n', ' ')
+                # HTML 삽입 시 깨지지 않도록 위험 문자 이스케이프 처리
+                content_preview = content_preview.replace("<", "&lt;").replace(">", "&gt;").replace("\n", " ")
                 candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
     except: pass
 
@@ -380,8 +395,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
                     
-                    # 다음 뉴스의 요약본 데이터
-                    content_preview = item.get("summary", "").replace('"', "'").replace('\n', ' ')
+                    content_preview = item.get("summary", "").replace("<", "&lt;").replace(">", "&gt;").replace('\n', ' ')
                     
                     if score > 0: 
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
@@ -389,8 +403,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
     if stock_code:
         code = str(stock_code).zfill(6)
-        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news", "score": 0.9, "content": ""})
-        candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://m.stock.naver.com/domestic/stock/{code}/discuss", "score": 0.7, "content": ""})
+        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news", "score": 0.9, "content": "네이버 종목 뉴스 게시판 링크 제공"})
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
@@ -409,7 +422,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
 # --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
 def get_exchange_rate():
-    base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "FX_IDC:USDKRW"}
+    base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:USDKRW"}
     try:
         hist = yf.Ticker("KRW=X").history(period="1y")
         closes = hist['Close'].dropna()
@@ -419,18 +432,18 @@ def get_exchange_rate():
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
             
-            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "FX_USDKRW", is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "FX_USDKRW", is_int=False)
             
             base.update({
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": svg_html, "trend": trend
+                "sparkline": svg_html, "trend": trend_data
             })
     except: pass
     return base
 
 def get_us_10y_yield():
-    base = {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "TVC:US10Y"}
+    base = {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "TVC:US10Y"}
     try:
         hist = yf.Ticker("^TNX").history(period="1y")
         closes = hist['Close'].dropna()
@@ -440,18 +453,18 @@ def get_us_10y_yield():
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
             
-            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "US10Y", is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "US10Y", is_int=False)
             
             base.update({
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": svg_html, "trend": trend
+                "sparkline": svg_html, "trend": trend_data
             })
     except: pass
     return base
 
 def get_us_30y_yield():
-    base = {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "TVC:US30Y"}
+    base = {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "TVC:US30Y"}
     try:
         hist = yf.Ticker("^TYX").history(period="1y")
         closes = hist['Close'].dropna()
@@ -461,18 +474,18 @@ def get_us_30y_yield():
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
             
-            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "US30Y", is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "US30Y", is_int=False)
 
             base.update({
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": svg_html, "trend": trend
+                "sparkline": svg_html, "trend": trend_data
             })
     except: pass
     return base
 
 def get_gold_price():
-    base = {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "COMEX:GC1!"}
+    base = {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "COMEX:GC1!"}
     try:
         hist_gold = yf.Ticker("GC=F").history(period="1y")
         hist_krw = yf.Ticker("KRW=X").history(period="1y")
@@ -491,19 +504,18 @@ def get_gold_price():
             diff = price_krw_per_don - prev_krw_per_don
             rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don != 0 else 0
 
-            # 차트 트렌드는 달러 금 가격 기준으로 생성
-            svg_html, trend = create_sparkline_and_trend(gold_closes.tolist(), diff, "GOLD_DON", is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(gold_closes.tolist(), diff, "GOLD_DON", is_int=False)
 
             base.update({
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": svg_html, "trend": trend
+                "sparkline": svg_html, "trend": trend_data
             })
     except: pass
     return base
 
 def get_silver_price():
-    base = {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "COMEX:SI1!"}
+    base = {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "COMEX:SI1!"}
     try:
         hist_silver = yf.Ticker("SI=F").history(period="1y")
         hist_krw = yf.Ticker("KRW=X").history(period="1y")
@@ -522,18 +534,18 @@ def get_silver_price():
             diff = price_krw_per_don - prev_krw_per_don
             rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don != 0 else 0
 
-            svg_html, trend = create_sparkline_and_trend(silver_closes.tolist(), diff, "SILVER_DON", is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(silver_closes.tolist(), diff, "SILVER_DON", is_int=False)
 
             base.update({
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": svg_html, "trend": trend
+                "sparkline": svg_html, "trend": trend_data
             })
     except: pass
     return base
 
 def get_oil_price():
-    base = {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "NYMEX:CL1!"}
+    base = {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "NYMEX:CL1!"}
     try:
         hist = yf.Ticker("CL=F").history(period="1y")
         closes = hist['Close'].dropna()
@@ -543,18 +555,18 @@ def get_oil_price():
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
 
-            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "OIL", is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "OIL", is_int=False)
 
             base.update({
                 "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": svg_html, "trend": trend
+                "sparkline": svg_html, "trend": trend_data
             })
     except: pass
     return base
 
 def get_jpy_krw_rate():
-    base = {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "FX_IDC:JPYKRW"}
+    base = {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:JPYKRW"}
     try:
         hist = yf.Ticker("JPYKRW=X").history(period="1y")
         closes = hist['Close'].dropna() * 100
@@ -564,21 +576,20 @@ def get_jpy_krw_rate():
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
             
-            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "JPYKRW", is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "JPYKRW", is_int=False)
 
             base.update({
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": svg_html, "trend": trend
+                "sparkline": svg_html, "trend": trend_data
             })
     except: pass
     return base
 
 def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
-    base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": tv_symbol}
+    base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": tv_symbol}
     
     history = []
-    # 1. 1년 역사적 데이터 추출
     try:
         h_url = f"https://m.stock.naver.com/api/index/{mobile_code}/price?pageSize=250&page=1"
         h_res = requests.get(h_url, headers=get_headers(), timeout=3)
@@ -593,14 +604,12 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
         yh_symbol = ""
         if mobile_code == "KOSPI": yh_symbol = "^KS11"
         elif mobile_code == "KOSDAQ": yh_symbol = "^KQ11"
-        # KPI200 제거됨
         if yh_symbol:
             try:
                 hist = yf.Ticker(yh_symbol).history(period="1y")
                 history = hist['Close'].dropna().tolist()
             except: pass
 
-    # 2. 실시간 현재가 추출
     realtime_fetched = False
     try:
         url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{mobile_code}"
@@ -634,11 +643,10 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
                 })
         except: pass
 
-    # 3. 실시간 현재가와 역사적 데이터를 통합하여 스파크차트/추세 렌더링
     if history and base["value"] != "-":
         try:
             current_price = float(base["value"].replace(",", ""))
-            history[-1] = current_price  # 실시간 현재가로 갱신
+            history[-1] = current_price  
             
             diff_str = str(base["change_val"]).replace(",", "").replace("+", "")
             diff = float(diff_str)
@@ -646,16 +654,15 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
             elif base["is_up"]: diff = abs(diff)
             else: diff = 0.0
 
-            svg_html, trend = create_sparkline_and_trend(history, diff, key, is_int=False)
+            svg_html, trend_data = create_sparkline_and_trend(history, diff, key, is_int=False)
             base["sparkline"] = svg_html
-            base["trend"] = trend
+            base["trend"] = trend_data
         except: pass
 
     return base
 
 def get_market_indices():
     results = []
-    # 코스피 200 카드를 삭제하여 총 9개의 데이터만 가져오게 설정 (3열 레이아웃을 위함)
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI", "KRX:KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ", "KRX:KOSDAQ"))
     results.append(get_exchange_rate())            
@@ -900,8 +907,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
         
-        # 상승추세/하락추세 배지 HTML 조립
-        trend_html = f'<span class="trend-badge">{idx["trend"]}</span>' if idx.get('trend') else ''
+        # 한국 증시에 맞게 수정된 상승(빨강)/하락(파랑) 색상 적용 (emoji 대신 폰트 컬러로 통제)
+        trend_info = idx.get('trend', {})
+        if trend_info:
+            trend_html = f'<span class="trend-badge" style="color: {trend_info.get("color", "#475569")};">{trend_info.get("text", "")}</span>'
+        else:
+            trend_html = ""
 
         index_cards += f"""
         <div class="card clickable" data-index-target="{idx['code_key']}" onclick="openTradingView('{tv_symbol}')" title="클릭하여 실시간 차트 보기">
@@ -924,7 +935,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             all_codes_str = ",".join(s.get("all_codes", []))
             
-            # 종목 클릭 시 트레이딩뷰 새 창으로 열리도록 연결 (모달창 제거)
             stock_tags = "".join([
                 f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\')" title="클릭하여 실시간 차트 보기">'
                 f'<span class="stock-name">{st["name"]}</span> '
@@ -934,8 +944,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            # 뉴스 본문 요약 데이터(data-content)를 HTML에 삽입하여 AI가 읽을 수 있도록 함
-            news_tags = "".join([f'<div class="sector-news" data-content="{n.get("content", "")}">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
+            # 안전한 스크래핑을 위해 데이터 속성 대신 화면에 보이지 않는 span 태그 내부에 본문 요약 삽입
+            news_tags = "".join([
+                f'<div class="sector-news">'
+                f'📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>'
+                f'<span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>'
+                f'</div>'
+                for n in s.get("news", [])
+            ])
 
             html += f"""
             <div class="sector-item" data-sector-codes="{all_codes_str}">
@@ -983,23 +999,20 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        /* 💡 3개씩 레이아웃을 위한 3-column Grid 설정 */
+        /* 3-column Grid 설정 */
         .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
-        /* 클릭 가능한 카드 디자인 */
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
 
-        /* 💡 지수명, 수치, 뱃지 상하 간격 대폭 축소 */
         .card-title {{ font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 2px; }}
         .card-value {{ font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
         
-        /* 뱃지들을 가로로 정렬 및 간격 축소 */
         .badge-container {{ display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 2px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
-        .trend-badge {{ font-size: 0.75rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; color: #475569; }}
+        .trend-badge {{ font-size: 0.75rem; font-weight: 800; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }}
@@ -1032,7 +1045,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         /* --- AI Chat UI 스타일 --- */
         #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
         #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
-        #chat-button:hover {{ transform: transform 1.05; }}
+        #chat-button:hover {{ transform: scale(1.05); }}
         #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }}
         #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
         #chat-close {{ background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0; }}
@@ -1047,7 +1060,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-send:hover {{ background: #1d4ed8; }}
         #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
 
-        /* 모바일 환경에서는 2개씩 표시 유지 */
         @media (max-width: 768px) {{
             .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
@@ -1136,7 +1148,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     // 서버에서 전달받은 SHA-256 해시값 (비밀번호 원문 노출 완벽 차단)
     const TARGET_HASH = "{pw_hash}";
     
-    // --- 트레이딩뷰(TradingView) 차트 새 탭 열기 ---
     function openTradingView(symbol) {{
         if(!symbol) return;
         const tvUrl = `https://kr.tradingview.com/chart/?symbol=${{encodeURIComponent(symbol)}}`;
@@ -1204,10 +1215,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '본문 정보와 차트 추세를 분석 중...', loadingId);
 
         try {{
-            // 1. DART 공시 데이터 수집
             const dartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
 
-            // 2. 화면의 지수 및 거시경제 지표 데이터 수집 (추세 포함)
             let indicesData = "";
             document.querySelectorAll('.grid-indices .card').forEach(card => {{
                 const title = card.querySelector('.card-title') ? card.querySelector('.card-title').innerText : '';
@@ -1217,36 +1226,34 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
-            // 3. 화면의 뉴스 요약본 데이터 수집
+            // 챗봇 뉴스 본문 요약 인식을 위한 로직 갱신
             let newsData = "";
             document.querySelectorAll('.sector-news').forEach(newsEl => {{
                 const aTag = newsEl.querySelector('a');
                 const title = aTag ? aTag.innerText : '';
-                const content = newsEl.getAttribute('data-content') || '';
+                const contentSpan = newsEl.querySelector('.news-content-hidden');
+                const content = contentSpan ? contentSpan.innerText : '';
                 if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
             }});
             if (!newsData) newsData = "뉴스 정보 없음";
 
-            // 4. 경제 지표 캘린더 데이터 수집
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
 
-            // 🌟 챗봇 대화 범위를 확장하고 할루시네이션(거짓 정보)을 차단하는 강력한 프롬프트 적용
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
-                               `제공되는 [실시간 컨텍스트 데이터]를 최우선으로 반영하되, 당신이 학습한 방대한 경제, 금융, 기업, 정부 정책, 글로벌 리스크에 대한 전문 지식을 적극 활용하여 답변하세요.\\n\\n` +
+                               `제공되는 [실시간 컨텍스트 데이터]를 최우선으로 반영하되, 방대한 지식을 적극 활용하여 답변하세요.\\n\\n` +
                                `[실시간 컨텍스트 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
                                `- DART 주요 공시:\\n${{dartData}}\\n` +
                                `- 주요 뉴스 (기사 본문 요약 포함):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
-                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요.\\n` +
-                               `2. 뉴스 본문 활용: 사용자가 뉴스를 물어볼 경우, 반드시 제공된 뉴스 데이터의 '[핵심 본문]' 내용을 꼼꼼히 반영하여 상세하게 설명해주세요. 제목만 읽지 말고 본문의 이유와 맥락을 포함해야 합니다.\\n` +
-                               `3. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 구체적인 실적/매출 액수는 절대 지어내지 마세요. 주어진 데이터에 없는 세부 수치는 "정확한 수치는 확인이 필요합니다" 또는 "일반적인 흐름상..."으로 명확히 선을 그어 팩트와 전망을 구분하세요.\\n` +
-                               `4. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하며, 무조건적인 긍정이나 직접적인 매수/매도 추천은 피하고 객관적인 입장을 유지하세요.\\n` +
-                               `5. 가독성: 마크다운(굵은 글씨, 목록 기호 등)을 적극 사용하여 가독성 높게 답변하세요.`;
+                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
+                               `2. 뉴스 본문 활용: 사용자가 뉴스를 물어볼 경우, 반드시 제공된 뉴스 데이터의 '[핵심 본문]' 내용을 꼼꼼히 반영하여 상세하게 설명해주세요. 제목만 읽고 넘어가지 마세요.\\n` +
+                               `3. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
+                               `4. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하세요.\\n` +
+                               `5. 가독성: 마크다운을 적극 사용하여 가독성 높게 답변하세요.`;
 
-            // 🌟 API 호출 파라미터 조정 (창의성을 낮추어 거짓말 방지)
             const payload = {{
                 contents: chatHistory,
                 systemInstruction: {{ parts: [{{ text: systemText }}] }},
@@ -1275,8 +1282,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         }} catch (error) {{
             chatHistory.pop();
-            updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 오류가 발생했습니다. 키를 다시 입력해주세요.`);
-            localStorage.removeItem('gemini_api_key');
+            updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 네트워크 오류가 발생했습니다.`);
         }} finally {{
             btnEl.disabled = false;
             inputEl.disabled = false;
@@ -1303,7 +1309,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // --- Web Crypto API를 활용한 안전한 패스워드 검증 ---
     async function checkPassword() {{
         const input = document.getElementById('pw-input').value;
         try {{
@@ -1468,7 +1473,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             chunks.push(allCodes.slice(i, i + 40));
         }}
 
-        // KPI200을 제외하고 코스피, 코스닥 지수만 실시간으로 받아오도록 수정
         const indexAreas = await fetchNaverDirectJsonp("SERVICE_INDEX:KOSPI,KOSDAQ");
         if (indexAreas) {{
             for (const area of indexAreas) {{
