@@ -746,11 +746,10 @@ def calculate_sectors(sector_dict, stock_data):
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
     
-    # 💡 ThreadPoolExecutor를 이용한 뉴스 병렬 수집 (종목명 태깅 및 3개 리미트 설정)
     def _fetch_stock_news(sector_ref, stock):
         news = fetch_real_news(stock["name"], stock.get("code", ""), limit=3)
         for n in news:
-            n["stock_name"] = stock["name"] # HTML 렌더링 시 그룹화를 위해 종목명 추가
+            n["stock_name"] = stock["name"] 
         return sector_ref, news
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -901,7 +900,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            # 💡 뉴스를 종목(stock_name)별로 그룹화하고 토글 버튼 생성
             news_by_stock = {}
             for n in s.get("news", []):
                 st_name = n.get("stock_name", "기타")
@@ -989,8 +987,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .ai-time-badge {{ font-size: 0.78rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 3px 9px; border-radius: 999px; }}
         .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }}
 
-        /* 💡 DART 대시보드 UI 스타일 */
-        .dart-scroll-box {{ max-height: 180px; overflow-y: auto; font-size: 0.88rem; background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; color: #334155; line-height: 1.6; font-weight: 500; white-space: pre-wrap; word-break: break-all; }}
         .btn-dart-link {{ font-size: 0.78rem; font-weight: 700; color: #fff; background: #1e293b; padding: 4px 10px; border-radius: 999px; text-decoration: none; transition: background 0.2s; }}
         .btn-dart-link:hover {{ background: #0f172a; }}
 
@@ -1093,17 +1089,20 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div class="market-ai-content" id="ai-summary-text">{ai_market_summary}</div>
     </div>
 
-    <!-- 💡 DART 대시보드 UI 연동 -->
-    <div class="market-ai-box" style="background:#f8fafc; border-color:#cbd5e1;">
-        <div class="market-ai-header" style="color:#0f172a;">
+    <!-- 💡 iframe을 통해 DART 대시보드를 직접 임베딩 -->
+    <div class="market-ai-box" style="background:#f8fafc; border-color:#cbd5e1; padding: 0; overflow: hidden;">
+        <div class="market-ai-header" style="color:#0f172a; padding: 18px 18px 0 18px;">
             <span>🏢 실시간 DART 주요 공시</span>
-            <a href="https://rmadh6418-ai.github.io/dart-dashboard/" target="_blank" class="btn-dart-link">대시보드 원본 보기 ↗</a>
+            <a href="https://rmadh6418-ai.github.io/dart-dashboard/" target="_blank" class="btn-dart-link">새 창으로 보기 ↗</a>
         </div>
-        <div class="dart-scroll-box" id="dart-summary-data">
-            {dart_summary}
+        <div style="padding: 18px;">
+            <!-- 사용자의 DART 대시보드를 직접 띄움 -->
+            <iframe src="https://rmadh6418-ai.github.io/dart-dashboard/" width="100%" height="450px" style="border: 1px solid #cbd5e1; border-radius: 8px; display: block;" title="DART 실시간 대시보드"></iframe>
         </div>
     </div>
     
+    <!-- 챗봇이 읽어들이는 데이터용 숨김 div -->
+    <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
     <div id="calendar-data" style="display: none;"></div>
 
     <div id="sectors-root">
@@ -1126,7 +1125,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 방금 올라온 DART 공시 내용 요약해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 방금 올라온 공시 내용 요약해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1144,7 +1143,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         window.open(tvUrl, '_blank');
     }}
 
-    // 💡 뉴스 접기/펼치기 토글 함수
     function toggleNews(btn) {{
         const group = btn.closest('.news-group');
         const hiddenItems = group.querySelectorAll('.hidden-news');
@@ -1161,7 +1159,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // --- AI Chat Logic ---
     let chatHistory = [];
     let pendingMessage = "";
 
@@ -1222,6 +1219,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...', loadingId);
 
         try {{
+            // 공시 대시보드의 텍스트를 실시간으로 직접 긁어오거나, 실패시 숨겨진 div에서 불러옴
             let liveDartData = "실시간 공시 데이터를 찾을 수 없습니다.";
             try {{
                 const dartRes = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://rmadh6418-ai.github.io/dart-dashboard/?_=' + Date.now()));
@@ -1408,7 +1406,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     }}
                 }}
                 
-                // DART 데이터 갱신
                 const newDart = doc.getElementById("dart-summary-data");
                 const curDart = document.getElementById("dart-summary-data");
                 if (newDart && curDart) {{
