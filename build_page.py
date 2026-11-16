@@ -72,15 +72,15 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
     
-    # 한국 증시 기준 명확한 색상/아이콘 적용 (상승=빨강, 하락=파랑)
+    # OS 이모지 강제 색상을 피하기 위해 텍스트 기호(▲, ▼, ━)를 사용하여 CSS 컬러가 적용되도록 수정
     if current >= ma5 and ma5 >= ma20:
-        trend = "상승추세 🔺"
+        trend = "상승추세 ▲"
         trend_color = "#e11d48"
     elif current < ma5 and ma5 < ma20:
-        trend = "하락추세 🔻"
+        trend = "하락추세 ▼"
         trend_color = "#2563eb"
     else:
-        trend = "횡보/혼조 ➖"
+        trend = "횡보/혼조 ━"
         trend_color = "#64748b"
 
     # SVG 차트 그리기 최적화 계산
@@ -92,7 +92,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     pts = []
     for i, val in enumerate(valid_data):
         x = (i / (n - 1)) * 100
-        # 10% ~ 90% 공간을 사용하여 텍스트가 잘리지 않게 조정
         y = 90 - ((val - min_val) / val_range) * 80 
         pts.append(f"{x:.1f},{y:.1f}")
     
@@ -135,7 +134,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{" ".join(pts)}"></polyline>
         </svg>
         
-        <!-- 최저점 마커 (라벨이 바닥을 뚫지 않도록 점 위쪽으로 배치) -->
+        <!-- 최저점 마커 -->
         <div style="position: absolute; left: {min_x}%; top: {min_y}%; z-index: 5; pointer-events: none;">
             <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
             <div style="position: absolute; bottom: 6px; transform: translateX({min_x_translate}); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
@@ -143,7 +142,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             </div>
         </div>
 
-        <!-- 최고점 마커 (라벨이 천장을 뚫지 않도록 점 아래쪽으로 배치) -->
+        <!-- 최고점 마커 -->
         <div style="position: absolute; left: {max_x}%; top: {max_y}%; z-index: 5; pointer-events: none;">
             <div style="width: 6px; height: 6px; background: #dc2626; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
             <div style="position: absolute; top: 6px; transform: translateX({max_x_translate}); font-size: 0.7rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
@@ -153,7 +152,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     </div>
     '''
     
-    # 색상 적용한 추세 뱃지 데이터 전달
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 # ----------------------------------------------------------------------
@@ -333,7 +331,7 @@ def get_news_score(title, stock_name):
     if has_biz: score += 4
     return score
 
-def fetch_real_news(keyword, stock_code="", limit=1):
+def fetch_real_news(keyword, stock_code="", limit=2):
     candidates = []
     try:
         search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
@@ -356,7 +354,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                 press_tag = parent.find("a", class_="info press")
                 if press_tag: press = press_tag.text.replace("언론사 선정", "").strip()
                 
-                # 네이버 뉴스 구조 변경 대응 (본문 요약 스크래핑 안정화)
                 snippet_tag = parent.find("a", class_="api_txt_lines dsc_txt_wrap")
                 if not snippet_tag:
                     snippet_tag = parent.find("div", class_="news_dsc")
@@ -367,7 +364,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             
             if score > 0:
                 try:
-                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도
                     article_res = requests.get(link, headers=headers, timeout=1.5)
                     if article_res.status_code == 200:
                         article_soup = BeautifulSoup(article_res.text, "html.parser")
@@ -377,8 +373,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                             content_preview = article_text[:500]
                 except: pass
                 
-                # HTML 삽입 시 깨지지 않도록 위험 문자 이스케이프 처리
-                content_preview = content_preview.replace("<", "&lt;").replace(">", "&gt;").replace("\n", " ")
+                content_preview = content_preview.replace("<", "<").replace(">", ">").replace("\n", " ")
                 candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
     except: pass
 
@@ -395,7 +390,7 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
                     
-                    content_preview = item.get("summary", "").replace("<", "&lt;").replace(">", "&gt;").replace('\n', ' ')
+                    content_preview = item.get("summary", "").replace("<", "<").replace(">", ">").replace('\n', ' ')
                     
                     if score > 0: 
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
@@ -420,7 +415,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
     return unique_news
 
-# --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:USDKRW"}
     try:
@@ -807,7 +801,8 @@ def calculate_sectors(sector_dict, stock_data):
     for s in top_sectors + bot_sectors:
         news_items = []
         for st in s["stocks"]:
-            st_news = fetch_real_news(st["name"], st.get("code", ""), limit=1)
+            # AI가 읽을 풍부한 기사를 위해 섹터별 상위 종목의 실시간 뉴스를 최대 2개씩 가져옴
+            st_news = fetch_real_news(st["name"], st.get("code", ""), limit=2)
             if st_news:
                 news_items.extend(st_news)
         s["news"] = news_items
@@ -907,7 +902,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
         
-        # 한국 증시에 맞게 수정된 상승(빨강)/하락(파랑) 색상 적용 (emoji 대신 폰트 컬러로 통제)
         trend_info = idx.get('trend', {})
         if trend_info:
             trend_html = f'<span class="trend-badge" style="color: {trend_info.get("color", "#475569")};">{trend_info.get("text", "")}</span>'
@@ -944,7 +938,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            # 안전한 스크래핑을 위해 데이터 속성 대신 화면에 보이지 않는 span 태그 내부에 본문 요약 삽입
             news_tags = "".join([
                 f'<div class="sector-news">'
                 f'📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>'
@@ -1135,7 +1128,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 반도체 관련 뉴스 요약해줘", "현재 거시경제 흐름상 리스크는 뭐야?"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 종목들의 최신 뉴스 요약해줘", "현재 거시경제 흐름상 리스크는 뭐야?"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1226,16 +1219,20 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
-            // 챗봇 뉴스 본문 요약 인식을 위한 로직 갱신
+            // AI가 진짜 뉴스 본문만 읽을 수 있도록 '보러가기' 등 빈껍데기 링크는 걸러내는 로직
             let newsData = "";
             document.querySelectorAll('.sector-news').forEach(newsEl => {{
                 const aTag = newsEl.querySelector('a');
                 const title = aTag ? aTag.innerText : '';
                 const contentSpan = newsEl.querySelector('.news-content-hidden');
                 const content = contentSpan ? contentSpan.innerText : '';
-                if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
+                
+                // 불필요한 링크(종목토론실, 보러가기)가 아닌 진짜 기사일 때만 컨텍스트에 추가
+                if(title && !title.includes("보러가기") && !title.includes("종목토론실")) {
+                    newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
+                }
             }});
-            if (!newsData) newsData = "뉴스 정보 없음";
+            if (!newsData) newsData = "현재 수집된 구체적인 뉴스 본문이 없습니다.";
 
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
@@ -1249,7 +1246,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
                                `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
-                               `2. 뉴스 본문 활용: 사용자가 뉴스를 물어볼 경우, 반드시 제공된 뉴스 데이터의 '[핵심 본문]' 내용을 꼼꼼히 반영하여 상세하게 설명해주세요. 제목만 읽고 넘어가지 마세요.\\n` +
+                               `2. 뉴스 본문 활용: 사용자가 뉴스를 물어볼 경우, 반드시 제공된 뉴스 데이터의 '[핵심 본문]' 내용을 꼼꼼히 읽고 해당 기업/섹터에 어떤 호재나 악재가 있는지 구체적으로 요약해주세요. 단순히 링크만 있다고 말하지 마세요.\\n` +
                                `3. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
                                `4. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하세요.\\n` +
                                `5. 가독성: 마크다운을 적극 사용하여 가독성 높게 답변하세요.`;
@@ -1615,48 +1612,3 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </script>
 </body>
 </html>
-"""
-    with open("index.html", "w", encoding="utf-8") as f:
-        f.write(template)
-
-if __name__ == "__main__":
-    indices = get_market_indices()
-    stock_data = get_market_stocks()
-
-    k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
-    k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
-
-    ai_market_summary, ai_updated_time = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
-    
-    # DART 정보 패치 후 HTML에 전달
-    dart_summary = fetch_dart_disclosures()
-
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
-
-    kst_now = datetime.now(timezone(timedelta(hours=9)))
-    today_str = kst_now.strftime("%Y-%m-%d")
-    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
-    is_close_window = (kst_now.hour == 15 and kst_now.minute >= 30) or (kst_now.hour == 16 and kst_now.minute <= 40)
-
-    cache_file = "ai_summary_cache.json"
-    already_sent_today = False
-    cache_data = {}
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-                already_sent_today = (cache_data.get("kakao_sent_date") == today_str)
-        except Exception:
-            pass
-
-    if event_name == "workflow_dispatch" or (is_close_window and not already_sent_today):
-        send_kakao_alert(indices, k200_top, k150_top)
-        if cache_data:
-            try:
-                cache_data["kakao_sent_date"] = today_str
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump(cache_data, f, ensure_ascii=False)
-            except Exception:
-                pass
-    else:
-        print(f"[INFO] 대시보드 업데이트 완료 ({kst_now.strftime('%H:%M')}) - 마감 카톡 발송 생략")
