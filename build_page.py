@@ -57,43 +57,6 @@ KOSDAQ150_SECTORS = {
     "피팅·장비기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅", "동국S&C", "씨에스베어링", "유니슨", "삼강엠앤티"]
 }
 
-# ----------------- 1년 스파크 차트 (SVG) 생성 함수 -----------------
-def create_sparkline_svg(data):
-    if not data or len(data) < 2: return ""
-    valid_data = [float(d) for d in data if d is not None]
-    if not valid_data: return ""
-
-    min_val = min(valid_data)
-    max_val = max(valid_data)
-
-    width = 120
-    height = 34
-    padding = 5
-
-    def get_x(idx): return padding + (idx / (len(valid_data) - 1)) * (width - 2 * padding)
-    def get_y(val):
-        if max_val == min_val: return height / 2
-        return height - padding - ((val - min_val) / (max_val - min_val)) * (height - 2 * padding)
-
-    pts = [f"{get_x(i)},{get_y(v)}" for i, v in enumerate(valid_data)]
-    path_d = f"M {pts[0]} " + " L ".join(pts[1:])
-
-    high_idx = valid_data.index(max_val)
-    low_idx = valid_data.index(min_val)
-
-    hx, hy = get_x(high_idx), get_y(max_val)
-    lx, ly = get_x(low_idx), get_y(min_val)
-
-    svg = f'''
-    <svg width="100%" height="{height}" viewBox="0 0 {width} {height}" preserveAspectRatio="none" style="margin-top:10px; overflow:visible;">
-        <path d="{path_d}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linejoin="round" />
-        <circle cx="{hx}" cy="{hy}" r="2.5" fill="#ef4444" stroke="#fff" stroke-width="0.5" />
-        <circle cx="{lx}" cy="{ly}" r="2.5" fill="#3b82f6" stroke="#fff" stroke-width="0.5" />
-    </svg>
-    '''
-    return svg
-# ----------------------------------------------------------------------
-
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     if not dart_key:
@@ -135,7 +98,7 @@ def call_gemini_rest_api(model_name, prompt, api_key):
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.2  # 환각(Hallucination) 방지를 위해 온도값을 0.2로 낮춤
+            "temperature": 0.2
         }
     }
     res = requests.post(url, headers=headers, json=payload, timeout=20)
@@ -234,7 +197,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
     3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
-    5. [핵심 주의사항] 제공된 핵심 데이터(수치, 섹터명 등)를 절대 변경하거나 지어내지 마세요. 불확실한 종목이나 실적 수치 등 환각(Hallucination)이 발생하지 않도록 철저히 팩트 기반으로만 분석하세요.
+    5. [핵심 주의사항] 제공된 핵심 데이터(수치, 섹터명 등)를 절대 변경하거나 지어내지 마세요. 불확실한 종목이나 실적 수치 등 환각이 발생하지 않도록 철저히 팩트 기반으로만 분석하세요.
     """
 
     available_models = get_candidate_models(API_KEY)
@@ -359,78 +322,66 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
 def get_exchange_rate():
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?range=1y&interval=1d"
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        data = res.json()['chart']['result'][0]
-        meta = data['meta']
+        meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
         prev = meta['previousClose']
         diff = price - prev
         rate = (diff / prev) * 100
-        
-        history = data.get('indicators', {}).get('quote', [{}])[0].get('close', [])
         
         return {
             "name": "원·달러 환율", "code_key": "FX_USDKRW",
             "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
             "change_rate": abs(rate),
-            "is_up": diff > 0, "is_down": diff < 0,
-            "sparkline": create_sparkline_svg(history)
+            "is_up": diff > 0, "is_down": diff < 0
         }
     except Exception:
-        return {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": ""}
+        return {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_us_10y_yield():
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX?range=1y&interval=1d"
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        data = res.json()['chart']['result'][0]
-        meta = data['meta']
+        meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
         prev = meta['previousClose']
         diff = price - prev
         rate = (diff / prev) * 100
-        history = data.get('indicators', {}).get('quote', [{}])[0].get('close', [])
         return {
             "name": "미국채 10년물", "code_key": "US10Y",
             "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
             "change_rate": abs(rate),
-            "is_up": diff > 0, "is_down": diff < 0,
-            "sparkline": create_sparkline_svg(history)
+            "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": ""}
+        return {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_us_30y_yield():
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TYX?range=1y&interval=1d"
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/^TYX"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        data = res.json()['chart']['result'][0]
-        meta = data['meta']
+        meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
         prev = meta['previousClose']
         diff = price - prev
         rate = (diff / prev) * 100
-        history = data.get('indicators', {}).get('quote', [{}])[0].get('close', [])
         return {
             "name": "미국채 30년물", "code_key": "US30Y",
             "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
             "change_rate": abs(rate),
-            "is_up": diff > 0, "is_down": diff < 0,
-            "sparkline": create_sparkline_svg(history)
+            "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": ""}
+        return {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_gold_price():
     try:
-        url_gold = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1y&interval=1d"
+        url_gold = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
         res_gold = requests.get(url_gold, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        data_gold = res_gold.json()['chart']['result'][0]
-        meta_gold = data_gold['meta']
+        meta_gold = res_gold.json()['chart']['result'][0]['meta']
         gold_price_usd = meta_gold['regularMarketPrice']
         gold_prev_usd = meta_gold['previousClose']
-        gold_history_usd = data_gold.get('indicators', {}).get('quote', [{}])[0].get('close', [])
 
         url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
         res_krw = requests.get(url_krw, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -448,21 +399,18 @@ def get_gold_price():
             "name": "금시세 (1돈)", "code_key": "GOLD_DON",
             "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
             "change_rate": abs(rate),
-            "is_up": diff > 0, "is_down": diff < 0,
-            "sparkline": create_sparkline_svg(gold_history_usd) # 트렌드 파악을 위해 달러기준 원본차트 사용
+            "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": ""}
+        return {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_silver_price():
     try:
-        url_silver = "https://query1.finance.yahoo.com/v8/finance/chart/SI=F?range=1y&interval=1d"
+        url_silver = "https://query1.finance.yahoo.com/v8/finance/chart/SI=F"
         res_silver = requests.get(url_silver, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        data_silver = res_silver.json()['chart']['result'][0]
-        meta_silver = data_silver['meta']
+        meta_silver = res_silver.json()['chart']['result'][0]['meta']
         silver_price_usd = meta_silver['regularMarketPrice']
         silver_prev_usd = meta_silver['previousClose']
-        silver_history_usd = data_silver.get('indicators', {}).get('quote', [{}])[0].get('close', [])
 
         url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
         res_krw = requests.get(url_krw, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -480,70 +428,48 @@ def get_silver_price():
             "name": "은시세 (1돈)", "code_key": "SILVER_DON",
             "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
             "change_rate": abs(rate),
-            "is_up": diff > 0, "is_down": diff < 0,
-            "sparkline": create_sparkline_svg(silver_history_usd)
+            "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": ""}
+        return {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_oil_price():
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F?range=1y&interval=1d"
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        data = res.json()['chart']['result'][0]
-        meta = data['meta']
+        meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice']
         prev = meta['previousClose']
         diff = price - prev
         rate = (diff / prev) * 100
-        history = data.get('indicators', {}).get('quote', [{}])[0].get('close', [])
         return {
             "name": "국제유가 (WTI)", "code_key": "OIL",
             "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
             "change_rate": abs(rate),
-            "is_up": diff > 0, "is_down": diff < 0,
-            "sparkline": create_sparkline_svg(history)
+            "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": ""}
+        return {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_jpy_krw_rate():
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/JPYKRW=X?range=1y&interval=1d"
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/JPYKRW=X"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
-        data = res.json()['chart']['result'][0]
-        meta = data['meta']
+        meta = res.json()['chart']['result'][0]['meta']
         price = meta['regularMarketPrice'] * 100
         prev = meta['previousClose'] * 100
         diff = price - prev
         rate = (diff / prev) * 100
-        closes = data.get('indicators', {}).get('quote', [{}])[0].get('close', [])
-        history = [c * 100 for c in closes if c is not None]
         return {
             "name": "엔·원 환율 (100엔)", "code_key": "JPYKRW",
             "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
             "change_rate": abs(rate),
-            "is_up": diff > 0, "is_down": diff < 0,
-            "sparkline": create_sparkline_svg(history)
+            "is_up": diff > 0, "is_down": diff < 0
         }
     except:
-        return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": ""}
+        return {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_index_data_robust(name, key, mobile_code, pc_code):
-    history = []
-    try:
-        h_url = f"https://m.stock.naver.com/api/index/{mobile_code}/price?pageSize=250&page=1"
-        h_res = requests.get(h_url, headers=get_headers(), timeout=3)
-        if h_res.status_code == 200:
-            h_data = h_res.json()
-            prices = [float(item['closePrice'].replace(',', '')) for item in h_data if 'closePrice' in item]
-            prices.reverse()  # 시간순 정렬 (과거 -> 현재)
-            history = prices
-    except:
-        pass
-
-    spark_svg = create_sparkline_svg(history)
-
     try:
         url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{mobile_code}"
         res = requests.get(url, headers=get_headers(), timeout=3)
@@ -556,8 +482,7 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
                     "name": name, "code_key": key, "value": data.get("closePrice", "-"),
                     "change_val": data.get("compareToPreviousClosePrice", "0"),
                     "change_rate": abs(float(str(data.get("fluctuationsRatio", 0)).replace(",", ""))),
-                    "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"],
-                    "sparkline": spark_svg
+                    "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
                 }
     except:
         pass
@@ -572,13 +497,12 @@ def get_index_data_robust(name, key, mobile_code, pc_code):
                 "name": name, "code_key": key, "value": data.get("closePrice", "-"),
                 "change_val": data.get("compareToPreviousClosePrice", "0"),
                 "change_rate": abs(float(data.get("fluctuationsRatio", 0))),
-                "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"],
-                "sparkline": spark_svg
+                "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
             }
     except:
         pass
 
-    return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": spark_svg}
+    return {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False}
 
 def get_market_indices():
     results = []
@@ -826,14 +750,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         color_class = "text-up" if idx["is_up"] else ("text-down" if idx["is_down"] else "text-flat")
         badge_bg = "bg-up-light" if idx["is_up"] else ("bg-down-light" if idx["is_down"] else "bg-gray-100")
         diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
-        sparkline_svg = idx.get('sparkline', '')
 
         index_cards += f"""
         <div class="card" data-index-target="{idx['code_key']}">
             <div class="card-title">{idx['name']}</div>
             <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
             <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
-            <div class="sparkline-box">{sparkline_svg}</div>
         </div>
         """
 
@@ -847,7 +769,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             all_codes_str = ",".join(s.get("all_codes", []))
             
             stock_tags = "".join([
-                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openStockModal(\'{st.get("code", "")}\', \'{st["name"]}\')">'
+                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openNaverChart(\'{st.get("code", "")}\')">'
                 f'<span class="stock-name">{st["name"]}</span> '
                 f'<b class="stock-rate {"text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")}" data-live-rate="{st["rate"]}">{st["rate"]:+.2f}%</b> '
                 f'<span class="stock-price">({st["price"]}원)</span>'
@@ -903,11 +825,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }}
-        .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; }}
+        .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }}
         .card-title {{ font-size: 0.80rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
         .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
-        .sparkline-box {{ width: 100%; margin-top: auto; padding-top: 5px; }}
+        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; align-self: center; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }}
@@ -985,17 +906,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
 </div>
 
-<!-- 📈 종목 차트 팝업 모달창 -->
-<div id="stock-chart-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100005; justify-content:center; align-items:center;">
-    <div style="background:#fff; width:95%; max-width:600px; height:80%; max-height:800px; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-        <div style="padding:15px; background:#1e293b; color:#fff; display:flex; justify-content:space-between; align-items:center;">
-            <h3 id="modal-stock-name" style="margin:0; font-size:1.1rem; font-weight:800;">기업 차트</h3>
-            <button onclick="closeStockModal()" style="background:none; border:none; color:#fff; font-size:1.5rem; cursor:pointer;">&times;</button>
-        </div>
-        <iframe id="stock-iframe" src="" style="flex:1; width:100%; border:none; background:#f8fafc;"></iframe>
-    </div>
-</div>
-
 <div id="dashboard-root">
     <header>
         <h1>📊 실시간 국내 증시 대시보드</h1>
@@ -1052,18 +962,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     // 서버에서 전달받은 SHA-256 해시값 (비밀번호 원문 노출 완벽 차단)
     const TARGET_HASH = "{pw_hash}";
     
-    // --- 종목 차트 모달창 Logic ---
-    function openStockModal(code, name) {{
-        if(!code) return;
-        document.getElementById('modal-stock-name').innerText = name + ' (실시간 차트)';
-        // 네이버 금융 모바일 차트 URL 연결
-        document.getElementById('stock-iframe').src = 'https://m.stock.naver.com/domestic/stock/' + code + '/total';
-        document.getElementById('stock-chart-modal').style.display = 'flex';
-    }}
-    
-    function closeStockModal() {{
-        document.getElementById('stock-chart-modal').style.display = 'none';
-        document.getElementById('stock-iframe').src = '';
+    // --- 종목 새 창 띄우기 Logic ---
+    function openNaverChart(code) {{
+        if(code) {{
+            // 네이버 금융 모바일 차트 URL 새 탭으로 연결 (iframe 차단 우회)
+            window.open('https://m.stock.naver.com/domestic/stock/' + code + '/total', '_blank');
+        }}
     }}
 
     // --- AI Chat Logic ---
