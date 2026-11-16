@@ -4,12 +4,12 @@ import re
 import time
 import urllib.parse
 import hashlib
+import concurrent.futures # 💡 병렬 처리를 위해 추가된 모듈
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import yfinance as yf
-import xml.etree.ElementTree as ET
 
 def get_headers(is_daum=False):
     headers = {
@@ -147,7 +147,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
-# ----------------- 외부 DART 및 구글 뉴스 스크래핑 함수 (개선) -----------------
 def fetch_dart_disclosures():
     try:
         url = "https://rmadh6418-ai.github.io/dart-dashboard/"
@@ -155,57 +154,54 @@ def fetch_dart_disclosures():
         res.encoding = 'utf-8'
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
+            
             for script in soup(["script", "style", "nav", "footer", "header"]):
                 script.extract()
+                
             text = soup.get_text(separator=' ', strip=True)
             text = re.sub(r'\s+', ' ', text)
+            
             if len(text) > 50:
                 return f"[DART 대시보드 공시내용] {text[:3500]}"
     except Exception as e:
         pass
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
-# 💡 구글 뉴스 본서버 직접 수집으로 변경 (속도 및 안정성 보장)
-def fetch_real_news(keyword, stock_code="", limit=10):
+# 💡 기본값을 5로 변경 (각 기업당 뉴스 최대 5개)
+def fetch_real_news(keyword, stock_code="", limit=5):
     candidates = []
     try:
-        search_query = f'{keyword} 주식'
+        search_query = f'"{keyword}" (경제 OR 비즈니스 OR 증시 OR 투자)'
         encoded_query = urllib.parse.quote(search_query)
-        # 구글 뉴스 RSS 직접 호출 (무료 우회 API 삭제)
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+        api_url = f"https://api.rss2json.com/v1/api.json?rss_url={urllib.parse.quote(rss_url)}"
         
-        # 첫 번째 시도: 일반 헤더로 직접 요청
-        res = requests.get(rss_url, headers=get_headers(), timeout=5)
-        
-        # 만약 구글이 깃허브 IP를 막았다면 allorigins.win을 폴백으로 사용
-        if res.status_code != 200:
-            res = requests.get(f"https://api.allorigins.win/raw?url={urllib.parse.quote(rss_url)}", timeout=5)
-            
+        res = requests.get(api_url, headers=get_headers(), timeout=10)
         if res.status_code == 200:
-            root = ET.fromstring(res.text)
-            for item in root.findall('.//item'):
-                raw_title = item.find('title').text if item.find('title') is not None else ""
-                link = item.find('link').text if item.find('link') is not None else ""
-                press = item.find('source').text if item.find('source') is not None else "구글뉴스"
-                
-                score = get_news_score(raw_title, keyword)
-                if score > 0:
-                    desc = item.find('description').text if item.find('description') is not None else ""
-                    content_preview = ""
-                    if desc:
+            data = res.json()
+            if data.get('status') == 'ok':
+                for item in data.get('items', []):
+                    raw_title = item.get('title', '')
+                    link = item.get('link', '')
+                    press = item.get('author', '구글뉴스')
+                    if not press: press = '구글뉴스'
+                    
+                    score = get_news_score(raw_title, keyword)
+                    if score > 0:
+                        desc = item.get('description', '') or item.get('content', '')
                         desc_soup = BeautifulSoup(desc, "html.parser")
                         content_preview = desc_soup.get_text(separator=' ', strip=True)
-                    
-                    content_preview = content_preview.replace("<", "<").replace(">", ">").replace('\n', ' ')
-                    raw_title = raw_title.replace("<", "<").replace(">", ">")
-                    
-                    candidates.append({
-                        "title": raw_title, 
-                        "press": press, 
-                        "link": link, 
-                        "score": score, 
-                        "content": content_preview
-                    })
+                        
+                        content_preview = content_preview.replace("<", "<").replace(">", ">").replace('\n', ' ')
+                        raw_title = raw_title.replace("<", "<").replace(">", ">")
+                        
+                        candidates.append({
+                            "title": raw_title, 
+                            "press": press, 
+                            "link": link, 
+                            "score": score, 
+                            "content": content_preview
+                        })
     except: 
         pass
 
@@ -224,7 +220,6 @@ def fetch_real_news(keyword, stock_code="", limit=10):
 
     return unique_news
 
-# ----------------- 기타 API 및 유틸리티 -----------------
 def call_gemini_rest_api(model_name, prompt, api_key):
     clean_model = model_name.replace("models/", "").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
@@ -326,8 +321,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     available_models = get_candidate_models(API_KEY)
     last_error = ""
-    # 💡 불필요한 AI 호출 대기 시간 단축
-    time.sleep(2)
+    time.sleep(15)
     
     for model_name in available_models:
         try:
@@ -345,7 +339,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 return result_text, display_time_label
         except Exception as e:
             last_error = str(e)
-            time.sleep(2) 
+            time.sleep(3) 
             continue
 
     if old_cached_text:
@@ -354,7 +348,22 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", display_time_label
 
-# --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
+def get_news_score(title, stock_name):
+    for bad in EXCLUDE_NEWS_KEYWORDS:
+        if bad in title: return -1
+        
+    score = 10 
+    aliases = [stock_name]
+    if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
+    elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
+
+    has_stock = any(alias in title for alias in aliases if len(alias) >= 2)
+    has_biz = any(biz in title for biz in BUSINESS_NEWS_KEYWORDS)
+
+    if has_stock: score += 5
+    if has_biz: score += 4
+    return score
+
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:USDKRW"}
     try:
@@ -699,10 +708,7 @@ def get_market_stocks():
 
     return stocks
 
-# 💡 안전하고 빠른 뉴스 호출을 위한 래퍼 함수 (순차 검색)
-def fetch_news_wrapper(st):
-    return st["name"], fetch_real_news(st["name"], st.get("code", ""), limit=10)
-
+# 💡 병렬 처리를 통해 각 기업의 최신 뉴스 5개씩 가져오도록 최적화됨
 def calculate_sectors(sector_dict, stock_data):
     sector_stats = []
     
@@ -742,18 +748,29 @@ def calculate_sectors(sector_dict, stock_data):
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
     
-    # 💡 봇 차단 방지: 과도한 병렬 처리(ThreadPoolExecutor)를 제거하고 순차적으로 안전하게 뉴스 수집
+    # --- 멀티스레딩(병렬)을 통한 뉴스 일괄 수집 ---
+    news_dict = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_name = {}
+        for s in top_sectors + bot_sectors:
+            for st in s["stocks"]:
+                if st["name"] not in future_to_name:
+                    # 💡 기업별 뉴스 limit=5 전달
+                    future_to_name[st["name"]] = executor.submit(fetch_real_news, st["name"], st.get("code", ""), 5)
+
+        for name, future in future_to_name.items():
+            try:
+                news_dict[name] = future.result()
+            except Exception:
+                news_dict[name] = []
+
+    # 병렬로 수집된 뉴스 데이터를 매핑
     for s in top_sectors + bot_sectors:
-        s["ui_news"] = []
-        s["all_news"] = []
-        
+        news_items = []
         for st in s["stocks"]:
-            name, st_news = fetch_news_wrapper(st)
-            if st_news:
-                # 💡 대시보드 화면에는 각 기업당 1개의 뉴스만 노출
-                s["ui_news"].append(st_news[0])
-                # 💡 AI 챗봇이 읽을 수 있도록 백그라운드에는 10개의 뉴스를 모두 저장
-                s["all_news"].extend(st_news)
+            if news_dict.get(st["name"]):
+                news_items.extend(news_dict[st["name"]])
+        s["news"] = news_items
 
     return top_sectors, bot_sectors
 
@@ -886,17 +903,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            # 💡 화면용 뉴스: 기업당 1개만 표시 (리스트 길이가 짧아짐)
             news_tags = "".join([
                 f'<div class="sector-news">'
                 f'📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>'
+                f'<span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>'
                 f'</div>'
-                for n in s.get("ui_news", [])
+                for n in s.get("news", [])
             ])
-
-            # 💡 AI 챗봇용 뉴스: 각 기업당 10개씩 통째로 모아서 숨김 (화면에는 안 보임)
-            ai_news_text = " \\n ".join([f"- {n['title']} : {n.get('content','')}" for n in s.get("all_news", [])])
-            news_tags += f'<span class="sector-ai-news-hidden" style="display:none;">{ai_news_text}</span>'
 
             html += f"""
             <div class="sector-item" data-sector-codes="{all_codes_str}">
@@ -1079,7 +1092,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 핵심만 종합해서 요약해줘", "현재 공시내용 바탕으로 시장 흐름 알려줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 DART 대시보드 공시내용 알려줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1156,11 +1169,27 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         chatHistory.push({{ role: "user", parts: [{{ text: msg }}] }});
 
         const loadingId = 'msg-' + Date.now();
-        addMessageToUI('ai', '실시간 데이터를 바탕으로 심층 분석 중입니다...', loadingId);
+        addMessageToUI('ai', '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...', loadingId);
 
         try {{
-            // 💡 챗봇 호출 시 불필요하게 걸렸던 스크래핑 딜레이 완벽 제거 (파이썬이 캐시한 데이터 즉시 활용)
-            const liveDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
+            // 💡 1. 챗봇이 사용자의 DART 대시보드를 실시간으로 무조건 동적 스크래핑하게 만듦 (완벽 우회)
+            let liveDartData = "실시간 공시 데이터를 찾을 수 없습니다.";
+            try {{
+                const dartRes = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://rmadh6418-ai.github.io/dart-dashboard/?_=' + Date.now()));
+                if (dartRes.ok) {{
+                    const dartJson = await dartRes.json();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(dartJson.contents, "text/html");
+                    // 스크립트와 메뉴 등 방해 요소 제거
+                    doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
+                    liveDartData = doc.body.innerText.replace(/\\s+/g, ' ').substring(0, 3500);
+                    if(liveDartData.length < 20) liveDartData = "수집된 공시 데이터 내용이 너무 짧거나 없습니다.";
+                }}
+            }} catch(e) {{
+                console.error("DART 실시간 스크래핑 실패:", e);
+                // 실패할 경우 정적으로 생성된 데이터를 폴백(Fallback)으로 사용
+                liveDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
+            }}
 
             let indicesData = "";
             document.querySelectorAll('.grid-indices .card').forEach(card => {{
@@ -1171,33 +1200,41 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
-            // 💡 챗봇 전용 10배 볼륨의 뉴스 데이터 추출 로직
+            // 💡 2. 챗봇 뉴스 본문 요약 인식을 위한 로직 강화
             let newsData = "";
-            document.querySelectorAll('.sector-item').forEach(item => {{
-                const sectorName = item.querySelector('.sector-name')?.innerText || '섹터';
-                const hiddenNews = item.querySelector('.sector-ai-news-hidden')?.innerText || '';
-                if (hiddenNews) {{
-                    newsData += `\\n[${{sectorName}} 관련 최신 뉴스 요약본 10건 묶음]\\n${{hiddenNews}}\\n`;
-                }}
+            document.querySelectorAll('.sector-news').forEach(newsEl => {{
+                const aTag = newsEl.querySelector('a');
+                let title = aTag ? aTag.innerText : '';
+                // 프롬프트에 방해되는 기사 제목 앞의 언론사명 텍스트 제거
+                if (title) title = title.replace(/^\\[.*?\\]\\s*/, '');
+                
+                const contentSpan = newsEl.querySelector('.news-content-hidden');
+                let content = contentSpan ? contentSpan.innerText.trim() : '';
+                
+                // 기사 내용이 비어있더라도 AI가 제목을 바탕으로 추론하도록 강력하게 지시
+                if (!content || content.length < 10) content = "(내용 요약 없음 - AI는 반드시 제공된 기사 제목을 바탕으로 해당 뉴스의 배경과 시장에 미칠 영향을 상세히 추론하여 답변할 것)";
+                
+                if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
             }});
-            if (!newsData || newsData.length < 10) newsData = "현재 대시보드에 수집된 뉴스가 없습니다.";
+            if (!newsData || newsData.length < 20) newsData = "현재 대시보드에 수집된 뉴스가 없습니다.";
 
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
 
-            // 💡 요약 명령을 극도로 강화한 프롬프트
+            // 💡 3. AI에게 회피성 답변 금지를 매우 강하게 명령하는 프롬프트
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
-                               `제공되는 [실시간 데이터]를 바탕으로 질문에 응답하세요.\\n\\n` +
+                               `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
                                `[실시간 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
-                               `- 🌟 DART 주요 공시:\\n${{liveDartData}}\\n` +
-                               `- 📰 주요 뉴스 (섹터별 최대 10건 묶음):\\n${{newsData}}\\n` +
+                               `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n${{liveDartData}}\\n` +
+                               `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
-                               `[답변 절대 원칙 (회피 금지)]\\n` +
-                               `1. 뉴스 요약 요구 시: 📰 주요 뉴스 섹션에 있는 방대한 데이터를 전부 읽고, 각 기업/섹터별 핵심 이슈를 추출하여 논리적으로 요약하세요. "뉴스 링크만 제공된다" 같은 회피성 답변은 절대 금지합니다.\\n` +
-                               `2. 공시 내용 요구 시: 🌟 DART 주요 공시 내용을 꼼꼼히 확인하고 기업별 실적이나 주요 계약 건을 명확하게 요약해 주세요.\\n` +
-                               `3. 팩트 기반 원칙: 확실하지 않은 수치나 실적 액수는 절대 지어내지 말고, "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
-                               `4. 가독성: 마크다운(굵은 글씨, 글머리 기호)을 적극 사용하여 가독성 높게 답변하세요.`;
+                               `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\\n` +
+                               `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요! "실시간 주요 뉴스 링크만 제공된다" 혹은 "본문이 없어 요약할 수 없다"는 식의 회피성 답변은 절대 금지합니다. 제공된 텍스트가 짧더라도 당신의 배경지식을 더해 해당 뉴스의 의미를 3줄 이상 상세히 설명하세요.\\n` +
+                               `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트를 읽고 현재 어떤 기업들이 어떤 공시를 올렸는지 명확하게 요약하여 설명해주세요.\\n` +
+                               `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
+                               `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
+                               `5. 가독성: 마크다운(굵은 글씨, 줄바꿈)을 적극 사용하여 가독성 높게 답변하세요.`;
 
             const payload = {{
                 contents: chatHistory,
@@ -1225,7 +1262,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             chatHistory.push({{ role: "model", parts: [{{ text: aiText }}] }});
             updateMessageUI(loadingId, aiText);
 
-        }} catch (error) {{
+        } catch (error) {{
             chatHistory.pop();
             updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 네트워크 오류가 발생했습니다.`);
         }} finally {{
@@ -1565,16 +1602,26 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         f.write(template)
 
 if __name__ == "__main__":
-    indices = get_market_indices()
-    stock_data = get_market_stocks()
+    # 💡 1. 메인 실행 블록: 지수, 종목, DART 공시 데이터를 멀티스레드로 동시 병렬 수집
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        future_indices = executor.submit(get_market_indices)
+        future_stocks = executor.submit(get_market_stocks)
+        future_dart = executor.submit(fetch_dart_disclosures)
 
-    k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
-    k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
+        indices = future_indices.result()
+        stock_data = future_stocks.result()
+        dart_summary = future_dart.result()
+
+    # 💡 2. 각 시장의 섹터 계산 (내부에서 기업별 뉴스 5개 병렬 수집)도 병렬 처리
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_k200 = executor.submit(calculate_sectors, KOSPI200_SECTORS, stock_data)
+        future_k150 = executor.submit(calculate_sectors, KOSDAQ150_SECTORS, stock_data)
+
+        k200_top, k200_bot = future_k200.result()
+        k150_top, k150_bot = future_k150.result()
 
     ai_market_summary, ai_updated_time = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
     
-    dart_summary = fetch_dart_disclosures()
-
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
 
     kst_now = datetime.now(timezone(timedelta(hours=9)))
