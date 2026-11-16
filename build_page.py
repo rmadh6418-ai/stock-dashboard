@@ -333,7 +333,9 @@ def fetch_real_news(keyword, stock_code="", limit=1):
         soup = BeautifulSoup(res.text, "html.parser")
         
         tit_tags = soup.find_all("a", class_="news_tit")
-        for tit_tag in tit_tags:
+        dsc_tags = soup.find_all("div", class_="news_dsc") # 뉴스 스니펫(요약) 영역
+        
+        for i, tit_tag in enumerate(tit_tags):
             raw_title = tit_tag.text.strip()
             link = tit_tag.get("href", "")
             press = "관련뉴스"
@@ -341,8 +343,28 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             if parent:
                 press_tag = parent.find("a", class_="info press")
                 if press_tag: press = press_tag.text.replace("언론사 선정", "").strip()
+            
             score = get_news_score(raw_title, keyword)
-            if score > 0: candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+            
+            # 본문 요약 데이터 추출 로직 추가
+            content_preview = ""
+            if i < len(dsc_tags):
+                content_preview = dsc_tags[i].text.strip()
+            
+            if score > 0:
+                try:
+                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도 (타임아웃 1.5초 짧게)
+                    article_res = requests.get(link, headers=headers, timeout=1.5)
+                    if article_res.status_code == 200:
+                        article_soup = BeautifulSoup(article_res.text, "html.parser")
+                        paragraphs = article_soup.find_all('p')
+                        article_text = " ".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
+                        if article_text:
+                            content_preview = article_text[:500]
+                except: pass
+                
+                content_preview = content_preview.replace('"', "'").replace('\n', ' ')
+                candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
     except: pass
 
     if len(candidates) < limit and stock_code:
@@ -357,13 +379,18 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     link = f"https://finance.daum.net/news/{item.get('newsId')}"
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
-                    if score > 0: candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+                    
+                    # 다음 뉴스의 요약본 데이터
+                    content_preview = item.get("summary", "").replace('"', "'").replace('\n', ' ')
+                    
+                    if score > 0: 
+                        candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
         except: pass
 
     if stock_code:
         code = str(stock_code).zfill(6)
-        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news", "score": 0.9})
-        candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://m.stock.naver.com/domestic/stock/{code}/discuss", "score": 0.7})
+        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news", "score": 0.9, "content": ""})
+        candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://m.stock.naver.com/domestic/stock/{code}/discuss", "score": 0.7, "content": ""})
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
@@ -907,7 +934,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            news_tags = "".join([f'<div class="sector-news">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
+            # 뉴스 본문 요약 데이터(data-content)를 HTML에 삽입하여 AI가 읽을 수 있도록 함
+            news_tags = "".join([f'<div class="sector-news" data-content="{n.get("content", "")}">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
             html += f"""
             <div class="sector-item" data-sector-codes="{all_codes_str}">
@@ -955,7 +983,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }}
+        /* 4개씩, 4개씩, 2개씩 레이아웃을 위한 4-column Grid 설정 */
+        .grid-indices {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
         /* 클릭 가능한 카드 디자인 */
@@ -1016,7 +1045,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-send:hover {{ background: #1d4ed8; }}
         #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
 
+        /* 모바일 환경에서는 2개씩 표시 */
         @media (max-width: 768px) {{
+            .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
         }}
     </style>
@@ -1103,10 +1134,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     // 서버에서 전달받은 SHA-256 해시값 (비밀번호 원문 노출 완벽 차단)
     const TARGET_HASH = "{pw_hash}";
     
-    // --- 트레이딩뷰(TradingView) 차트 새 탭 열기 (모달창 제거) ---
+    // --- 트레이딩뷰(TradingView) 차트 새 탭 열기 ---
     function openTradingView(symbol) {{
         if(!symbol) return;
-        // 트레이딩뷰 심볼 페이지를 새 탭으로 바로 띄움
         const tvUrl = `https://kr.tradingview.com/chart/?symbol=${{encodeURIComponent(symbol)}}`;
         window.open(tvUrl, '_blank');
     }}
@@ -1169,13 +1199,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         chatHistory.push({{ role: "user", parts: [{{ text: msg }}] }});
 
         const loadingId = 'msg-' + Date.now();
-        addMessageToUI('ai', '생각 중...', loadingId);
+        addMessageToUI('ai', '본문 정보와 차트 추세를 분석 중...', loadingId);
 
         try {{
             // 1. DART 공시 데이터 수집
             const dartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
 
-            // 2. 화면의 지수 및 거시경제 지표 데이터 수집
+            // 2. 화면의 지수 및 거시경제 지표 데이터 수집 (추세 포함)
             let indicesData = "";
             document.querySelectorAll('.grid-indices .card').forEach(card => {{
                 const title = card.querySelector('.card-title') ? card.querySelector('.card-title').innerText : '';
@@ -1185,10 +1215,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
-            // 3. 화면의 경제/섹터 속보 뉴스 수집
+            // 3. 화면의 뉴스 요약본 데이터 수집
             let newsData = "";
-            document.querySelectorAll('.sector-news a').forEach(news => {{
-                newsData += `- ${{news.innerText}}\\n`;
+            document.querySelectorAll('.sector-news').forEach(newsEl => {{
+                const aTag = newsEl.querySelector('a');
+                const title = aTag ? aTag.innerText : '';
+                const content = newsEl.getAttribute('data-content') || '';
+                if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
             }});
             if (!newsData) newsData = "뉴스 정보 없음";
 
@@ -1202,13 +1235,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `[실시간 컨텍스트 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
                                `- DART 주요 공시:\\n${{dartData}}\\n` +
-                               `- 주요 속보 뉴스:\\n${{newsData}}\\n` +
+                               `- 주요 뉴스 (기사 본문 요약 포함):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
-                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요. 필요시 지수별 '기술적 추세' 데이터도 적극 활용하세요.\\n` +
-                               `2. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 구체적인 실적/매출 액수는 절대 지어내지 마세요. 주어진 데이터에 없는 세부 수치는 "정확한 수치는 확인이 필요합니다" 또는 "일반적인 흐름상..."으로 명확히 선을 그어 팩트와 전망을 구분하세요.\\n` +
-                               `3. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하며, 무조건적인 긍정이나 직접적인 매수/매도 추천은 피하고 객관적인 입장을 유지하세요.\\n` +
-                               `4. 가독성: 마크다운(굵은 글씨, 목록 기호 등)을 적극 사용하여 가독성 높게 답변하세요.`;
+                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요.\\n` +
+                               `2. 뉴스 본문 활용: 사용자가 뉴스를 물어볼 경우, 반드시 제공된 뉴스 데이터의 '[핵심 본문]' 내용을 꼼꼼히 반영하여 상세하게 설명해주세요. 제목만 읽지 말고 본문의 이유와 맥락을 포함해야 합니다.\\n` +
+                               `3. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 구체적인 실적/매출 액수는 절대 지어내지 마세요. 주어진 데이터에 없는 세부 수치는 "정확한 수치는 확인이 필요합니다" 또는 "일반적인 흐름상..."으로 명확히 선을 그어 팩트와 전망을 구분하세요.\\n` +
+                               `4. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하며, 무조건적인 긍정이나 직접적인 매수/매도 추천은 피하고 객관적인 입장을 유지하세요.\\n` +
+                               `5. 가독성: 마크다운(굵은 글씨, 목록 기호 등)을 적극 사용하여 가독성 높게 답변하세요.`;
 
             // 🌟 API 호출 파라미터 조정 (창의성을 낮추어 거짓말 방지)
             const payload = {{
