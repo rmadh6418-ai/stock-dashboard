@@ -88,8 +88,8 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     pts = []
     for i, val in enumerate(valid_data):
         x = (i / (n - 1)) * 100
-        # 10% ~ 90% 공간을 사용하여 텍스트가 잘리지 않게 조정
-        y = 90 - ((val - min_val) / val_range) * 80 
+        # 여백을 주어 텍스트가 밖으로 나가지 않도록 (30% ~ 70% 구간에만 차트를 그림)
+        y = 70 - ((val - min_val) / val_range) * 40 
         pts.append(f"{x:.1f},{y:.1f}")
     
     # 최고점/최저점 마커 좌표
@@ -97,9 +97,11 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     max_idx = valid_data.index(max_val)
     
     min_x = (min_idx / (n - 1)) * 100
-    min_y = 90 - ((min_val - min_val) / val_range) * 80
     max_x = (max_idx / (n - 1)) * 100
-    max_y = 90 - ((max_val - min_val) / val_range) * 80
+
+    # 텍스트 좌우 잘림 방지를 위해 X좌표 제한 (15% ~ 85% 안에서만 표출)
+    label_min_x = max(15, min(85, min_x))
+    label_max_x = max(15, min(85, max_x))
 
     fmt = "{:,.0f}" if is_int else "{:,.2f}"
     min_str = fmt.format(min_val)
@@ -116,8 +118,8 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     grad_id = f"grad_{code_key}"
 
     svg_html = f'''
-    <div style="width: 100%; height: 50px; position: relative; margin-top: 10px;">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 100%; overflow: visible;">
+    <div style="width: 100%; height: 75px; position: relative; margin-top: 10px;">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 100%; position: absolute; top:0; left:0; overflow: visible;">
             <defs>
                 <linearGradient id="{grad_id}" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stop-color="{stop1}" />
@@ -125,22 +127,20 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
                 </linearGradient>
             </defs>
             <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{" ".join(pts)}"></polyline>
+            
+            <!-- 라인 위 포인트 닷 -->
+            <circle cx="{min_x}%" cy="70%" r="3" fill="#2563eb" stroke="#fff" stroke-width="1.5" />
+            <circle cx="{max_x}%" cy="30%" r="3" fill="#dc2626" stroke="#fff" stroke-width="1.5" />
         </svg>
         
-        <!-- 최저점 마커 -->
-        <div style="position: absolute; left: {min_x}%; top: {min_y}%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5;">
-            <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; margin: 0 auto;"></div>
-            <div style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
-                최저 {min_str}
-            </div>
+        <!-- 최저점 마커 (차트 하단 박스 안에 갇히도록 위치 조정) -->
+        <div style="position: absolute; left: {label_min_x}%; top: 85%; transform: translateX(-50%); font-size: 0.72rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.9); padding: 2px 5px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 10;">
+            최저 {min_str}
         </div>
 
-        <!-- 최고점 마커 -->
-        <div style="position: absolute; left: {max_x}%; top: {max_y}%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5;">
-            <div style="width: 6px; height: 6px; background: #dc2626; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; margin: 0 auto;"></div>
-            <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
-                최고 {max_str}
-            </div>
+        <!-- 최고점 마커 (차트 상단 박스 안에 갇히도록 위치 조정) -->
+        <div style="position: absolute; left: {label_max_x}%; top: 15%; transform: translateX(-50%) translateY(-100%); font-size: 0.72rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.9); padding: 2px 5px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 10;">
+            최고 {max_str}
         </div>
     </div>
     '''
@@ -346,14 +346,14 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             
             score = get_news_score(raw_title, keyword)
             
-            # 본문 요약 데이터 추출 로직 추가
+            # 본문 요약 데이터 추출 로직
             content_preview = ""
             if i < len(dsc_tags):
                 content_preview = dsc_tags[i].text.strip()
             
             if score > 0:
                 try:
-                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도 (타임아웃 1.5초 짧게)
+                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도 (타임아웃 1.5초)
                     article_res = requests.get(link, headers=headers, timeout=1.5)
                     if article_res.status_code == 200:
                         article_soup = BeautifulSoup(article_res.text, "html.parser")
@@ -380,17 +380,14 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
                     
-                    # 다음 뉴스의 요약본 데이터
                     content_preview = item.get("summary", "").replace('"', "'").replace('\n', ' ')
                     
                     if score > 0: 
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
         except: pass
 
-    if stock_code:
-        code = str(stock_code).zfill(6)
-        candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 보러가기", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news", "score": 0.9, "content": ""})
-        candidates.append({"title": f"[{keyword}] 실시간 투자자 종목토론실", "press": "네이버게시판", "link": f"https://m.stock.naver.com/domestic/stock/{code}/discuss", "score": 0.7, "content": ""})
+    # ※ 주의: 챗봇이 목록만 읽는 문제를 해결하기 위해 '뉴스 리스트 및 공시보기' 가짜(fallback) 링크를 완전히 제거했습니다.
+    # 오직 기사 본문이 있는 진짜 뉴스만 리스트에 추가됩니다.
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
@@ -413,7 +410,7 @@ def get_exchange_rate():
     try:
         hist = yf.Ticker("KRW=X").history(period="1y")
         closes = hist['Close'].dropna()
-        if len(closes) >= 2:
+        if len(closes) >= 20:
             price = float(closes.iloc[-1])
             prev = float(closes.iloc[-2])
             diff = price - prev
@@ -434,7 +431,7 @@ def get_us_10y_yield():
     try:
         hist = yf.Ticker("^TNX").history(period="1y")
         closes = hist['Close'].dropna()
-        if len(closes) >= 2:
+        if len(closes) >= 20:
             price = float(closes.iloc[-1])
             prev = float(closes.iloc[-2])
             diff = price - prev
@@ -455,7 +452,7 @@ def get_us_30y_yield():
     try:
         hist = yf.Ticker("^TYX").history(period="1y")
         closes = hist['Close'].dropna()
-        if len(closes) >= 2:
+        if len(closes) >= 20:
             price = float(closes.iloc[-1])
             prev = float(closes.iloc[-2])
             diff = price - prev
@@ -480,7 +477,7 @@ def get_gold_price():
         gold_closes = hist_gold['Close'].dropna()
         krw_closes = hist_krw['Close'].dropna()
         
-        if len(gold_closes) >= 2 and len(krw_closes) >= 2:
+        if len(gold_closes) >= 20 and len(krw_closes) >= 20:
             gold_price = float(gold_closes.iloc[-1])
             gold_prev = float(gold_closes.iloc[-2])
             krw_price = float(krw_closes.iloc[-1])
@@ -511,7 +508,7 @@ def get_silver_price():
         silver_closes = hist_silver['Close'].dropna()
         krw_closes = hist_krw['Close'].dropna()
         
-        if len(silver_closes) >= 2 and len(krw_closes) >= 2:
+        if len(silver_closes) >= 20 and len(krw_closes) >= 20:
             silver_price = float(silver_closes.iloc[-1])
             silver_prev = float(silver_closes.iloc[-2])
             krw_price = float(krw_closes.iloc[-1])
@@ -537,7 +534,7 @@ def get_oil_price():
     try:
         hist = yf.Ticker("CL=F").history(period="1y")
         closes = hist['Close'].dropna()
-        if len(closes) >= 2:
+        if len(closes) >= 20:
             price = float(closes.iloc[-1])
             prev = float(closes.iloc[-2])
             diff = price - prev
@@ -558,7 +555,7 @@ def get_jpy_krw_rate():
     try:
         hist = yf.Ticker("JPYKRW=X").history(period="1y")
         closes = hist['Close'].dropna() * 100
-        if len(closes) >= 2:
+        if len(closes) >= 20:
             price = float(closes.iloc[-1])
             prev = float(closes.iloc[-2])
             diff = price - prev
@@ -905,6 +902,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         # 상승추세/하락추세 배지 HTML 조립
         trend_html = f'<div><span class="trend-badge">{idx["trend"]}</span></div>' if idx.get('trend') else ''
 
+        # 새 창으로 트레이딩뷰 차트가 바로 열리도록 onclick 연결
         index_cards += f"""
         <div class="card clickable" data-index-target="{idx['code_key']}" onclick="openTradingView('{tv_symbol}')" title="클릭하여 실시간 차트 보기">
             <div class="card-title">{idx['name']}</div>
@@ -924,7 +922,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             all_codes_str = ",".join(s.get("all_codes", []))
             
-            # 종목 클릭 시 트레이딩뷰 새 창으로 열리도록 연결 (모달창 제거)
+            # 종목 클릭 시 트레이딩뷰 새 창으로 열리도록 연결
             stock_tags = "".join([
                 f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\')" title="클릭하여 실시간 차트 보기">'
                 f'<span class="stock-name">{st["name"]}</span> '
@@ -934,7 +932,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            # 뉴스 본문 요약 데이터(data-content)를 HTML에 삽입하여 AI가 읽을 수 있도록 함
+            # 뉴스 본문 요약 데이터(data-content)를 HTML에 삽입하여 AI가 깊이 있게 읽을 수 있도록 함
             news_tags = "".join([f'<div class="sector-news" data-content="{n.get("content", "")}">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
             html += f"""
@@ -983,8 +981,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        /* 4개씩, 4개씩, 2개씩 레이아웃을 위한 4-column Grid 설정 */
-        .grid-indices {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }}
+        /* 💡 3열 배치 (3-3-3-1 구조를 위한 CSS Grid) */
+        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
         /* 클릭 가능한 카드 디자인 */
@@ -1047,7 +1045,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         /* 모바일 환경에서는 2개씩 표시 */
         @media (max-width: 768px) {{
-            .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
+            .grid-indices {{ grid-template-columns: repeat(2, 1fr); gap: 8px; }}
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
         }}
     </style>
@@ -1238,7 +1236,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 주요 뉴스 (기사 본문 요약 포함):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
-                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요.\\n` +
+                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요. 필요시 지수별 '기술적 추세' 데이터도 적극 활용하세요.\\n` +
                                `2. 뉴스 본문 활용: 사용자가 뉴스를 물어볼 경우, 반드시 제공된 뉴스 데이터의 '[핵심 본문]' 내용을 꼼꼼히 반영하여 상세하게 설명해주세요. 제목만 읽지 말고 본문의 이유와 맥락을 포함해야 합니다.\\n` +
                                `3. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 구체적인 실적/매출 액수는 절대 지어내지 마세요. 주어진 데이터에 없는 세부 수치는 "정확한 수치는 확인이 필요합니다" 또는 "일반적인 흐름상..."으로 명확히 선을 그어 팩트와 전망을 구분하세요.\\n` +
                                `4. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하며, 무조건적인 긍정이나 직접적인 매수/매도 추천은 피하고 객관적인 입장을 유지하세요.\\n` +
