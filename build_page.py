@@ -270,7 +270,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     - 코스닥 강세 섹터: {k150_strong} / 약세 섹터: {k150_weak}
 
     [작성 지침]
-    1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 것.
+    1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 정.
     2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
     3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
     4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
@@ -593,7 +593,7 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
         yh_symbol = ""
         if mobile_code == "KOSPI": yh_symbol = "^KS11"
         elif mobile_code == "KOSDAQ": yh_symbol = "^KQ11"
-        elif mobile_code == "KPI200": yh_symbol = "^KS200"
+        # KPI200 제거됨
         if yh_symbol:
             try:
                 hist = yf.Ticker(yh_symbol).history(period="1y")
@@ -655,10 +655,9 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
 
 def get_market_indices():
     results = []
+    # 코스피 200 카드를 삭제하여 총 9개의 데이터만 가져오게 설정 (3열 레이아웃을 위함)
     results.append(get_index_data_robust("코스피 (KOSPI)", "KOSPI", "KOSPI", "KOSPI", "KRX:KOSPI"))
     results.append(get_index_data_robust("코스닥 (KOSDAQ)", "KOSDAQ", "KOSDAQ", "KOSDAQ", "KRX:KOSDAQ"))
-    results.append(get_index_data_robust("코스피 200", "KPI200", "KPI200", "KPI200", "KRX:KOSPI200"))
-
     results.append(get_exchange_rate())            
     results.append(get_jpy_krw_rate())            
     results.append(get_us_10y_yield())            
@@ -666,7 +665,6 @@ def get_market_indices():
     results.append(get_gold_price())              
     results.append(get_silver_price())            
     results.append(get_oil_price())                
-
     return results
 
 def get_market_stocks():
@@ -902,7 +900,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
         
-        # 상승추세/하락추세 배지 HTML 조립 (개행 요소인 div 제거)
+        # 상승추세/하락추세 배지 HTML 조립
         trend_html = f'<span class="trend-badge">{idx["trend"]}</span>' if idx.get('trend') else ''
 
         index_cards += f"""
@@ -985,8 +983,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        /* 4개씩, 4개씩, 2개씩 레이아웃을 위한 4-column Grid 설정 */
-        .grid-indices {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }}
+        /* 💡 3개씩 레이아웃을 위한 3-column Grid 설정 */
+        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
         /* 클릭 가능한 카드 디자인 */
@@ -994,14 +992,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
 
-        .card-title {{ font-size: 0.80rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
-        .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
+        /* 💡 지수명, 수치, 뱃지 상하 간격 대폭 축소 */
+        .card-title {{ font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 2px; }}
+        .card-value {{ font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
         
-        /* 뱃지들을 가로로 정렬하는 컨테이너 추가 */
-        .badge-container {{ display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 4px; }}
+        /* 뱃지들을 가로로 정렬 및 간격 축소 */
+        .badge-container {{ display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 2px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
-        
-        /* 추세 배지 스타일 (margin-top 제거 및 폰트 크기 통일) */
         .trend-badge {{ font-size: 0.75rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; color: #475569; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
@@ -1035,7 +1032,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         /* --- AI Chat UI 스타일 --- */
         #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
         #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
-        #chat-button:hover {{ transform: scale(1.05); }}
+        #chat-button:hover {{ transform: transform 1.05; }}
         #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }}
         #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
         #chat-close {{ background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0; }}
@@ -1050,7 +1047,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-send:hover {{ background: #1d4ed8; }}
         #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
 
-        /* 모바일 환경에서는 2개씩 표시 */
+        /* 모바일 환경에서는 2개씩 표시 유지 */
         @media (max-width: 768px) {{
             .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
@@ -1471,7 +1468,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             chunks.push(allCodes.slice(i, i + 40));
         }}
 
-        const indexAreas = await fetchNaverDirectJsonp("SERVICE_INDEX:KOSPI,KOSDAQ,KPI200");
+        // KPI200을 제외하고 코스피, 코스닥 지수만 실시간으로 받아오도록 수정
+        const indexAreas = await fetchNaverDirectJsonp("SERVICE_INDEX:KOSPI,KOSDAQ");
         if (indexAreas) {{
             for (const area of indexAreas) {{
                 for (const d of (area.datas || [])) {{
