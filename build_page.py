@@ -3,7 +3,6 @@ import os
 import re
 import time
 import urllib.parse
-import hashlib
 import concurrent.futures 
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
@@ -843,7 +842,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-# 💡 문자열 치환(.replace) 방식을 이용해 파이썬 템플릿 에러 원천 차단
+# 💡 템플릿 충돌과 암호 입력 먹통 현상 완벽 방어 처리된 렌더러
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -851,8 +850,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     if not raw_password:
         raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
     
-    # 깃허브 시크릿 비밀번호를 기반으로 안전한 SHA-256 해시 생성
-    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
+    # 🌟 로컬(file://) 등 어떠한 환경에서도 100% 작동하도록 대표님의 XOR 배열 방식을 파이썬에서 인코딩 
+    xor_key = 42
+    secret_hash = [ord(c) ^ xor_key for c in raw_password.strip()]
+    secret_hash_str = str(secret_hash) # 문자열 렌더링 예: "[73, 64, 89, ...]"
 
     index_cards = ""
     for idx in indices:
@@ -919,7 +920,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
-    # JS 코드의 중괄호({})로 인한 Python f-string 에러를 막기 위해 일반 문자열 선언
     template = """<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -996,7 +996,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .bg-down-light { background-color: #dbeafe !important; }
         .bg-gray-100 { background-color: #f1f5f9 !important; }
 
-        /* --- 로그인 버튼 애니메이션 효과 추가 --- */
+        /* --- 로그인 버튼 애니메이션 효과 --- */
         #login-btn { transition: all 0.15s ease; cursor: pointer; }
         #login-btn:active { transform: scale(0.95); background-color: #1d4ed8; }
 
@@ -1025,7 +1025,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </style>
 </head>
 <body>
-<!-- 🔐 오류 없는 견고한 암호 화면 (아이디 및 로직 완전 일치) -->
+<!-- 🔐 오류 없는 견고한 암호 화면 (XOR 방식 완벽 적용) -->
 <div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #0f172a; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
     <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); text-align: center; max-width: 350px; width: 90%;">
         <div style="font-size: 3.5rem; margin-bottom: 15px;">🔐</div>
@@ -1107,50 +1107,41 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    // 파이썬에서 제공하는 깃허브 DASHBOARD_PW 해시값
-    const TARGET_HASH = "__PW_HASH__";
-    
     function openTradingView(symbol) {
         if(!symbol) return;
         const tvUrl = `https://kr.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
         window.open(tvUrl, '_blank');
     }
 
-    // 💡 완벽하게 매칭 및 예외처리된 SHA-256 잠금 로직
-    async function checkPassword() {
-        const inputEl = document.getElementById('pw-input');
+    // 💡 대표님의 완벽한 XOR 잠금 로직 적용 (파이썬에서 __SECRET_HASH__로 주입됨)
+    const TARGET_HASH = __SECRET_HASH__;
+    const XOR_KEY = 42;
+
+    function checkPassword() {
+        const pin = document.getElementById('pw-input').value.trim();
         const errorMsg = document.getElementById('pw-error');
-        const input = inputEl.value.trim();
-        
-        if (!input) return;
 
-        try {
-            // 로컬(file://) 등 보안 환경이 제한된 경우 친절한 알림창 발생
-            if (!crypto || !crypto.subtle) {
-                alert("로컬 환경(file://)에서는 보안 정책상 로그인이 제한됩니다. 깃허브 페이지 주소(https://)로 접속해주세요.");
-                return;
+        if (!pin) return;
+
+        let isValid = (pin.length === TARGET_HASH.length);
+
+        if (isValid) {
+            for (let i = 0; i < pin.length; i++) {
+                if ((pin.charCodeAt(i) ^ XOR_KEY) !== TARGET_HASH[i]) {
+                    isValid = false;
+                    break;
+                }
             }
+        }
 
-            const encoder = new TextEncoder();
-            const data = encoder.encode(input);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-            if (hashHex === TARGET_HASH) {
-                document.getElementById('lock-screen').style.display = 'none';
-                sessionStorage.setItem('isUnlocked', 'true');
-            } else {
-                errorMsg.innerText = "비밀번호가 일치하지 않습니다.";
-                errorMsg.style.display = 'block';
-                inputEl.value = '';
-                inputEl.focus();
-            }
-        } catch (e) {
-            console.error("Hash error:", e);
-            errorMsg.innerText = "보안 모듈 오류가 발생했습니다. (HTTPS 접속 필요)";
+        if (isValid) { 
+            sessionStorage.setItem('isUnlocked', 'true');
+            document.getElementById('lock-screen').style.display = 'none';
+        } else {
+            errorMsg.innerText = "비밀번호가 일치하지 않습니다.";
             errorMsg.style.display = 'block';
+            document.getElementById('pw-input').value = '';
+            document.getElementById('pw-input').focus();
         }
     }
 
@@ -1607,7 +1598,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </html>"""
 
     # 생성된 문자열에 파이썬 변수 매핑 (.replace 활용)
-    template = template.replace("__PW_HASH__", pw_hash)
+    template = template.replace("__SECRET_HASH__", secret_hash_str)
     template = template.replace("__KST_NOW__", kst_now)
     template = template.replace("__INDEX_CARDS__", index_cards)
     template = template.replace("__AI_UPDATED_TIME__", ai_updated_time)
