@@ -59,7 +59,7 @@ KOSDAQ150_SECTORS = {
     "피팅·장비기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅", "동국S&C", "씨에스베어링", "유니슨", "삼강엠앤티"]
 }
 
-# ----------------- 스마트 스파크 차트 & 추세 생성 함수 (레이아웃 최적화) -----------------
+# ----------------- 스마트 스파크 차트 & 추세 생성 함수 -----------------
 def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     if not data or len(data) < 20:
         return "", ""
@@ -67,7 +67,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     valid_data = [float(d) for d in data if pd.notnull(d)]
     if len(valid_data) < 20: return "", ""
 
-    # 추세 계산 (최근가, 5일 이평선, 20일 이평선)
+    # 추세 계산
     current = valid_data[-1]
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
@@ -79,7 +79,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     else:
         trend = "횡보/혼조 ↔️"
 
-    # SVG 차트 그리기 최적화 계산 (차트를 상하단 30% 영역으로 압축하여 텍스트 공간 확보)
+    # SVG 차트 그리기
     min_val = min(valid_data)
     max_val = max(valid_data)
     val_range = max_val - min_val if max_val != min_val else 1
@@ -88,17 +88,15 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     pts = []
     for i, val in enumerate(valid_data):
         x = (i / (n - 1)) * 100
-        y = 70 - ((val - min_val) / val_range) * 40  # Y를 30(상단) ~ 70(하단) 범위로 제한
+        y = 70 - ((val - min_val) / val_range) * 40 
         pts.append(f"{x:.1f},{y:.1f}")
     
-    # 최고점/최저점 마커 좌표 계산
     min_idx = valid_data.index(min_val)
     max_idx = valid_data.index(max_val)
     
     min_x = (min_idx / (n - 1)) * 100
     max_x = (max_idx / (n - 1)) * 100
 
-    # 텍스트 좌우 잘림 방지를 위해 X좌표 제한 (15% ~ 85% 안에서만 표출)
     label_min_x = max(15, min(85, min_x))
     label_max_x = max(15, min(85, max_x))
 
@@ -130,12 +128,10 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             <circle cx="{max_x}%" cy="30%" r="3" fill="#dc2626" stroke="#fff" stroke-width="1.5" />
         </svg>
         
-        <!-- 최저점 마커 (차트 하단 안전 영역에 배치) -->
         <div style="position: absolute; left: {label_min_x}%; top: 75%; transform: translateX(-50%); font-size: 0.68rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.95); padding: 2px 4px; border-radius: 4px; z-index: 10; line-height: 1;">
             최저 {min_str}
         </div>
 
-        <!-- 최고점 마커 (차트 상단 안전 영역에 배치) -->
         <div style="position: absolute; left: {label_max_x}%; top: 25%; transform: translateX(-50%) translateY(-100%); font-size: 0.68rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.95); padding: 2px 4px; border-radius: 4px; z-index: 10; line-height: 1;">
             최고 {max_str}
         </div>
@@ -319,12 +315,10 @@ def get_news_score(title, stock_name):
     if has_biz: score += 4
     return score
 
-# --- 뉴스 본문 직결 및 AI용 원문 추출 함수 ---
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     
-    # 1. 네이버 금융 종목 뉴스 API 우선 탐색 (가장 정확한 기사 원문 제공)
     if stock_code:
         try:
             code = str(stock_code).zfill(6)
@@ -341,11 +335,10 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     
                     if oid and aid:
                         link = f"https://n.news.naver.com/article/{oid}/{aid}"
-                        score = get_news_score(raw_title, keyword) + 2  # 종목 API 매칭이므로 가산점
+                        score = get_news_score(raw_title, keyword) + 2 
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
         except: pass
 
-    # 2. 일반 네이버 검색 (보조 수단)
     if len(candidates) < limit:
         try:
             search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
@@ -372,6 +365,16 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     content_preview = dsc_tags[i].text.strip()
                 
                 if score > 0:
+                    try:
+                        article_res = requests.get(link, headers=headers, timeout=1.5)
+                        if article_res.status_code == 200:
+                            article_soup = BeautifulSoup(article_res.text, "html.parser")
+                            paragraphs = article_soup.find_all('p')
+                            article_text = " ".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
+                            if article_text:
+                                content_preview = article_text[:500]
+                    except: pass
+                    
                     content_preview = content_preview.replace('"', "'").replace('\n', ' ')
                     candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
         except: pass
@@ -391,7 +394,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
     return unique_news
 
-# --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "FX_IDC:USDKRW"}
     try:
@@ -475,7 +477,6 @@ def get_gold_price():
             diff = price_krw_per_don - prev_krw_per_don
             rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don != 0 else 0
 
-            # 차트 트렌드는 달러 금 가격 기준으로 생성
             svg_html, trend = create_sparkline_and_trend(gold_closes.tolist(), diff, "GOLD_DON", is_int=False)
 
             base.update({
@@ -562,7 +563,6 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
     base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": tv_symbol}
     
     history = []
-    # 1. 1년 역사적 데이터 추출
     try:
         h_url = f"https://m.stock.naver.com/api/index/{mobile_code}/price?pageSize=250&page=1"
         h_res = requests.get(h_url, headers=get_headers(), timeout=3)
@@ -584,7 +584,6 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
                 history = hist['Close'].dropna().tolist()
             except: pass
 
-    # 2. 실시간 현재가 추출
     realtime_fetched = False
     try:
         url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{mobile_code}"
@@ -618,11 +617,10 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
                 })
         except: pass
 
-    # 3. 실시간 현재가와 역사적 데이터를 통합하여 스파크차트/추세 렌더링
     if history and base["value"] != "-":
         try:
             current_price = float(base["value"].replace(",", ""))
-            history[-1] = current_price  # 실시간 현재가로 갱신
+            history[-1] = current_price  
             
             diff_str = str(base["change_val"]).replace(",", "").replace("+", "")
             diff = float(diff_str)
@@ -833,15 +831,19 @@ def send_kakao_alert(indices, k200_top, k150_top):
         k_sign = "▲ +" if kospi.get("is_up") else ("▼ -" if kospi.get("is_down") else "")
         kq_sign = "▲ +" if kosdaq.get("is_up") else ("▼ -" if kosdaq.get("is_down") else "")
         fx_sign = "▲ +" if fx.get("is_up") else ("▼ -" if fx.get("is_down") else "")
+        
+        kospi_rate = f"{abs(kospi.get('change_rate', 0.0)):.2f}"
+        kosdaq_rate = f"{abs(kosdaq.get('change_rate', 0.0)):.2f}"
+        fx_rate = f"{abs(fx.get('change_rate', 0.0)):.2f}"
 
         k200_lead = k200_top[0]["name"] if k200_top else "집계중"
         k150_lead = k150_top[0]["name"] if k150_top else "집계중"
 
         msg_text = (
             f"📊 [정규장 마감 리포트] {date_str}\n\n"
-            f"• 코스피: {kospi.get('value')} ({k_sign}{abs(kospi.get('change_rate', 0)):.2f}%)\n"
-            f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{abs(kosdaq.get('change_rate', 0)):.2f}%)\n"
-            f"• 원·달러: {fx.get('value')} ({fx_sign}{abs(fx.get('change_rate', 0)):.2f}%)\n"
+            f"• 코스피: {kospi.get('value')} ({k_sign}{kospi_rate}%)\n"
+            f"• 코스닥: {kosdaq.get('value')} ({kq_sign}{kosdaq_rate}%)\n"
+            f"• 원·달러: {fx.get('value')} ({fx_sign}{fx_rate}%)\n"
             f"• 강세섹터: {k200_lead} / {k150_lead}\n\n"
             f"언제든 접속 시 실시간 시세가 자동 동기화됩니다."
         )
@@ -885,9 +887,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
-        abs_rate = abs(idx['change_rate'])
         
-        # 추세 배지를 등락률 바로 옆에 붙임
+        abs_rate_val = abs(idx['change_rate'])
+        rate_str = f"{abs_rate_val:.2f}"
+        
         trend_html = f'<span class="trend-badge">{idx["trend"]}</span>' if idx.get('trend') else ''
 
         index_cards += f"""
@@ -895,7 +898,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <div class="card-title">{idx['name']}</div>
             <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
             <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom:4px;">
-                <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs_rate:.2f}%{diff_text}</div>
+                <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{rate_str}%{diff_text}</div>
                 {trend_html}
             </div>
             {sparkline_svg}
@@ -908,17 +911,22 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         html = ""
         for s in sectors:
             r = s["rate"]
+            sec_rate_str = f"{r:+.2f}"
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             all_codes_str = ",".join(s.get("all_codes", []))
             
-            stock_tags = "".join([
-                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\')" title="클릭하여 실시간 차트 보기">'
-                f'<span class="stock-name">{st["name"]}</span> '
-                f'<b class="stock-rate {"text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")}" data-live-rate="{st["rate"]}">{st["rate"]:+.2f}%</b> '
-                f'<span class="stock-price">({st["price"]}원)</span>'
-                f'</span>'
-                for st in s.get("stocks", [])
-            ])
+            stock_tags_list = []
+            for st in s.get("stocks", []):
+                st_rate_str = f"{st['rate']:+.2f}"
+                st_color = "text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")
+                stock_tags_list.append(
+                    f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\')" title="클릭하여 실시간 차트 보기">'
+                    f'<span class="stock-name">{st["name"]}</span> '
+                    f'<b class="stock-rate {st_color}" data-live-rate="{st["rate"]}">{st_rate_str}%</b> '
+                    f'<span class="stock-price">({st["price"]}원)</span>'
+                    f'</span>'
+                )
+            stock_tags = "".join(stock_tags_list)
 
             news_tags = "".join([f'<div class="sector-news" data-content="{n.get("content", "")}">📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a></div>' for n in s.get("news", [])])
 
@@ -926,7 +934,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <div class="sector-item" data-sector-codes="{all_codes_str}">
                 <div class="sector-header">
                     <span class="sector-name">{s['name']}</span>
-                    <span class="sector-rate {color_class}">{r:+.2f}%</span>
+                    <span class="sector-rate {color_class}">{sec_rate_str}%</span>
                 </div>
                 <div class="stock-container">{stock_tags}</div>
                 {news_tags}
@@ -972,7 +980,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
-        /* 클릭 가능한 카드 디자인 */
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
@@ -981,7 +988,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; align-self: center; }}
         
-        /* 📈 추세 배지 스타일 수정 */
         .trend-badge {{ font-size: 0.72rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; color: #475569; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
