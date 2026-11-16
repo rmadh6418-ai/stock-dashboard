@@ -801,7 +801,6 @@ def calculate_sectors(sector_dict, stock_data):
     for s in top_sectors + bot_sectors:
         news_items = []
         for st in s["stocks"]:
-            # AI가 읽을 풍부한 기사를 위해 섹터별 상위 종목의 실시간 뉴스를 최대 2개씩 가져옴
             st_news = fetch_real_news(st["name"], st.get("code", ""), limit=2)
             if st_news:
                 news_items.extend(st_news)
@@ -1228,9 +1227,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 const content = contentSpan ? contentSpan.innerText : '';
                 
                 // 불필요한 링크(종목토론실, 보러가기)가 아닌 진짜 기사일 때만 컨텍스트에 추가
-                if(title && !title.includes("보러가기") && !title.includes("종목토론실")) {
+                if(title && !title.includes("보러가기") && !title.includes("종목토론실")) {{
                     newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
-                }
+                }}
             }});
             if (!newsData) newsData = "현재 수집된 구체적인 뉴스 본문이 없습니다.";
 
