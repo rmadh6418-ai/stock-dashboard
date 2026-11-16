@@ -4,7 +4,7 @@ import re
 import time
 import urllib.parse
 import hashlib
-import concurrent.futures # ✨ 병렬 처리를 위해 추가
+import concurrent.futures
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -147,7 +147,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
-# ----------------- 외부 DART 및 구글 뉴스 스크래핑 함수 (수정됨) -----------------
 def fetch_dart_disclosures():
     try:
         url = "https://rmadh6418-ai.github.io/dart-dashboard/"
@@ -163,15 +162,14 @@ def fetch_dart_disclosures():
             text = re.sub(r'\s+', ' ', text)
             
             if len(text) > 50:
-                return f"[DART 대시보드 공시내용] {text[:3500]}"
+                return f"[DART 대시보드 요약]\n{text[:3500]}"
     except Exception as e:
         pass
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
-def fetch_real_news(keyword, stock_code="", limit=1):
+def fetch_real_news(keyword, stock_code="", limit=3):
     candidates = []
     try:
-        # 💡 GitHub Actions IP 차단을 피하기 위해 구글 뉴스 RSS를 rss2json API로 우회하여 수집
         search_query = f'"{keyword}" (경제 OR 비즈니스 OR 증시 OR 투자)'
         encoded_query = urllib.parse.quote(search_query)
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
@@ -221,7 +219,6 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
     return unique_news
 
-# ----------------- 기타 API 및 유틸리티 -----------------
 def call_gemini_rest_api(model_name, prompt, api_key):
     clean_model = model_name.replace("models/", "").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
@@ -366,7 +363,6 @@ def get_news_score(title, stock_name):
     if has_biz: score += 4
     return score
 
-# --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:USDKRW"}
     try:
@@ -746,33 +742,26 @@ def calculate_sectors(sector_dict, stock_data):
     if not sector_stats:
         return [], []
 
-    # ... (calculate_sectors 함수 상단부는 기존과 완전히 동일) ...
-
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
     
-    # -----------------------------------------------------
-    # ✨ 수정된 부분: ThreadPoolExecutor를 이용한 뉴스 병렬 수집
-    # -----------------------------------------------------
+    # 💡 ThreadPoolExecutor를 이용한 뉴스 병렬 수집 (종목명 태깅 및 3개 리미트 설정)
     def _fetch_stock_news(sector_ref, stock):
-        """병렬로 실행될 뉴스 수집 작업 함수"""
-        # 💡 limit=1 을 limit=3 으로 변경하여 종목당 최대 3개의 뉴스를 가져옵니다.
         news = fetch_real_news(stock["name"], stock.get("code", ""), limit=3)
+        for n in news:
+            n["stock_name"] = stock["name"] # HTML 렌더링 시 그룹화를 위해 종목명 추가
         return sector_ref, news
 
-    # max_workers=10으로 최대 10개의 스레드를 동시에 돌려 속도 극대화
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = []
         target_sectors = top_sectors + bot_sectors
         
-        # 각 섹터의 리스트 초기화 및 스레드풀에 작업 예약(Submit)
         for s in target_sectors:
             s["news"] = [] 
             for st in s["stocks"]:
                 futures.append(executor.submit(_fetch_stock_news, s, st))
         
-        # 완료된 작업부터 순차적으로 결과 반영
         for future in concurrent.futures.as_completed(futures):
             try:
                 sector_ref, news_items = future.result()
@@ -912,13 +901,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 for st in s.get("stocks", [])
             ])
 
-            news_tags = "".join([
-                f'<div class="sector-news">'
-                f'📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>'
-                f'<span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>'
-                f'</div>'
-                for n in s.get("news", [])
-            ])
+            # 💡 뉴스를 종목(stock_name)별로 그룹화하고 토글 버튼 생성
+            news_by_stock = {}
+            for n in s.get("news", []):
+                st_name = n.get("stock_name", "기타")
+                if st_name not in news_by_stock:
+                    news_by_stock[st_name] = []
+                news_by_stock[st_name].append(n)
+                
+            news_html = ""
+            for st_name, n_list in news_by_stock.items():
+                if not n_list: continue
+                news_html += f'<div class="news-group"><div class="news-group-title">📌 {st_name} 실시간 뉴스</div>'
+                for idx, n in enumerate(n_list):
+                    hidden_class = ' hidden-news' if idx >= 1 else ''
+                    news_html += f'''
+                    <div class="sector-news{hidden_class}">
+                        📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>
+                        <span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>
+                    </div>
+                    '''
+                if len(n_list) > 1:
+                    news_html += f'<div class="btn-more-container"><button class="btn-more" onclick="toggleNews(this)" data-expanded="false">+ {len(n_list)-1}개 더보기</button></div>'
+                news_html += '</div>'
 
             html += f"""
             <div class="sector-item" data-sector-codes="{all_codes_str}">
@@ -927,7 +932,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     <span class="sector-rate {color_class}">{r:+.2f}%</span>
                 </div>
                 <div class="stock-container">{stock_tags}</div>
-                {news_tags}
+                {news_html}
             </div>
             """
         return html
@@ -941,7 +946,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>실시간 국내 증시 대시보드</title>
-
     <meta name="theme-color" content="#f8fafc">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -985,6 +989,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .ai-time-badge {{ font-size: 0.78rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 3px 9px; border-radius: 999px; }}
         .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }}
 
+        /* 💡 DART 대시보드 UI 스타일 */
+        .dart-scroll-box {{ max-height: 180px; overflow-y: auto; font-size: 0.88rem; background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; color: #334155; line-height: 1.6; font-weight: 500; white-space: pre-wrap; word-break: break-all; }}
+        .btn-dart-link {{ font-size: 0.78rem; font-weight: 700; color: #fff; background: #1e293b; padding: 4px 10px; border-radius: 999px; text-decoration: none; transition: background 0.2s; }}
+        .btn-dart-link:hover {{ background: #0f172a; }}
+
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }}
@@ -997,7 +1006,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .stock-pill:active {{ background: #e2e8f0; transform: scale(0.96); }}
         .stock-pill:hover {{ border-color: #94a3b8; }}
 
+        /* 💡 뉴스 그룹핑 및 토글 스타일 */
+        .news-group {{ margin-bottom: 10px; background: #f8fafc; border-radius: 8px; padding: 10px; border: 1px solid #e2e8f0; }}
+        .news-group-title {{ font-size: 0.85rem; font-weight: 800; color: #334155; margin-bottom: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }}
         .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }}
+        .hidden-news {{ display: none; }}
+        .btn-more-container {{ text-align: center; margin-top: 4px; }}
+        .btn-more {{ background: none; border: none; color: #3b82f6; font-size: 0.8rem; font-weight: 800; cursor: pointer; padding: 4px 8px; }}
+        .btn-more:hover {{ text-decoration: underline; }}
         .news-link {{ color: #1d4ed8; text-decoration: none; }}
         .news-link:hover {{ text-decoration: underline; }}
 
@@ -1077,8 +1093,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div class="market-ai-content" id="ai-summary-text">{ai_market_summary}</div>
     </div>
 
-    <!-- 숨겨진 DART 공시 및 캘린더 데이터 (AI 컨텍스트용) -->
-    <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
+    <!-- 💡 DART 대시보드 UI 연동 -->
+    <div class="market-ai-box" style="background:#f8fafc; border-color:#cbd5e1;">
+        <div class="market-ai-header" style="color:#0f172a;">
+            <span>🏢 실시간 DART 주요 공시</span>
+            <a href="https://rmadh6418-ai.github.io/dart-dashboard/" target="_blank" class="btn-dart-link">대시보드 원본 보기 ↗</a>
+        </div>
+        <div class="dart-scroll-box" id="dart-summary-data">
+            {dart_summary}
+        </div>
+    </div>
+    
     <div id="calendar-data" style="display: none;"></div>
 
     <div id="sectors-root">
@@ -1101,7 +1126,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 DART 대시보드 공시내용 알려줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 방금 올라온 DART 공시 내용 요약해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1111,13 +1136,29 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    // 서버에서 전달받은 SHA-256 해시값 (비밀번호 원문 노출 완벽 차단)
     const TARGET_HASH = "{pw_hash}";
     
     function openTradingView(symbol) {{
         if(!symbol) return;
         const tvUrl = `https://kr.tradingview.com/chart/?symbol=${{encodeURIComponent(symbol)}}`;
         window.open(tvUrl, '_blank');
+    }}
+
+    // 💡 뉴스 접기/펼치기 토글 함수
+    function toggleNews(btn) {{
+        const group = btn.closest('.news-group');
+        const hiddenItems = group.querySelectorAll('.hidden-news');
+        let isExpanded = btn.getAttribute('data-expanded') === 'true';
+        
+        if (isExpanded) {{
+            hiddenItems.forEach(el => el.style.display = 'none');
+            btn.innerText = '+ ' + hiddenItems.length + '개 더보기';
+            btn.setAttribute('data-expanded', 'false');
+        }} else {{
+            hiddenItems.forEach(el => el.style.display = 'block');
+            btn.innerText = '- 접기';
+            btn.setAttribute('data-expanded', 'true');
+        }}
     }}
 
     // --- AI Chat Logic ---
@@ -1181,7 +1222,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...', loadingId);
 
         try {{
-            // 💡 1. 챗봇이 사용자의 DART 대시보드를 실시간으로 무조건 동적 스크래핑하게 만듦 (완벽 우회)
             let liveDartData = "실시간 공시 데이터를 찾을 수 없습니다.";
             try {{
                 const dartRes = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://rmadh6418-ai.github.io/dart-dashboard/?_=' + Date.now()));
@@ -1189,14 +1229,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     const dartJson = await dartRes.json();
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(dartJson.contents, "text/html");
-                    // 스크립트와 메뉴 등 방해 요소 제거
                     doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
                     liveDartData = doc.body.innerText.replace(/\\s+/g, ' ').substring(0, 3500);
                     if(liveDartData.length < 20) liveDartData = "수집된 공시 데이터 내용이 너무 짧거나 없습니다.";
                 }}
             }} catch(e) {{
                 console.error("DART 실시간 스크래핑 실패:", e);
-                // 실패할 경우 정적으로 생성된 데이터를 폴백(Fallback)으로 사용
                 liveDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
             }}
 
@@ -1209,18 +1247,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
-            // 💡 2. 챗봇 뉴스 본문 요약 인식을 위한 로직 강화
             let newsData = "";
             document.querySelectorAll('.sector-news').forEach(newsEl => {{
                 const aTag = newsEl.querySelector('a');
                 let title = aTag ? aTag.innerText : '';
-                // 프롬프트에 방해되는 기사 제목 앞의 언론사명 텍스트 제거
                 if (title) title = title.replace(/^\\[.*?\\]\\s*/, '');
                 
                 const contentSpan = newsEl.querySelector('.news-content-hidden');
                 let content = contentSpan ? contentSpan.innerText.trim() : '';
                 
-                // 기사 내용이 비어있더라도 AI가 제목을 바탕으로 추론하도록 강력하게 지시
                 if (!content || content.length < 10) content = "(내용 요약 없음 - AI는 반드시 제공된 기사 제목을 바탕으로 해당 뉴스의 배경과 시장에 미칠 영향을 상세히 추론하여 답변할 것)";
                 
                 if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
@@ -1230,7 +1265,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
 
-            // 💡 3. AI에게 회피성 답변 금지를 매우 강하게 명령하는 프롬프트
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
                                `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
                                `[실시간 데이터]\\n` +
@@ -1239,10 +1273,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\\n` +
-                               `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요! "실시간 주요 뉴스 링크만 제공된다" 혹은 "본문이 없어 요약할 수 없다"는 식의 회피성 답변은 절대 금지합니다. 제공된 텍스트가 짧더라도 당신의 배경지식을 더해 해당 뉴스의 의미를 3줄 이상 상세히 설명하세요.\\n` +
+                               `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n` +
                                `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트를 읽고 현재 어떤 기업들이 어떤 공시를 올렸는지 명확하게 요약하여 설명해주세요.\\n` +
                                `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
-                               `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
+                               `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요.\\n` +
                                `5. 가독성: 마크다운(굵은 글씨, 줄바꿈)을 적극 사용하여 가독성 높게 답변하세요.`;
 
             const payload = {{
@@ -1372,6 +1406,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         curBadge.innerText = newBadge.innerText;
                         curBadge.className = newBadge.className;
                     }}
+                }}
+                
+                // DART 데이터 갱신
+                const newDart = doc.getElementById("dart-summary-data");
+                const curDart = document.getElementById("dart-summary-data");
+                if (newDart && curDart) {{
+                    curDart.innerHTML = newDart.innerHTML;
                 }}
             }}
         }} catch (e) {{}}
