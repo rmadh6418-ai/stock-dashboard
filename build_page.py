@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import yfinance as yf
+import xml.etree.ElementTree as ET
 
 def get_headers(is_daum=False):
     headers = {
@@ -67,12 +68,11 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     valid_data = [float(d) for d in data if pd.notnull(d)]
     if len(valid_data) < 20: return "", ""
 
-    # 추세 계산 (최근가, 5일 이평선, 20일 이평선)
     current = valid_data[-1]
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
     
-    # 💡 세모 아이콘 완벽 제거 (텍스트만 남김)
+    # 세모 아이콘 삭제하고 텍스트만 남김
     if current >= ma5 and ma5 >= ma20:
         trend = "상승추세"
         trend_color = "#e11d48"
@@ -83,7 +83,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
         trend = "횡보/혼조"
         trend_color = "#64748b"
 
-    # SVG 차트 그리기 최적화 계산
     min_val = min(valid_data)
     max_val = max(valid_data)
     val_range = max_val - min_val if max_val != min_val else 1
@@ -92,11 +91,9 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     pts = []
     for i, val in enumerate(valid_data):
         x = (i / (n - 1)) * 100
-        # 10% ~ 90% 공간을 사용하여 텍스트가 잘리지 않게 조정
         y = 90 - ((val - min_val) / val_range) * 80 
         pts.append(f"{x:.1f},{y:.1f}")
     
-    # 최고점/최저점 마커 좌표
     min_idx = valid_data.index(min_val)
     max_idx = valid_data.index(max_val)
     
@@ -109,11 +106,9 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     min_str = fmt.format(min_val)
     max_str = fmt.format(max_val)
 
-    # 위치별 라벨 겹침 방지 (화면 바깥으로 나가는 것 방지)
     min_x_translate = "0%" if min_x < 20 else ("-100%" if min_x > 80 else "-50%")
     max_x_translate = "0%" if max_x < 20 else ("-100%" if max_x > 80 else "-50%")
 
-    # 등락에 따른 그라데이션 컬러 (한국식: 상승=Red, 하락=Blue)
     if diff > 0:
         stop1, stop2 = "#fca5a5", "#dc2626"
     elif diff < 0:
@@ -135,7 +130,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{" ".join(pts)}"></polyline>
         </svg>
         
-        <!-- 최저점 마커 -->
         <div style="position: absolute; left: {min_x}%; top: {min_y}%; z-index: 5; pointer-events: none;">
             <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
             <div style="position: absolute; bottom: 6px; transform: translateX({min_x_translate}); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
@@ -143,7 +137,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             </div>
         </div>
 
-        <!-- 최고점 마커 -->
         <div style="position: absolute; left: {max_x}%; top: {max_y}%; z-index: 5; pointer-events: none;">
             <div style="width: 6px; height: 6px; background: #dc2626; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
             <div style="position: absolute; top: 6px; transform: translateX({max_x_translate}); font-size: 0.7rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
@@ -155,39 +148,88 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
-# ----------------------------------------------------------------------
 
+# ----------------- 외부 DART 및 구글 뉴스 스크래핑 함수 -----------------
 def fetch_dart_disclosures():
-    dart_key = os.environ.get("DART_API_KEY", "").strip()
-    if not dart_key:
-        return "DART_API_KEY가 환경변수에 설정되지 않아 공시 정보를 불러올 수 없습니다."
-
-    now_kst = datetime.now(timezone(timedelta(hours=9)))
-    today_str = now_kst.strftime("%Y%m%d")
-
-    url = f"https://opendart.fss.or.kr/api/list.json?crtfc_key={dart_key}&bgn_de={today_str}&end_de={today_str}&page_count=30"
-
+    # 오픈 API 대신 사용자의 DART 대시보드(GitHub Pages)에서 직접 공시 내용 크롤링
     try:
+        url = "https://rmadh6418-ai.github.io/dart-dashboard/"
+        res = requests.get(url, timeout=5)
+        res.encoding = 'utf-8'
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            # 스크립트와 스타일은 요약 텍스트에서 방해되므로 제거
+            for script in soup(["script", "style", "nav", "footer"]):
+                script.extract()
+                
+            text = soup.get_text(separator=' ', strip=True)
+            text = re.sub(r'\s+', ' ', text)
+            
+            if len(text) > 50:
+                # 챗봇이 읽을 수 있도록 최대 3500자로 잘라서 전달
+                return f"[DART 대시보드 공시내용 원문 텍스트] {text[:3500]}"
+    except Exception as e:
+        pass
+    return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
+
+def fetch_real_news(keyword, stock_code="", limit=1):
+    candidates = []
+    try:
+        # 네이버/다음 대신 강력하고 안정적인 '구글 뉴스 RSS' 사용
+        search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
+        encoded_query = urllib.parse.quote(search_query)
+        # 최근 2일치 뉴스 검색
+        url = f"https://news.google.com/rss/search?q={encoded_query}+when:2d&hl=ko&gl=KR&ceid=KR:ko"
+        
         res = requests.get(url, timeout=5)
         if res.status_code == 200:
-            data = res.json()
-            if data.get("status") == "000":
-                filings = data.get("list", [])
-                if not filings:
-                    return "오늘 접수된 주요 DART 공시가 아직 없습니다."
+            # XML 파싱
+            root = ET.fromstring(res.text)
+            for item in root.findall('.//item'):
+                raw_title = item.find('title').text if item.find('title') is not None else ""
+                link = item.find('link').text if item.find('link') is not None else ""
+                press = item.find('source').text if item.find('source') is not None else "구글뉴스"
                 
-                summary = []
-                for f in filings[:20]:
-                    corp_name = f.get("corp_name", "")
-                    report_nm = f.get("report_nm", "")
-                    time_val = f.get("rcept_dt", "")
-                    time_format = f"{time_val[:4]}-{time_val[4:6]}-{time_val[6:8]}"
-                    summary.append(f"[{time_format}] {corp_name}: {report_nm}")
-                return "\n".join(summary)
-    except Exception:
+                score = get_news_score(raw_title, keyword)
+                if score > 0:
+                    desc = item.find('description').text if item.find('description') is not None else ""
+                    content_preview = ""
+                    if desc:
+                        # RSS description 안의 HTML 태그에서 텍스트만 추출
+                        desc_soup = BeautifulSoup(desc, "html.parser")
+                        content_preview = desc_soup.get_text(separator=' ', strip=True)
+                    
+                    # HTML이 깨지는 현상 방지
+                    content_preview = content_preview.replace("<", "<").replace(">", ">").replace('\n', ' ')
+                    raw_title = raw_title.replace("<", "<").replace(">", ">")
+                    
+                    candidates.append({
+                        "title": raw_title, 
+                        "press": press, 
+                        "link": link, 
+                        "score": score, 
+                        "content": content_preview
+                    })
+    except: 
         pass
-    return "DART 데이터를 가져오지 못했습니다."
 
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    unique_news = []
+    seen_titles = set()
+    for item in candidates:
+        clean_title = re.sub(r'\[.*?\]|-.*$', '', item['title']).strip()
+        clean_title = re.sub(r'\W+', '', clean_title)
+        if not clean_title: clean_title = item['title']
+
+        if clean_title not in seen_titles:
+            seen_titles.add(clean_title)
+            unique_news.append(item)
+            if len(unique_news) == limit: break
+
+    return unique_news
+
+# ----------------- 기타 API 및 유틸리티 -----------------
 def call_gemini_rest_api(model_name, prompt, api_key):
     clean_model = model_name.replace("models/", "").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
@@ -315,105 +357,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
         return old_cached_text + error_msg, display_time_label
 
     return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", display_time_label
-
-def get_news_score(title, stock_name):
-    for bad in EXCLUDE_NEWS_KEYWORDS:
-        if bad in title: return -1
-        
-    score = 10 
-    aliases = [stock_name]
-    if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
-    elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
-
-    has_stock = any(alias in title for alias in aliases if len(alias) >= 2)
-    has_biz = any(biz in title for biz in BUSINESS_NEWS_KEYWORDS)
-
-    if has_stock: score += 5
-    if has_biz: score += 4
-    return score
-
-def fetch_real_news(keyword, stock_code="", limit=1):
-    candidates = []
-    try:
-        search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
-        encoded_query = urllib.parse.quote(search_query)
-        url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        res = requests.get(url, headers=headers, timeout=4)
-        soup = BeautifulSoup(res.text, "html.parser")
-        
-        tit_tags = soup.find_all("a", class_="news_tit")
-        
-        for i, tit_tag in enumerate(tit_tags):
-            raw_title = tit_tag.text.strip()
-            link = tit_tag.get("href", "")
-            press = "관련뉴스"
-            parent = tit_tag.find_parent("div", class_="news_wrap")
-            
-            content_preview = ""
-            if parent:
-                press_tag = parent.find("a", class_="info press")
-                if press_tag: press = press_tag.text.replace("언론사 선정", "").strip()
-                
-                snippet_tag = parent.find("a", class_="api_txt_lines dsc_txt_wrap")
-                if not snippet_tag:
-                    snippet_tag = parent.find("div", class_="news_dsc")
-                if snippet_tag:
-                    content_preview = snippet_tag.text.strip()
-            
-            score = get_news_score(raw_title, keyword)
-            
-            if score > 0:
-                try:
-                    # 더 상세한 본문을 가져오기 위해 직접 링크 접속 시도
-                    article_res = requests.get(link, headers=headers, timeout=1.5)
-                    if article_res.status_code == 200:
-                        article_soup = BeautifulSoup(article_res.text, "html.parser")
-                        paragraphs = article_soup.find_all('p')
-                        article_text = " ".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
-                        if article_text:
-                            content_preview = article_text[:500]
-                except: pass
-                
-                content_preview = content_preview.replace("<", "<").replace(">", ">").replace("\n", " ")
-                candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
-    except: pass
-
-    if len(candidates) < limit and stock_code:
-        try:
-            code = str(stock_code).zfill(6)
-            d_url = f"https://finance.daum.net/api/quotes/A{code}/news?page=1&perPage=10"
-            d_headers = {"User-Agent": "Mozilla/5.0", "Referer": f"https://finance.daum.net/quotes/A{code}", "Accept": "application/json"}
-            d_res = requests.get(d_url, headers=d_headers, timeout=4)
-            if d_res.status_code == 200:
-                for item in d_res.json().get("data", []):
-                    raw_title = re.sub(r'<[^>]+>', '', item.get("title", "")).replace('"', '"').replace('&', '&')
-                    link = f"https://finance.daum.net/news/{item.get('newsId')}"
-                    press = item.get("cpKorName", "증권뉴스")
-                    score = get_news_score(raw_title, keyword)
-                    
-                    content_preview = item.get("summary", "").replace("<", "<").replace(">", ">").replace('\n', ' ')
-                    
-                    if score > 0: 
-                        candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
-        except: pass
-
-    # 💡 챗봇의 혼동을 막기 위해 네이버 종목 토론실 및 기본 뉴스 게시판 링크 더미 정보 삭제 완료
-
-    candidates.sort(key=lambda x: x["score"], reverse=True)
-    unique_news = []
-    seen_titles = set()
-    for item in candidates:
-        clean_title = re.sub(r'\[.*?\]', '', item['title']).strip()
-        clean_title = re.sub(r'\W+', '', clean_title)
-        if not clean_title: clean_title = item['title']
-
-        if clean_title not in seen_titles:
-            seen_titles.add(clean_title)
-            unique_news.append(item)
-            if len(unique_news) == limit: break
-
-    return unique_news
 
 # --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
 def get_exchange_rate():
@@ -1218,17 +1161,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
-            // 💡 챗봇 뉴스 본문 요약 인식을 위한 로직 강화
+            // 챗봇 뉴스 본문 요약 인식을 위한 로직 강화
             let newsData = "";
             document.querySelectorAll('.sector-news').forEach(newsEl => {{
                 const aTag = newsEl.querySelector('a');
                 let title = aTag ? aTag.innerText : '';
-                // 프롬프트에 방해되는 기사 제목 앞의 언론사명 텍스트 제거
                 if (title) title = title.replace(/^\[.*?\]\s*/, '');
                 
                 const contentSpan = newsEl.querySelector('.news-content-hidden');
                 let content = contentSpan ? contentSpan.innerText.trim() : '';
-                // 💡 기사 내용이 비어있더라도 AI가 당황하지 않고 제목을 바탕으로 추론하도록 지시
+                
+                // 기사 내용이 비어있더라도 AI가 당황하지 않게 지시
                 if (!content) content = "내용 요약 없음 (이 경우 기사 제목을 바탕으로 해당 뉴스가 호재인지 악재인지 반드시 스스로 추론하여 설명할 것)";
                 
                 if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
@@ -1243,14 +1186,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `제공되는 [실시간 컨텍스트 데이터]를 최우선으로 반영하되, 방대한 지식을 적극 활용하여 답변하세요.\\n\\n` +
                                `[실시간 컨텍스트 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
-                               `- DART 주요 공시:\\n${{dartData}}\\n` +
+                               `- DART 주요 공시 (사용자 대시보드 데이터):\\n${{dartData}}\\n` +
                                `- 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
                                `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
                                `2. 뉴스 본문 활용: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 활용하여 해당 기업의 최신 동향과 리스크 요인을 상세하게 요약해주세요. "링크만 제공되어 있다"거나 "본문이 없다"는 식의 회피성 답변은 절대 금지합니다! 본문 내용이 부실하면 기사 제목과 당신이 아는 배경지식을 총동원하여 어떻게든 유의미한 요약 분석을 제공하세요.\\n` +
-                               `3. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
-                               `4. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하세요.\\n` +
+                               `3. 공시 정보 안내: 사용자가 공시 정보를 물어보면, [DART 주요 공시] 섹션에 제공된 원문 텍스트를 분석하여 핵심 실적이나 계약 건을 명확하게 답변하세요.\\n` +
+                               `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
                                `5. 가독성: 마크다운을 적극 사용하여 가독성 높게 답변하세요.`;
 
             const payload = {{
@@ -1627,7 +1570,7 @@ if __name__ == "__main__":
 
     ai_market_summary, ai_updated_time = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
     
-    # DART 정보 패치 후 HTML에 전달
+    # 💡 DART 대시보드 크롤링 결과 전달
     dart_summary = fetch_dart_disclosures()
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
