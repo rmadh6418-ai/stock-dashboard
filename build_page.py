@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
-import yfinance as yf  # 야후 파이낸스 API (데이터 차단 우회 및 스파크 차트용)
+import yfinance as yf
 
 def get_headers(is_daum=False):
     headers = {
@@ -59,41 +59,92 @@ KOSDAQ150_SECTORS = {
     "피팅·장비기자재": ["성광벤드", "태광", "하이록코리아", "디케이락", "비엠티", "태웅", "동국S&C", "씨에스베어링", "유니슨", "삼강엠앤티"]
 }
 
-# ----------------- 1년 스파크 차트 (SVG) 생성 함수 -----------------
-def create_sparkline_svg(data):
-    if not data or len(data) < 2: return ""
+# ----------------- 스마트 스파크 차트 & 추세 생성 함수 -----------------
+def create_sparkline_and_trend(data, diff, code_key, is_int=False):
+    if not data or len(data) < 20:
+        return "", ""
+    
     valid_data = [float(d) for d in data if pd.notnull(d)]
-    if len(valid_data) < 2: return ""
+    if len(valid_data) < 20: return "", ""
 
+    # 추세 계산 (최근가, 5일 이평선, 20일 이평선)
+    current = valid_data[-1]
+    ma5 = sum(valid_data[-5:]) / 5
+    ma20 = sum(valid_data[-20:]) / 20
+    
+    if current >= ma5 and ma5 >= ma20:
+        trend = "상승추세 📈"
+    elif current < ma5 and ma5 < ma20:
+        trend = "하락추세 📉"
+    else:
+        trend = "횡보/혼조 ↔️"
+
+    # SVG 차트 그리기 최적화 계산
     min_val = min(valid_data)
     max_val = max(valid_data)
+    val_range = max_val - min_val if max_val != min_val else 1
+    
+    n = len(valid_data)
+    pts = []
+    for i, val in enumerate(valid_data):
+        x = (i / (n - 1)) * 100
+        # 10% ~ 90% 공간을 사용하여 텍스트가 잘리지 않게 조정
+        y = 90 - ((val - min_val) / val_range) * 80 
+        pts.append(f"{x:.1f},{y:.1f}")
+    
+    # 최고점/최저점 마커 좌표
+    min_idx = valid_data.index(min_val)
+    max_idx = valid_data.index(max_val)
+    
+    min_x = (min_idx / (n - 1)) * 100
+    min_y = 90 - ((min_val - min_val) / val_range) * 80
+    max_x = (max_idx / (n - 1)) * 100
+    max_y = 90 - ((max_val - min_val) / val_range) * 80
 
-    width = 120
-    height = 34
-    padding = 5
+    fmt = "{:,.0f}" if is_int else "{:,.2f}"
+    min_str = fmt.format(min_val)
+    max_str = fmt.format(max_val)
 
-    def get_x(idx): return padding + (idx / (len(valid_data) - 1)) * (width - 2 * padding)
-    def get_y(val):
-        if max_val == min_val: return height / 2
-        return height - padding - ((val - min_val) / (max_val - min_val)) * (height - 2 * padding)
+    # 등락에 따른 그라데이션 컬러 (한국식: 상승=Red, 하락=Blue)
+    if diff > 0:
+        stop1, stop2 = "#fca5a5", "#dc2626"
+    elif diff < 0:
+        stop1, stop2 = "#93c5fd", "#2563eb"
+    else:
+        stop1, stop2 = "#d1d5db", "#6b7280"
 
-    pts = [f"{get_x(i):.1f},{get_y(v):.1f}" for i, v in enumerate(valid_data)]
-    path_d = f"M {pts[0]} " + " L ".join(pts[1:])
+    grad_id = f"grad_{code_key}"
 
-    high_idx = valid_data.index(max_val)
-    low_idx = valid_data.index(min_val)
+    svg_html = f'''
+    <div style="width: 100%; height: 50px; position: relative; margin-top: 10px;">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 100%; overflow: visible;">
+            <defs>
+                <linearGradient id="{grad_id}" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="{stop1}" />
+                    <stop offset="100%" stop-color="{stop2}" />
+                </linearGradient>
+            </defs>
+            <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{" ".join(pts)}"></polyline>
+        </svg>
+        
+        <!-- 최저점 마커 -->
+        <div style="position: absolute; left: {min_x}%; top: {min_y}%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5;">
+            <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; margin: 0 auto;"></div>
+            <div style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
+                최저 {min_str}
+            </div>
+        </div>
 
-    hx, hy = get_x(high_idx), get_y(max_val)
-    lx, ly = get_x(low_idx), get_y(min_val)
-
-    svg = f'''
-    <svg width="100%" height="{height}" viewBox="0 0 {width} {height}" preserveAspectRatio="none" style="margin-top:10px; overflow:visible;">
-        <path d="{path_d}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linejoin="round" />
-        <circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.5" fill="#3b82f6" stroke="#fff" stroke-width="0.5" />
-        <circle cx="{hx:.1f}" cy="{hy:.1f}" r="2.5" fill="#ef4444" stroke="#fff" stroke-width="0.5" />
-    </svg>
+        <!-- 최고점 마커 -->
+        <div style="position: absolute; left: {max_x}%; top: {max_y}%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5;">
+            <div style="width: 6px; height: 6px; background: #dc2626; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; margin: 0 auto;"></div>
+            <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
+                최고 {max_str}
+            </div>
+        </div>
+    </div>
     '''
-    return svg
+    return svg_html, trend
 # ----------------------------------------------------------------------
 
 def fetch_dart_disclosures():
@@ -329,9 +380,9 @@ def fetch_real_news(keyword, stock_code="", limit=1):
 
     return unique_news
 
-# --- 야후 파이낸스(yfinance)를 통한 거시경제 데이터 및 스파크차트 안전 추출기 ---
+# --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
 def get_exchange_rate():
-    base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "FX_IDC:USDKRW"}
+    base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "FX_IDC:USDKRW"}
     try:
         hist = yf.Ticker("KRW=X").history(period="1y")
         closes = hist['Close'].dropna()
@@ -340,16 +391,19 @@ def get_exchange_rate():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
+            
+            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "FX_USDKRW", is_int=False)
+            
             base.update({
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": create_sparkline_svg(closes.tolist())
+                "sparkline": svg_html, "trend": trend
             })
     except: pass
     return base
 
 def get_us_10y_yield():
-    base = {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "TVC:US10Y"}
+    base = {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "TVC:US10Y"}
     try:
         hist = yf.Ticker("^TNX").history(period="1y")
         closes = hist['Close'].dropna()
@@ -358,16 +412,19 @@ def get_us_10y_yield():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
+            
+            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "US10Y", is_int=False)
+            
             base.update({
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": create_sparkline_svg(closes.tolist())
+                "sparkline": svg_html, "trend": trend
             })
     except: pass
     return base
 
 def get_us_30y_yield():
-    base = {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "TVC:US30Y"}
+    base = {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "TVC:US30Y"}
     try:
         hist = yf.Ticker("^TYX").history(period="1y")
         closes = hist['Close'].dropna()
@@ -376,16 +433,19 @@ def get_us_30y_yield():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
+            
+            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "US30Y", is_int=False)
+
             base.update({
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": create_sparkline_svg(closes.tolist())
+                "sparkline": svg_html, "trend": trend
             })
     except: pass
     return base
 
 def get_gold_price():
-    base = {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "COMEX:GC1!"}
+    base = {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "COMEX:GC1!"}
     try:
         hist_gold = yf.Ticker("GC=F").history(period="1y")
         hist_krw = yf.Ticker("KRW=X").history(period="1y")
@@ -404,16 +464,19 @@ def get_gold_price():
             diff = price_krw_per_don - prev_krw_per_don
             rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don != 0 else 0
 
+            # 차트 트렌드는 달러 금 가격 기준으로 생성
+            svg_html, trend = create_sparkline_and_trend(gold_closes.tolist(), diff, "GOLD_DON", is_int=False)
+
             base.update({
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": create_sparkline_svg(gold_closes.tolist())
+                "sparkline": svg_html, "trend": trend
             })
     except: pass
     return base
 
 def get_silver_price():
-    base = {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "COMEX:SI1!"}
+    base = {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "COMEX:SI1!"}
     try:
         hist_silver = yf.Ticker("SI=F").history(period="1y")
         hist_krw = yf.Ticker("KRW=X").history(period="1y")
@@ -432,16 +495,18 @@ def get_silver_price():
             diff = price_krw_per_don - prev_krw_per_don
             rate = (diff / prev_krw_per_don) * 100 if prev_krw_per_don != 0 else 0
 
+            svg_html, trend = create_sparkline_and_trend(silver_closes.tolist(), diff, "SILVER_DON", is_int=False)
+
             base.update({
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": create_sparkline_svg(silver_closes.tolist())
+                "sparkline": svg_html, "trend": trend
             })
     except: pass
     return base
 
 def get_oil_price():
-    base = {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "NYMEX:CL1!"}
+    base = {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "NYMEX:CL1!"}
     try:
         hist = yf.Ticker("CL=F").history(period="1y")
         closes = hist['Close'].dropna()
@@ -450,16 +515,19 @@ def get_oil_price():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
+
+            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "OIL", is_int=False)
+
             base.update({
                 "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": create_sparkline_svg(closes.tolist())
+                "sparkline": svg_html, "trend": trend
             })
     except: pass
     return base
 
 def get_jpy_krw_rate():
-    base = {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "FX_IDC:JPYKRW"}
+    base = {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": "FX_IDC:JPYKRW"}
     try:
         hist = yf.Ticker("JPYKRW=X").history(period="1y")
         closes = hist['Close'].dropna() * 100
@@ -468,18 +536,22 @@ def get_jpy_krw_rate():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
+            
+            svg_html, trend = create_sparkline_and_trend(closes.tolist(), diff, "JPYKRW", is_int=False)
+
             base.update({
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
-                "sparkline": create_sparkline_svg(closes.tolist())
+                "sparkline": svg_html, "trend": trend
             })
     except: pass
     return base
 
 def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
-    base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": tv_symbol}
+    base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": "", "tv_symbol": tv_symbol}
     
-    # 1. 네이버에서 1년치 역사적 데이터 가져와 스파크 차트 생성 시도
+    history = []
+    # 1. 1년 역사적 데이터 추출
     try:
         h_url = f"https://m.stock.naver.com/api/index/{mobile_code}/price?pageSize=250&page=1"
         h_res = requests.get(h_url, headers=get_headers(), timeout=3)
@@ -487,11 +559,10 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
             h_data = h_res.json()
             prices = [float(item['closePrice'].replace(',', '')) for item in h_data if 'closePrice' in item]
             prices.reverse()  
-            base["sparkline"] = create_sparkline_svg(prices)
+            history = prices
     except: pass
 
-    # 2. 실패 시 야후 파이낸스(yfinance) 우회 데이터 사용
-    if not base["sparkline"]:
+    if not history:
         yh_symbol = ""
         if mobile_code == "KOSPI": yh_symbol = "^KS11"
         elif mobile_code == "KOSDAQ": yh_symbol = "^KQ11"
@@ -499,11 +570,11 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
         if yh_symbol:
             try:
                 hist = yf.Ticker(yh_symbol).history(period="1y")
-                closes = hist['Close'].dropna().tolist()
-                if closes: base["sparkline"] = create_sparkline_svg(closes)
+                history = hist['Close'].dropna().tolist()
             except: pass
 
-    # 3. 실시간 현재가 확보
+    # 2. 실시간 현재가 추출
+    realtime_fetched = False
     try:
         url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{mobile_code}"
         res = requests.get(url, headers=get_headers(), timeout=3)
@@ -518,23 +589,40 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
                     "change_rate": abs(float(str(data.get("fluctuationsRatio", 0)).replace(",", ""))),
                     "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
                 })
-                return base
+                realtime_fetched = True
     except: pass
 
-    try:
-        url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
-        res = requests.get(url, headers=get_headers(), timeout=3)
-        if res.status_code == 200:
-            data = res.json()
-            cd = str(data.get("compareToPreviousPrice", {}).get("code", "3"))
-            base.update({
-                "value": data.get("closePrice", "-"),
-                "change_val": data.get("compareToPreviousClosePrice", "0"),
-                "change_rate": abs(float(data.get("fluctuationsRatio", 0))),
-                "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
-            })
-            return base
-    except: pass
+    if not realtime_fetched:
+        try:
+            url = f"https://m.stock.naver.com/api/index/{mobile_code}/basic"
+            res = requests.get(url, headers=get_headers(), timeout=3)
+            if res.status_code == 200:
+                data = res.json()
+                cd = str(data.get("compareToPreviousPrice", {}).get("code", "3"))
+                base.update({
+                    "value": data.get("closePrice", "-"),
+                    "change_val": data.get("compareToPreviousClosePrice", "0"),
+                    "change_rate": abs(float(data.get("fluctuationsRatio", 0))),
+                    "is_up": cd in ["1", "2"], "is_down": cd in ["4", "5"]
+                })
+        except: pass
+
+    # 3. 실시간 현재가와 역사적 데이터를 통합하여 스파크차트/추세 렌더링
+    if history and base["value"] != "-":
+        try:
+            current_price = float(base["value"].replace(",", ""))
+            history[-1] = current_price  # 실시간 현재가로 갱신
+            
+            diff_str = str(base["change_val"]).replace(",", "").replace("+", "")
+            diff = float(diff_str)
+            if base["is_down"]: diff = -abs(diff)
+            elif base["is_up"]: diff = abs(diff)
+            else: diff = 0.0
+
+            svg_html, trend = create_sparkline_and_trend(history, diff, key, is_int=False)
+            base["sparkline"] = svg_html
+            base["trend"] = trend
+        except: pass
 
     return base
 
@@ -786,14 +874,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
+        
+        # 상승추세/하락추세 배지 HTML 조립
+        trend_html = f'<div><span class="trend-badge">{idx["trend"]}</span></div>' if idx.get('trend') else ''
 
-        # 새 창으로 트레이딩뷰 차트가 바로 열리도록 onclick 연결
         index_cards += f"""
         <div class="card clickable" data-index-target="{idx['code_key']}" onclick="openTradingView('{tv_symbol}')" title="클릭하여 실시간 차트 보기">
             <div class="card-title">{idx['name']}</div>
             <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
             <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
-            <div class="sparkline-box">{sparkline_svg}</div>
+            {trend_html}
+            {sparkline_svg}
         </div>
         """
 
@@ -867,7 +958,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .grid-indices {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
-        /* 클릭 가능한 카드/알약 디자인 */
+        /* 클릭 가능한 카드 디자인 */
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
@@ -875,7 +966,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .card-title {{ font-size: 0.80rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
         .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; align-self: center; }}
-        .sparkline-box {{ width: 100%; margin-top: auto; padding-top: 5px; }}
+        
+        /* 추세 배지 스타일 */
+        .trend-badge {{ font-size: 0.85rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; margin-top: 8px; color: #475569; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }}
@@ -1088,7 +1181,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 const title = card.querySelector('.card-title') ? card.querySelector('.card-title').innerText : '';
                 const val = card.querySelector('.card-value') ? card.querySelector('.card-value').innerText : '';
                 const badge = card.querySelector('.badge') ? card.querySelector('.badge').innerText : '';
-                if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}})\\n`;
+                const trend = card.querySelector('.trend-badge') ? card.querySelector('.trend-badge').innerText : '알 수 없음';
+                if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
             // 3. 화면의 경제/섹터 속보 뉴스 수집
@@ -1111,7 +1205,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 주요 속보 뉴스:\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
-                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요.\\n` +
+                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성, 금리/환율 리스크, 거시 경제 흐름 등을 물어보면 단순 사실 전달을 넘어 경제적 통찰과 논리적 근거를 바탕으로 폭넓게 분석해주세요. 필요시 지수별 '기술적 추세' 데이터도 적극 활용하세요.\\n` +
                                `2. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 구체적인 실적/매출 액수는 절대 지어내지 마세요. 주어진 데이터에 없는 세부 수치는 "정확한 수치는 확인이 필요합니다" 또는 "일반적인 흐름상..."으로 명확히 선을 그어 팩트와 전망을 구분하세요.\\n` +
                                `3. 균형 잡힌 시각: 호재와 리스크 요인을 항상 균형있게 제시하며, 무조건적인 긍정이나 직접적인 매수/매도 추천은 피하고 객관적인 입장을 유지하세요.\\n` +
                                `4. 가독성: 마크다운(굵은 글씨, 목록 기호 등)을 적극 사용하여 가독성 높게 답변하세요.`;
