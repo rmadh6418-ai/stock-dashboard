@@ -3,7 +3,6 @@ import os
 import re
 import time
 import urllib.parse
-import hashlib
 import concurrent.futures 
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
@@ -843,15 +842,9 @@ def send_kakao_alert(indices, k200_top, k150_top):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-# 💡 문자열 치환(.replace) 방식을 이용해 파이썬 템플릿 에러 원천 차단
+# 💡 템플릿 충돌(f-string 에러)과 로컬 보안 차단(Crypto API 먹통)을 원천 차단한 HTML 렌더러
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
-
-    raw_password = os.environ.get("DASHBOARD_PW")
-    if not raw_password:
-        raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
-    
-    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
     index_cards = ""
     for idx in indices:
@@ -918,7 +911,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
-    # f-string이 아닌 일반 문자열 선언 (중괄호 충돌 방지)
+    # f-string 대신 문자열로 정의하여 JS의 { } 중괄호 오류를 완벽 차단
     template = """<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1020,13 +1013,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </style>
 </head>
 <body>
-<!-- 🔐 비밀번호 잠금 화면 시작 -->
-<div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #f3f4f6; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-    <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center;">
-        <h2 style="margin-top: 0; margin-bottom: 20px; color: #111827; font-weight: 800;">🔒 대시보드 잠금</h2>
-        <input type="password" id="pw-input" placeholder="비밀번호를 입력하세요" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.1rem; border: 1.5px solid #d1d5db; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;">
-        <button onclick="checkPassword()" style="width: 100%; padding: 12px; font-size: 1.1rem; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">입장하기</button>
-        <p id="pw-error" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 틀렸습니다.</p>
+<!-- 🔐 오류 없는 로컬 잠금 화면 (대표님의 AI퀀트 대시보드 로직 100% 반영) -->
+<div id="lockScreen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #0f172a; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); text-align: center; max-width: 350px; width: 90%;">
+        <div style="font-size: 3.5rem; margin-bottom: 15px;">🔐</div>
+        <h2 style="margin-top: 0; margin-bottom: 20px; color: #1e293b; font-weight: 800;">시스템 접속 제한</h2>
+        <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 25px; line-height: 1.5;">인가된 사용자만 접근할 수 있습니다.<br>비밀번호를 입력하세요.</p>
+        <input type="password" id="lockPin" onkeypress="if(event.key==='Enter') checkPassword()" placeholder="비밀번호 입력" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.2rem; font-weight: bold; letter-spacing: 2px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;" autocomplete="off">
+        <button onclick="checkPassword()" style="width: 100%; padding: 14px; font-size: 1.1rem; background-color: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: background 0.2s;">접속하기</button>
+        <p id="lockError" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 일치하지 않습니다.</p>
     </div>
 </div>
 
@@ -1098,13 +1093,39 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    // 서버에서 전달받은 SHA-256 해시값 
-    const TARGET_HASH = "__PW_HASH__";
-    
     function openTradingView(symbol) {
         if(!symbol) return;
         const tvUrl = `https://kr.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
         window.open(tvUrl, '_blank');
+    }
+
+    // 💡 오류 없는 대표님의 XOR 잠금 로직 그대로 이식
+    function checkPassword() {
+        const pin = document.getElementById('lockPin').value.trim();
+        const errorMsg = document.getElementById('lockError');
+
+        const secretHash = [73, 64, 89, 91, 70, 75, 68, 89, 27, 11, 106];
+        const xorKey = 42;
+
+        let isValid = (pin.length === secretHash.length);
+
+        if (isValid) {
+            for (let i = 0; i < pin.length; i++) {
+                if ((pin.charCodeAt(i) ^ xorKey) !== secretHash[i]) {
+                    isValid = false;
+                    break;
+                }
+            }
+        }
+
+        if (isValid) { 
+            sessionStorage.setItem('isUnlocked', 'true');
+            document.getElementById('lockScreen').style.display = 'none';
+        } else {
+            errorMsg.style.display = 'block';
+            document.getElementById('lockPin').value = '';
+            document.getElementById('lockPin').focus();
+        }
     }
 
     // --- AI Chat Logic ---
@@ -1277,29 +1298,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         if (msgDiv) {
             let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
             msgDiv.innerHTML = formattedText;
-        }
-    }
-
-    async function checkPassword() {
-        const input = document.getElementById('pw-input').value;
-        try {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(input);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-            if (hashHex === TARGET_HASH) {
-                document.getElementById('lock-screen').style.display = 'none';
-                sessionStorage.setItem('isUnlocked', 'true');
-            } else {
-                document.getElementById('pw-error').style.display = 'block';
-            }
-        } catch (e) {
-            console.error("Hash error:", e);
-            document.getElementById('pw-error').innerText = "보안 인증 처리 중 오류가 발생했습니다.";
-            document.getElementById('pw-error').style.display = 'block';
         }
     }
 
@@ -1562,14 +1560,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
     window.onload = function() {
         if (sessionStorage.getItem('isUnlocked') === 'true') {
-            document.getElementById('lock-screen').style.display = 'none';
+            document.getElementById('lockScreen').style.display = 'none';
         }
-        document.getElementById('pw-input').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                checkPassword();
-            }
-        });
-
+        
         syncLiveMarketData();
         setInterval(syncLiveMarketData, 30000);
     };
@@ -1587,8 +1580,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </body>
 </html>"""
 
-    # 생성된 문자열 치환 적용 (Python 변수 렌더링)
-    template = template.replace("__PW_HASH__", pw_hash)
+    # 변수 치환(문자열 대입 방식)
     template = template.replace("__KST_NOW__", kst_now)
     template = template.replace("__INDEX_CARDS__", index_cards)
     template = template.replace("__AI_UPDATED_TIME__", ai_updated_time)
