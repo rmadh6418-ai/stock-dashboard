@@ -70,7 +70,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
     
-    # 확실한 색상 지정 (한국 증시: 상승=빨강, 하락=파랑) 및 이모지가 아닌 텍스트(▲, ▼) 사용
     if current >= ma5 and ma5 >= ma20:
         trend = "상승추세 ▲"
         trend_color = "#e11d48"
@@ -129,7 +128,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{points_str}"></polyline>
         </svg>
         
-        <!-- 최저점 마커 (화면 바깥 나감 방지 적용) -->
+        <!-- 최저점 마커 -->
         <div style="position: absolute; left: {min_x}%; top: {min_y}%; z-index: 5; pointer-events: none;">
             <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
             <div style="position: absolute; bottom: 6px; transform: translateX({min_x_translate}); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
@@ -137,7 +136,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             </div>
         </div>
 
-        <!-- 최고점 마커 (화면 바깥 나감 방지 적용) -->
+        <!-- 최고점 마커 -->
         <div style="position: absolute; left: {max_x}%; top: {max_y}%; z-index: 5; pointer-events: none;">
             <div style="width: 6px; height: 6px; background: #dc2626; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
             <div style="position: absolute; top: 6px; transform: translateX({max_x_translate}); font-size: 0.7rem; color: #dc2626; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
@@ -390,7 +389,6 @@ def fetch_real_news(keyword, stock_code="", limit=2):
                         candidates.append({"title": raw_title, "press": press, "link": link, "score": score, "content": content_preview})
         except: pass
 
-    # AI 챗봇이 실제 뉴스라고 착각하지 않도록 안내 텍스트 수정
     if stock_code:
         code = str(stock_code).zfill(6)
         candidates.append({"title": f"[{keyword}] 실시간 주요 뉴스 및 공시 (종목게시판 보러가기)", "press": "네이버금융", "link": f"https://m.stock.naver.com/domestic/stock/{code}/news", "score": 0.9, "content": "이 항목은 단순 링크 안내문이므로 기사 본문 요약에서 제외하세요."})
@@ -879,7 +877,8 @@ def send_kakao_alert(indices, k200_top, k150_top):
 
 # --- HTML 렌더링 영역 ---
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
-    kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+    kst_now_obj = datetime.now(timezone(timedelta(hours=9)))
+    kst_now = str(kst_now_obj.strftime("%Y-%m-%d %H:%M:%S"))
 
     raw_password = os.environ.get("DASHBOARD_PW")
     if not raw_password:
@@ -957,7 +956,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     html_k150_top = build_sector_list(k150_top)
     html_k150_bot = build_sector_list(k150_bot)
 
-    # 파이썬 f-string 관련 에러를 완전히 차단하기 위해 순수 문자열(Raw String) 템플릿 사용
     template = r"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1212,7 +1210,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${title}: ${val} (${badge}) / 기술적 추세: ${trend}\n`;
             });
 
-            // 진짜 기사 본문 요약 필터링 적용
             let newsData = "";
             document.querySelectorAll('.sector-news').forEach(newsEl => {
                 const aTag = newsEl.querySelector('a');
@@ -1605,8 +1602,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </body>
 </html>"""
 
-    # 안전한 문자열 치환(Replace) 방식으로 Python 구문 오류 원천 차단
-    template = template.replace("__KST_NOW__", str(kst_now.strftime("%Y-%m-%d %H:%M:%S")))
+    template = template.replace("__KST_NOW__", kst_now)
     template = template.replace("__INDEX_CARDS__", index_cards)
     template = template.replace("__AI_UPDATED_TIME__", str(ai_updated_time))
     template = template.replace("__AI_MARKET_SUMMARY__", str(ai_market_summary))
