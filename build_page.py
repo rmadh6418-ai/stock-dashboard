@@ -72,7 +72,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
     
-    # 세모 아이콘 삭제하고 텍스트만 남김
+    # 💡 세모 아이콘 완벽 삭제, 텍스트만 유지
     if current >= ma5 and ma5 >= ma20:
         trend = "상승추세"
         trend_color = "#e11d48"
@@ -151,15 +151,15 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
 
 # ----------------- 외부 DART 및 구글 뉴스 스크래핑 함수 -----------------
 def fetch_dart_disclosures():
-    # 오픈 API 대신 사용자의 DART 대시보드(GitHub Pages)에서 직접 공시 내용 크롤링
+    # 💡 사용자의 DART 대시보드에서 직접 텍스트 크롤링 (봇 차단 방지를 위해 헤더 추가)
     try:
         url = "https://rmadh6418-ai.github.io/dart-dashboard/"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, headers=get_headers(), timeout=5)
         res.encoding = 'utf-8'
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             
-            # 스크립트와 스타일은 요약 텍스트에서 방해되므로 제거
+            # 스크립트와 스타일 제거
             for script in soup(["script", "style", "nav", "footer"]):
                 script.extract()
                 
@@ -167,7 +167,6 @@ def fetch_dart_disclosures():
             text = re.sub(r'\s+', ' ', text)
             
             if len(text) > 50:
-                # 챗봇이 읽을 수 있도록 최대 3500자로 잘라서 전달
                 return f"[DART 대시보드 공시내용 원문 텍스트] {text[:3500]}"
     except Exception as e:
         pass
@@ -176,15 +175,14 @@ def fetch_dart_disclosures():
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     try:
-        # 네이버/다음 대신 강력하고 안정적인 '구글 뉴스 RSS' 사용
+        # 💡 네이버 대신 구글 뉴스 RSS 활용하여 봇 차단 및 구조 변경 문제 해결
         search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
         encoded_query = urllib.parse.quote(search_query)
-        # 최근 2일치 뉴스 검색
         url = f"https://news.google.com/rss/search?q={encoded_query}+when:2d&hl=ko&gl=KR&ceid=KR:ko"
         
-        res = requests.get(url, timeout=5)
+        # 구글 서버 거부를 막기 위해 헤더 설정 필수
+        res = requests.get(url, headers=get_headers(), timeout=5)
         if res.status_code == 200:
-            # XML 파싱
             root = ET.fromstring(res.text)
             for item in root.findall('.//item'):
                 raw_title = item.find('title').text if item.find('title') is not None else ""
@@ -196,13 +194,11 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     desc = item.find('description').text if item.find('description') is not None else ""
                     content_preview = ""
                     if desc:
-                        # RSS description 안의 HTML 태그에서 텍스트만 추출
                         desc_soup = BeautifulSoup(desc, "html.parser")
                         content_preview = desc_soup.get_text(separator=' ', strip=True)
                     
-                    # HTML이 깨지는 현상 방지
-                    content_preview = content_preview.replace("<", "<").replace(">", ">").replace('\n', ' ')
-                    raw_title = raw_title.replace("<", "<").replace(">", ">")
+                    content_preview = content_preview.replace("<", "&lt;").replace(">", "&gt;").replace('\n', ' ')
+                    raw_title = raw_title.replace("<", "&lt;").replace(">", "&gt;")
                     
                     candidates.append({
                         "title": raw_title, 
@@ -1070,7 +1066,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <button id="chat-close" onclick="toggleChat()">✖</button>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 반도체 관련 뉴스 요약해줘", "현재 거시경제 흐름상 리스크는 뭐야?"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 경제 지표, 속보 및 DART 공시 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 DART 대시보드 공시내용 알려줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1161,7 +1157,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
             }});
 
-            // 챗봇 뉴스 본문 요약 인식을 위한 로직 강화
             let newsData = "";
             document.querySelectorAll('.sector-news').forEach(newsEl => {{
                 const aTag = newsEl.querySelector('a');
@@ -1171,8 +1166,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 const contentSpan = newsEl.querySelector('.news-content-hidden');
                 let content = contentSpan ? contentSpan.innerText.trim() : '';
                 
-                // 기사 내용이 비어있더라도 AI가 당황하지 않게 지시
-                if (!content) content = "내용 요약 없음 (이 경우 기사 제목을 바탕으로 해당 뉴스가 호재인지 악재인지 반드시 스스로 추론하여 설명할 것)";
+                // 기사 내용이 비어있더라도 AI가 제목을 바탕으로 추론하도록 지시
+                if (!content) content = "(내용 없음 - 제공된 기사 제목을 바탕으로 해당 뉴스의 배경과 시장에 미칠 영향을 상세히 추론하여 답변할 것)";
                 
                 if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
             }});
@@ -1181,18 +1176,18 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
 
-            // 💡 AI에게 회피성 답변 금지를 강하게 명령하는 시스템 프롬프트 업데이트
+            // 💡 AI에게 회피성 답변 금지를 매우 강하게 명령하는 프롬프트
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
-                               `제공되는 [실시간 컨텍스트 데이터]를 최우선으로 반영하되, 방대한 지식을 적극 활용하여 답변하세요.\\n\\n` +
+                               `제공되는 [실시간 컨텍스트 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 답변하세요.\\n\\n` +
                                `[실시간 컨텍스트 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
-                               `- DART 주요 공시 (사용자 대시보드 데이터):\\n${{dartData}}\\n` +
+                               `- DART 주요 공시 (사용자 DART 대시보드 데이터):\\n${{dartData}}\\n` +
                                `- 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
-                               `[답변 원칙 (할루시네이션 완벽 차단 및 심층 대화)]\\n` +
-                               `1. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
-                               `2. 뉴스 본문 활용: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 활용하여 해당 기업의 최신 동향과 리스크 요인을 상세하게 요약해주세요. "링크만 제공되어 있다"거나 "본문이 없다"는 식의 회피성 답변은 절대 금지합니다! 본문 내용이 부실하면 기사 제목과 당신이 아는 배경지식을 총동원하여 어떻게든 유의미한 요약 분석을 제공하세요.\\n` +
-                               `3. 공시 정보 안내: 사용자가 공시 정보를 물어보면, [DART 주요 공시] 섹션에 제공된 원문 텍스트를 분석하여 핵심 실적이나 계약 건을 명확하게 답변하세요.\\n` +
+                               `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\\n` +
+                               `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요! "실시간 주요 뉴스 링크만 제공된다" 혹은 "본문이 없어 요약할 수 없다"는 식의 대답은 절대 금지합니다. 제공된 텍스트가 짧더라도 당신의 배경지식을 더해 풍부하게 설명하세요.\\n` +
+                               `2. 공시 내용 요구 시: [DART 주요 공시] 섹션에 수집된 텍스트를 읽고 현재 어떤 기업들이 어떤 공시를 올렸는지 명확하게 설명해주세요.\\n` +
+                               `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
                                `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
                                `5. 가독성: 마크다운을 적극 사용하여 가독성 높게 답변하세요.`;
 
@@ -1570,7 +1565,6 @@ if __name__ == "__main__":
 
     ai_market_summary, ai_updated_time = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
     
-    # 💡 DART 대시보드 크롤링 결과 전달
     dart_summary = fetch_dart_disclosures()
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
