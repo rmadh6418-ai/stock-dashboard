@@ -4,7 +4,7 @@ import re
 import time
 import urllib.parse
 import hashlib
-import concurrent.futures # 💡 병렬 처리를 위해 추가된 모듈
+import concurrent.futures 
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -167,7 +167,6 @@ def fetch_dart_disclosures():
         pass
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
-# 💡 기본값을 5로 변경 (각 기업당 뉴스 최대 5개)
 def fetch_real_news(keyword, stock_code="", limit=5):
     candidates = []
     try:
@@ -708,7 +707,6 @@ def get_market_stocks():
 
     return stocks
 
-# 💡 병렬 처리를 통해 각 기업의 최신 뉴스 5개씩 가져오도록 최적화됨
 def calculate_sectors(sector_dict, stock_data):
     sector_stats = []
     
@@ -748,14 +746,12 @@ def calculate_sectors(sector_dict, stock_data):
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
     
-    # --- 멀티스레딩(병렬)을 통한 뉴스 일괄 수집 ---
     news_dict = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         future_to_name = {}
         for s in top_sectors + bot_sectors:
             for st in s["stocks"]:
                 if st["name"] not in future_to_name:
-                    # 💡 기업별 뉴스 limit=5 전달
                     future_to_name[st["name"]] = executor.submit(fetch_real_news, st["name"], st.get("code", ""), 5)
 
         for name, future in future_to_name.items():
@@ -764,7 +760,6 @@ def calculate_sectors(sector_dict, stock_data):
             except Exception:
                 news_dict[name] = []
 
-    # 병렬로 수집된 뉴스 데이터를 매핑
     for s in top_sectors + bot_sectors:
         news_items = []
         for st in s["stocks"]:
@@ -1317,7 +1312,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     async function syncServerAiAndSectors() {{
         const basePath = window.location.pathname.endsWith('/')
             ? window.location.pathname
-            : window.location.pathname.replace(/\\/[^\\/]*$/, '/');
+            : window.location.pathname.replace(/\/[^\/]*$/, '/');
 
         try {{
             const aiRes = await fetch(`${{basePath}}ai_summary_cache.json?_=${{Date.now()}}`, {{
@@ -1602,7 +1597,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         f.write(template)
 
 if __name__ == "__main__":
-    # 💡 1. 메인 실행 블록: 지수, 종목, DART 공시 데이터를 멀티스레드로 동시 병렬 수집
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_indices = executor.submit(get_market_indices)
         future_stocks = executor.submit(get_market_stocks)
@@ -1612,7 +1606,6 @@ if __name__ == "__main__":
         stock_data = future_stocks.result()
         dart_summary = future_dart.result()
 
-    # 💡 2. 각 시장의 섹터 계산 (내부에서 기업별 뉴스 5개 병렬 수집)도 병렬 처리
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         future_k200 = executor.submit(calculate_sectors, KOSPI200_SECTORS, stock_data)
         future_k150 = executor.submit(calculate_sectors, KOSDAQ150_SECTORS, stock_data)
