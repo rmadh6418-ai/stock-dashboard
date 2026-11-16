@@ -94,6 +94,18 @@ def create_sparkline_svg(data):
     return svg
 # ----------------------------------------------------------------------
 
+# 야후 파이낸스를 이용해 안정적으로 1년치 차트를 가져오는 공통 헬퍼
+def get_yahoo_sparkline(symbol):
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1y&interval=1d"
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        if res.status_code == 200:
+            closes = res.json()['chart']['result'][0]['indicators']['quote'][0]['close']
+            return create_sparkline_svg(closes)
+    except:
+        pass
+    return ""
+
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     if not dart_key:
@@ -121,11 +133,8 @@ def fetch_dart_disclosures():
                     time_format = f"{time_val[:4]}-{time_val[4:6]}-{time_val[6:8]}"
                     summary.append(f"[{time_format}] {corp_name}: {report_nm}")
                 return "\n".join(summary)
-            else:
-                return f"DART 응답 오류: {data.get('message')}"
-    except Exception as e:
-        return f"DART 연동 중 오류 발생: {str(e)}"
-    
+    except Exception:
+        pass
     return "DART 데이터를 가져오지 못했습니다."
 
 def call_gemini_rest_api(model_name, prompt, api_key):
@@ -134,9 +143,7 @@ def call_gemini_rest_api(model_name, prompt, api_key):
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.2
-        }
+        "generationConfig": {"temperature": 0.2}
     }
     res = requests.post(url, headers=headers, json=payload, timeout=20)
     if res.status_code == 200:
@@ -149,11 +156,7 @@ def call_gemini_rest_api(model_name, prompt, api_key):
     raise RuntimeError(f"HTTP {res.status_code}: {res.text[:180]}")
 
 def get_candidate_models(api_key):
-    base_models = [
-        'gemini-3.5-flash-lite',
-        'gemini-3.6-flash',
-        'gemini-3.1-flash-lite',
-    ]
+    base_models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite']
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
         res = requests.get(url, timeout=10)
@@ -165,8 +168,7 @@ def get_candidate_models(api_key):
                 if "generateContent" in methods and "gemini" in m_name and "flash" in m_name:
                     if m_name not in base_models:
                         base_models.append(m_name)
-    except Exception:
-        pass
+    except Exception: pass
     return base_models
 
 def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
@@ -188,8 +190,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
         f"{k200_strong} 및 {k150_strong} 섹터를 중심으로 흐름을 보였습니다."
     )
 
-    if not API_KEY:
-        return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}", kst_now_str
+    if not API_KEY: return f"💡 API 키가 등록되지 않았습니다.<br><br>{fallback_text}", kst_now_str
 
     cache_file = "ai_summary_cache.json"
     cache_duration = 1080 
@@ -209,12 +210,10 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
                 elapsed = time.time() - cache_data.get("timestamp", 0)
 
                 needs_closing_refresh = is_after_close and ("마감" not in old_cached_time)
-
                 if event_name not in ["workflow_dispatch", "push"] and not needs_closing_refresh and elapsed < cache_duration:
                     if old_cached_text and not old_cached_text.startswith("[요약]") and not old_cached_text.startswith("🚨") and not old_cached_text.startswith("⏳"):
                         return old_cached_text, old_cached_time
-        except Exception:
-            pass
+        except Exception: pass
 
     market_phase = "정규장 마감 종합" if is_after_close else f"장중 실시간 ({kst_now_str} 기준)"
     display_time_label = f"{kst_now_str} 마감 종합" if is_after_close else f"{kst_now_str}"
@@ -239,7 +238,6 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
     available_models = get_candidate_models(API_KEY)
     last_error = ""
-
     time.sleep(15)
     
     for model_name in available_models:
@@ -269,29 +267,22 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
-        if bad in title:
-            return -1
+        if bad in title: return -1
         
     score = 10 
     aliases = [stock_name]
-    if stock_name == "S-Oil":
-        aliases.extend(["에쓰오일", "SOil", "S-OIL"])
-    elif "홀딩스" in stock_name:
-        aliases.append(stock_name.replace("홀딩스", ""))
+    if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
+    elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
 
     has_stock = any(alias in title for alias in aliases if len(alias) >= 2)
     has_biz = any(biz in title for biz in BUSINESS_NEWS_KEYWORDS)
 
-    if has_stock:
-        score += 5
-    if has_biz:
-        score += 4
-    
+    if has_stock: score += 5
+    if has_biz: score += 4
     return score
 
 def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
-    
     try:
         search_query = f"{keyword} 주식" if len(keyword) < 4 else keyword
         encoded_query = urllib.parse.quote(search_query)
@@ -308,14 +299,10 @@ def fetch_real_news(keyword, stock_code="", limit=1):
             parent = tit_tag.find_parent("div", class_="news_wrap")
             if parent:
                 press_tag = parent.find("a", class_="info press")
-                if press_tag: 
-                    press = press_tag.text.replace("언론사 선정", "").strip()
-                    
+                if press_tag: press = press_tag.text.replace("언론사 선정", "").strip()
             score = get_news_score(raw_title, keyword)
-            if score > 0: 
-                candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
-    except:
-        pass
+            if score > 0: candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+    except: pass
 
     if len(candidates) < limit and stock_code:
         try:
@@ -329,10 +316,8 @@ def fetch_real_news(keyword, stock_code="", limit=1):
                     link = f"https://finance.daum.net/news/{item.get('newsId')}"
                     press = item.get("cpKorName", "증권뉴스")
                     score = get_news_score(raw_title, keyword)
-                    if score > 0: 
-                        candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
-        except:
-            pass
+                    if score > 0: candidates.append({"title": raw_title, "press": press, "link": link, "score": score})
+        except: pass
 
     if stock_code:
         code = str(stock_code).zfill(6)
@@ -345,14 +330,12 @@ def fetch_real_news(keyword, stock_code="", limit=1):
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]', '', item['title']).strip()
         clean_title = re.sub(r'\W+', '', clean_title)
-        if not clean_title:
-            clean_title = item['title']
+        if not clean_title: clean_title = item['title']
 
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            if len(unique_news) == limit:
-                break
+            if len(unique_news) == limit: break
 
     return unique_news
 
@@ -361,7 +344,7 @@ def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "FX_IDC:USDKRW"}
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?range=1y&interval=1d"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        res = requests.get(url, headers=get_headers(), timeout=5)
         if res.status_code == 200:
             data = res.json()['chart']['result'][0]
             meta = data['meta']
@@ -374,7 +357,6 @@ def get_exchange_rate():
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
             })
-            
             try:
                 closes = data['indicators']['quote'][0]['close']
                 base["sparkline"] = create_sparkline_svg(closes)
@@ -386,7 +368,7 @@ def get_us_10y_yield():
     base = {"name": "미국채 10년물", "code_key": "US10Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "TVC:US10Y"}
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TNX?range=1y&interval=1d"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        res = requests.get(url, headers=get_headers(), timeout=5)
         if res.status_code == 200:
             data = res.json()['chart']['result'][0]
             meta = data['meta']
@@ -399,7 +381,6 @@ def get_us_10y_yield():
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
             })
-            
             try:
                 closes = data['indicators']['quote'][0]['close']
                 base["sparkline"] = create_sparkline_svg(closes)
@@ -411,7 +392,7 @@ def get_us_30y_yield():
     base = {"name": "미국채 30년물", "code_key": "US30Y", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "TVC:US30Y"}
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/^TYX?range=1y&interval=1d"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        res = requests.get(url, headers=get_headers(), timeout=5)
         if res.status_code == 200:
             data = res.json()['chart']['result'][0]
             meta = data['meta']
@@ -424,7 +405,6 @@ def get_us_30y_yield():
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
             })
-            
             try:
                 closes = data['indicators']['quote'][0]['close']
                 base["sparkline"] = create_sparkline_svg(closes)
@@ -436,7 +416,7 @@ def get_gold_price():
     base = {"name": "금시세 (1돈)", "code_key": "GOLD_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "COMEX:GC1!"}
     try:
         url_gold = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1y&interval=1d"
-        res_gold = requests.get(url_gold, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        res_gold = requests.get(url_gold, headers=get_headers(), timeout=5)
         if res_gold.status_code == 200:
             data_gold = res_gold.json()['chart']['result'][0]
             meta_gold = data_gold['meta']
@@ -444,7 +424,7 @@ def get_gold_price():
             gold_prev_usd = meta_gold['previousClose']
 
             url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
-            res_krw = requests.get(url_krw, headers={"User-Agent": "Mozilla/5.0"}, timeout=4).json()
+            res_krw = requests.get(url_krw, headers=get_headers(), timeout=5).json()
             krw_rate = res_krw['chart']['result'][0]['meta']['regularMarketPrice']
             krw_prev = res_krw['chart']['result'][0]['meta']['previousClose']
 
@@ -457,9 +437,7 @@ def get_gold_price():
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
             })
-            
             try:
-                # 트렌드는 원본 상품(달러기준)의 흐름 사용
                 closes = data_gold['indicators']['quote'][0]['close']
                 base["sparkline"] = create_sparkline_svg(closes)
             except: pass
@@ -470,7 +448,7 @@ def get_silver_price():
     base = {"name": "은시세 (1돈)", "code_key": "SILVER_DON", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "COMEX:SI1!"}
     try:
         url_silver = "https://query1.finance.yahoo.com/v8/finance/chart/SI=F?range=1y&interval=1d"
-        res_silver = requests.get(url_silver, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        res_silver = requests.get(url_silver, headers=get_headers(), timeout=5)
         if res_silver.status_code == 200:
             data_silver = res_silver.json()['chart']['result'][0]
             meta_silver = data_silver['meta']
@@ -478,7 +456,7 @@ def get_silver_price():
             silver_prev_usd = meta_silver['previousClose']
 
             url_krw = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
-            res_krw = requests.get(url_krw, headers={"User-Agent": "Mozilla/5.0"}, timeout=4).json()
+            res_krw = requests.get(url_krw, headers=get_headers(), timeout=5).json()
             krw_rate = res_krw['chart']['result'][0]['meta']['regularMarketPrice']
             krw_prev = res_krw['chart']['result'][0]['meta']['previousClose']
 
@@ -491,7 +469,6 @@ def get_silver_price():
                 "value": f"{price_krw_per_don:,.0f}원", "change_val": f"{diff:+,.0f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
             })
-            
             try:
                 closes = data_silver['indicators']['quote'][0]['close']
                 base["sparkline"] = create_sparkline_svg(closes)
@@ -503,7 +480,7 @@ def get_oil_price():
     base = {"name": "국제유가 (WTI)", "code_key": "OIL", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "NYMEX:CL1!"}
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/CL=F?range=1y&interval=1d"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        res = requests.get(url, headers=get_headers(), timeout=5)
         if res.status_code == 200:
             data = res.json()['chart']['result'][0]
             meta = data['meta']
@@ -516,7 +493,6 @@ def get_oil_price():
                 "value": f"${price:,.2f}", "change_val": f"{diff:+,.2f}",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
             })
-            
             try:
                 closes = data['indicators']['quote'][0]['close']
                 base["sparkline"] = create_sparkline_svg(closes)
@@ -528,7 +504,7 @@ def get_jpy_krw_rate():
     base = {"name": "엔·원 환율 (100엔)", "code_key": "JPYKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": "FX_IDC:JPYKRW"}
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/JPYKRW=X?range=1y&interval=1d"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        res = requests.get(url, headers=get_headers(), timeout=5)
         if res.status_code == 200:
             data = res.json()['chart']['result'][0]
             meta = data['meta']
@@ -541,7 +517,6 @@ def get_jpy_krw_rate():
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0
             })
-            
             try:
                 closes = data['indicators']['quote'][0]['close']
                 valid_closes = [c * 100 for c in closes if c is not None]
@@ -553,16 +528,16 @@ def get_jpy_krw_rate():
 def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
     base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "tv_symbol": tv_symbol}
     
-    try:
-        h_url = f"https://m.stock.naver.com/api/index/{mobile_code}/price?pageSize=250&page=1"
-        h_res = requests.get(h_url, headers=get_headers(), timeout=3)
-        if h_res.status_code == 200:
-            h_data = h_res.json()
-            prices = [float(item['closePrice'].replace(',', '')) for item in h_data if 'closePrice' in item]
-            prices.reverse()  
-            base["sparkline"] = create_sparkline_svg(prices)
-    except: pass
+    # 야후 파이낸스에서 지수용 안전한 스파크 차트 확보
+    yh_symbol = ""
+    if mobile_code == "KOSPI": yh_symbol = "^KS11"
+    elif mobile_code == "KOSDAQ": yh_symbol = "^KQ11"
+    elif mobile_code == "KPI200": yh_symbol = "^KS200"
+    
+    if yh_symbol:
+        base["sparkline"] = get_yahoo_sparkline(yh_symbol)
 
+    # 네이버에서 실시간 현재가 확보
     try:
         url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{mobile_code}"
         res = requests.get(url, headers=get_headers(), timeout=3)
@@ -846,9 +821,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
 
-        # onclick 이벤트로 트레이딩뷰 호출 연결
+        # 새 창으로 트레이딩뷰 차트가 바로 열리도록 onclick 연결
         index_cards += f"""
-        <div class="card clickable" data-index-target="{idx['code_key']}" onclick="openTradingView('{tv_symbol}', '{idx['name']}')" title="클릭하여 트레이딩뷰 차트 보기">
+        <div class="card clickable" data-index-target="{idx['code_key']}" onclick="openTradingView('{tv_symbol}')" title="클릭하여 실시간 차트 보기">
             <div class="card-title">{idx['name']}</div>
             <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
             <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
@@ -865,9 +840,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             all_codes_str = ",".join(s.get("all_codes", []))
             
-            # 종목 클릭 시 트레이딩뷰 호출 연결
+            # 종목 클릭 시 트레이딩뷰 새 창으로 열리도록 연결 (모달창 제거)
             stock_tags = "".join([
-                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\', \'{st["name"]}\')" title="클릭하여 트레이딩뷰 차트 보기">'
+                f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\')" title="클릭하여 실시간 차트 보기">'
                 f'<span class="stock-name">{st["name"]}</span> '
                 f'<b class="stock-rate {"text-up" if st["rate"]>0 else ("text-down" if st["rate"]<0 else "text-flat")}" data-live-rate="{st["rate"]}">{st["rate"]:+.2f}%</b> '
                 f'<span class="stock-price">({st["price"]}원)</span>'
@@ -1013,17 +988,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
 </div>
 
-<!-- 📈 트레이딩뷰 차트 팝업 모달창 -->
-<div id="tv-chart-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100005; justify-content:center; align-items:center;">
-    <div style="background:#fff; width:95%; max-width:900px; height:80%; max-height:700px; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-        <div style="padding:15px 20px; background:#0f172a; color:#fff; display:flex; justify-content:space-between; align-items:center;">
-            <h3 id="modal-tv-name" style="margin:0; font-size:1.15rem; font-weight:800;">실시간 차트</h3>
-            <button onclick="closeTradingView()" style="background:none; border:none; color:#cbd5e1; font-size:1.8rem; cursor:pointer; line-height:1;">×</button>
-        </div>
-        <iframe id="tv-iframe" src="" style="flex:1; width:100%; border:none; background:#f8fafc;"></iframe>
-    </div>
-</div>
-
 <div id="dashboard-root">
     <header>
         <h1>📊 실시간 국내 증시 대시보드</h1>
@@ -1080,21 +1044,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     // 서버에서 전달받은 SHA-256 해시값 (비밀번호 원문 노출 완벽 차단)
     const TARGET_HASH = "{pw_hash}";
     
-    // --- 트레이딩뷰(TradingView) 모달창 연동 Logic ---
-    function openTradingView(symbol, name) {{
+    // --- 트레이딩뷰(TradingView) 차트 새 탭 열기 (모달창 제거) ---
+    function openTradingView(symbol) {{
         if(!symbol) return;
-        document.getElementById('modal-tv-name').innerText = name + ' (TradingView 실시간)';
-        
-        // TradingView Widget 렌더링 주소 호출 (한국어/일봉 기준)
-        const tvUrl = `https://s.tradingview.com/widgetembed/?frameElementId=tradingview_1&symbol=${{encodeURIComponent(symbol)}}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=1&toolbarbg=f1f3f6&theme=light&style=1&timezone=Asia%2FSeoul`;
-        
-        document.getElementById('tv-iframe').src = tvUrl;
-        document.getElementById('tv-chart-modal').style.display = 'flex';
-    }}
-
-    function closeTradingView() {{
-        document.getElementById('tv-chart-modal').style.display = 'none';
-        document.getElementById('tv-iframe').src = '';
+        // 트레이딩뷰 심볼 페이지를 새 탭으로 바로 띄움
+        const tvUrl = `https://kr.tradingview.com/chart/?symbol=${{encodeURIComponent(symbol)}}`;
+        window.open(tvUrl, '_blank');
     }}
 
     // --- AI Chat Logic ---
