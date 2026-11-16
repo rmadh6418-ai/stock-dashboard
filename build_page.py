@@ -3,7 +3,8 @@ import os
 import re
 import time
 import urllib.parse
-import concurrent.futures 
+import hashlib
+import concurrent.futures # ✨ 병렬 처리를 위해 추가
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import requests
@@ -146,6 +147,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
+# ----------------- 외부 DART 및 구글 뉴스 스크래핑 함수 (수정됨) -----------------
 def fetch_dart_disclosures():
     try:
         url = "https://rmadh6418-ai.github.io/dart-dashboard/"
@@ -166,9 +168,10 @@ def fetch_dart_disclosures():
         pass
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
-def fetch_real_news(keyword, stock_code="", limit=5):
+def fetch_real_news(keyword, stock_code="", limit=1):
     candidates = []
     try:
+        # 💡 GitHub Actions IP 차단을 피하기 위해 구글 뉴스 RSS를 rss2json API로 우회하여 수집
         search_query = f'"{keyword}" (경제 OR 비즈니스 OR 증시 OR 투자)'
         encoded_query = urllib.parse.quote(search_query)
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
@@ -218,6 +221,7 @@ def fetch_real_news(keyword, stock_code="", limit=5):
 
     return unique_news
 
+# ----------------- 기타 API 및 유틸리티 -----------------
 def call_gemini_rest_api(model_name, prompt, api_key):
     clean_model = model_name.replace("models/", "").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
@@ -362,6 +366,7 @@ def get_news_score(title, stock_name):
     if has_biz: score += 4
     return score
 
+# --- 야후 파이낸스(yfinance)를 활용한 지표 추출 및 스파크차트 업데이트 ---
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:USDKRW"}
     try:
@@ -745,26 +750,33 @@ def calculate_sectors(sector_dict, stock_data):
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
     
-    news_dict = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_name = {}
-        for s in top_sectors + bot_sectors:
+    # -----------------------------------------------------
+    # ✨ 수정된 부분: ThreadPoolExecutor를 이용한 뉴스 병렬 수집
+    # -----------------------------------------------------
+    def _fetch_stock_news(sector_ref, stock):
+        """병렬로 실행될 뉴스 수집 작업 함수"""
+        news = fetch_real_news(stock["name"], stock.get("code", ""), limit=1)
+        return sector_ref, news
+
+    # max_workers=10으로 최대 10개의 스레드를 동시에 돌려 속도 극대화
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = []
+        target_sectors = top_sectors + bot_sectors
+        
+        # 각 섹터의 리스트 초기화 및 스레드풀에 작업 예약(Submit)
+        for s in target_sectors:
+            s["news"] = [] 
             for st in s["stocks"]:
-                if st["name"] not in future_to_name:
-                    future_to_name[st["name"]] = executor.submit(fetch_real_news, st["name"], st.get("code", ""), 5)
-
-        for name, future in future_to_name.items():
+                futures.append(executor.submit(_fetch_stock_news, s, st))
+        
+        # 완료된 작업부터 순차적으로 결과 반영
+        for future in concurrent.futures.as_completed(futures):
             try:
-                news_dict[name] = future.result()
-            except Exception:
-                news_dict[name] = []
-
-    for s in top_sectors + bot_sectors:
-        news_items = []
-        for st in s["stocks"]:
-            if news_dict.get(st["name"]):
-                news_items.extend(news_dict[st["name"]])
-        s["news"] = news_items
+                sector_ref, news_items = future.result()
+                if news_items:
+                    sector_ref["news"].extend(news_items)
+            except Exception as e:
+                print(f"뉴스 수집 중 오류 발생: {e}")
 
     return top_sectors, bot_sectors
 
@@ -842,7 +854,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
     except Exception as e:
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
-# 💡 템플릿 충돌과 암호 입력 먹통 현상 완벽 방어 처리된 렌더러
+# --- HTML 렌더링 영역 ---
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -850,10 +862,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     if not raw_password:
         raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
     
-    # 🌟 로컬(file://) 등 어떠한 환경에서도 100% 작동하도록 대표님의 XOR 배열 방식을 파이썬에서 인코딩 
-    xor_key = 42
-    secret_hash = [ord(c) ^ xor_key for c in raw_password.strip()]
-    secret_hash_str = str(secret_hash) # 문자열 렌더링 예: "[73, 64, 89, ...]"
+    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
     index_cards = ""
     for idx in indices:
@@ -920,7 +929,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
-    template = """<!DOCTYPE html>
+    template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -937,105 +946,97 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { 
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+        body {{ 
             background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; 
             -webkit-tap-highlight-color: transparent; 
             -webkit-touch-callout: none; 
             user-select: none; 
             padding-bottom: env(safe-area-inset-bottom); 
-        }
-        input, button, .message { user-select: auto !important; }
+        }}
+        input, button, .message {{ user-select: auto !important; }}
         
-        header { text-align: center; margin-bottom: 18px; }
-        h1 { font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
-        .sync-status { font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none; }
-        .sync-status:hover { background: #cbd5e1; }
-        .live-dot { width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        header {{ text-align: center; margin-bottom: 18px; }}
+        h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
+        .sync-status {{ font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none; }}
+        .sync-status:hover {{ background: #cbd5e1; }}
+        .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
+        @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        .grid-indices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }
-        .card { background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
+        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }}
+        .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
-        .clickable { cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
-        .clickable:active { transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
-        .clickable:hover { border-color: #94a3b8; }
+        .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
+        .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
+        .clickable:hover {{ border-color: #94a3b8; }}
 
-        .card-title { font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 2px; }
-        .card-value { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
+        .card-title {{ font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 2px; }}
+        .card-value {{ font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
         
-        .badge-container { display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 2px; }
-        .badge { display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
-        .trend-badge { font-size: 0.75rem; font-weight: 800; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; }
+        .badge-container {{ display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 2px; }}
+        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
+        .trend-badge {{ font-size: 0.75rem; font-weight: 800; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; }}
 
-        .market-ai-box { background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .market-ai-header { font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
-        .ai-time-badge { font-size: 0.78rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 3px 9px; border-radius: 999px; }
-        .market-ai-content { font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }
+        .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+        .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }}
+        .ai-time-badge {{ font-size: 0.78rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 3px 9px; border-radius: 999px; }}
+        .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }}
 
-        .group-title { font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }
-        .section-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }
-        .sector-box { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }
-        .sector-item { padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
-        .sector-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .sector-name { font-weight: 800; font-size: 1.02rem; }
+        .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
+        .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
+        .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }}
+        .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; }}
+        .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+        .sector-name {{ font-weight: 800; font-size: 1.02rem; }}
 
-        .stock-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-        .stock-pill { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; cursor: pointer; transition: transform 0.15s, background 0.15s; }
-        .stock-pill:active { background: #e2e8f0; transform: scale(0.96); }
-        .stock-pill:hover { border-color: #94a3b8; }
+        .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
+        .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; cursor: pointer; transition: transform 0.15s, background 0.15s; }}
+        .stock-pill:active {{ background: #e2e8f0; transform: scale(0.96); }}
+        .stock-pill:hover {{ border-color: #94a3b8; }}
 
-        .sector-news { font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }
-        .news-link { color: #1d4ed8; text-decoration: none; }
-        .news-link:hover { text-decoration: underline; }
+        .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }}
+        .news-link {{ color: #1d4ed8; text-decoration: none; }}
+        .news-link:hover {{ text-decoration: underline; }}
 
-        .text-up { color: #e11d48 !important; font-weight: 700; }
-        .text-down { color: #2563eb !important; font-weight: 700; }
-        .text-flat { color: #64748b !important; font-weight: 700; }
-        .bg-up-light { background-color: #ffe4e6 !important; }
-        .bg-down-light { background-color: #dbeafe !important; }
-        .bg-gray-100 { background-color: #f1f5f9 !important; }
-
-        /* --- 로그인 버튼 애니메이션 효과 --- */
-        #login-btn { transition: all 0.15s ease; cursor: pointer; }
-        #login-btn:active { transform: scale(0.95); background-color: #1d4ed8; }
+        .text-up {{ color: #e11d48 !important; font-weight: 700; }}
+        .text-down {{ color: #2563eb !important; font-weight: 700; }}
+        .text-flat {{ color: #64748b !important; font-weight: 700; }}
+        .bg-up-light {{ background-color: #ffe4e6 !important; }}
+        .bg-down-light {{ background-color: #dbeafe !important; }}
+        .bg-gray-100 {{ background-color: #f1f5f9 !important; }}
 
         /* --- AI Chat UI 스타일 --- */
-        #chat-widget { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
-        #chat-button { width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
-        #chat-button:hover { transform: scale(1.05); }
-        #chat-window { display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }
-        #chat-header { background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }
-        #chat-close { background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0; }
-        #chat-messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }
-        .message { max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; }
-        .message.user { align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }
-        .message.ai { align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }
-        #chat-input-container { display: flex; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; gap: 8px; }
-        #chat-input { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 20px; outline: none; font-size: 0.95rem; }
-        #chat-input:focus { border-color: #3b82f6; }
-        #chat-send { background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-        #chat-send:hover { background: #1d4ed8; }
-        #chat-send:disabled { background: #94a3b8; cursor: not-allowed; }
+        #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
+        #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
+        #chat-button:hover {{ transform: scale(1.05); }}
+        #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }}
+        #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
+        #chat-close {{ background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0; }}
+        #chat-messages {{ flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }}
+        .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; }}
+        .message.user {{ align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }}
+        .message.ai {{ align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }}
+        #chat-input-container {{ display: flex; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; gap: 8px; }}
+        #chat-input {{ flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 20px; outline: none; font-size: 0.95rem; }}
+        #chat-input:focus {{ border-color: #3b82f6; }}
+        #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
+        #chat-send:hover {{ background: #1d4ed8; }}
+        #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
 
-        @media (max-width: 768px) {
-            .grid-indices { grid-template-columns: repeat(2, 1fr); }
-            #chat-window { right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }
-        }
+        @media (max-width: 768px) {{
+            .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
+            #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
+        }}
     </style>
 </head>
 <body>
-<!-- 🔐 오류 없는 견고한 암호 화면 (XOR 방식 완벽 적용) -->
-<div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #0f172a; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-    <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); text-align: center; max-width: 350px; width: 90%;">
-        <div style="font-size: 3.5rem; margin-bottom: 15px;">🔐</div>
-        <h2 style="margin-top: 0; margin-bottom: 20px; color: #1e293b; font-weight: 800;">시스템 접속 제한</h2>
-        <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 25px; line-height: 1.5;">인가된 사용자만 접근할 수 있습니다.<br>비밀번호를 입력하세요.</p>
-        
-        <input type="password" id="pw-input" onkeypress="if(event.key==='Enter') checkPassword()" placeholder="비밀번호 입력" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.2rem; font-weight: bold; letter-spacing: 2px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;" autocomplete="off">
-        <button id="login-btn" onclick="checkPassword()" style="width: 100%; padding: 14px; font-size: 1.1rem; background-color: #2563eb; color: white; border: none; border-radius: 8px; font-weight: bold;">접속하기</button>
-        
-        <p id="pw-error" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 일치하지 않습니다.</p>
+<!-- 🔐 비밀번호 잠금 화면 시작 -->
+<div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #f3f4f6; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center;">
+        <h2 style="margin-top: 0; margin-bottom: 20px; color: #111827; font-weight: 800;">🔒 대시보드 잠금</h2>
+        <input type="password" id="pw-input" placeholder="비밀번호를 입력하세요" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.1rem; border: 1.5px solid #d1d5db; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;">
+        <button onclick="checkPassword()" style="width: 100%; padding: 12px; font-size: 1.1rem; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">입장하기</button>
+        <p id="pw-error" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 틀렸습니다.</p>
     </div>
 </div>
 
@@ -1059,32 +1060,32 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <h1>📊 실시간 국내 증시 대시보드</h1>
         <div class="sync-status" onclick="syncLiveMarketData()" title="클릭 시 즉시 실시간 시세 및 AI 분석 갱신">
             <span class="live-dot"></span>
-            <span id="sync-time-text">기준 시각: __KST_NOW__ (실시간 동기화 중...)</span>
+            <span id="sync-time-text">기준 시각: {kst_now} (실시간 동기화 중...)</span>
         </div>
     </header>
 
-    <div class="grid-indices">__INDEX_CARDS__</div>
+    <div class="grid-indices">{index_cards}</div>
 
     <div class="market-ai-box">
         <div class="market-ai-header">
             <span>🤖 주식시장 전체 AI 시황 분석</span>
-            <span class="ai-time-badge" id="ai-update-time">__AI_UPDATED_TIME__ 기준 (30분 주기 갱신)</span>
+            <span class="ai-time-badge" id="ai-update-time">{ai_updated_time} 기준 (30분 주기 갱신)</span>
         </div>
-        <div class="market-ai-content" id="ai-summary-text">__AI_MARKET_SUMMARY__</div>
+        <div class="market-ai-content" id="ai-summary-text">{ai_market_summary}</div>
     </div>
 
     <!-- 숨겨진 DART 공시 및 캘린더 데이터 (AI 컨텍스트용) -->
-    <div id="dart-summary-data" style="display: none;">__DART_SUMMARY__</div>
+    <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
     <div id="calendar-data" style="display: none;"></div>
 
     <div id="sectors-root">
         <div class="group-title">🏢 코스피 200 업종 동향</div>
-        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">__K200_TOP__</div>
-        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">__K200_BOT__</div>
+        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
+        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
 
         <div class="group-title">🚀 코스닥 150 업종 동향</div>
-        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">__K150_TOP__</div>
-        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">__K150_BOT__</div>
+        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{build_sector_list(k150_top)}</div>
+        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{build_sector_list(k150_bot)}</div>
     </div>
 </div>
 
@@ -1107,91 +1108,62 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    function openTradingView(symbol) {
+    // 서버에서 전달받은 SHA-256 해시값 (비밀번호 원문 노출 완벽 차단)
+    const TARGET_HASH = "{pw_hash}";
+    
+    function openTradingView(symbol) {{
         if(!symbol) return;
-        const tvUrl = `https://kr.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
+        const tvUrl = `https://kr.tradingview.com/chart/?symbol=${{encodeURIComponent(symbol)}}`;
         window.open(tvUrl, '_blank');
-    }
-
-    // 💡 대표님의 완벽한 XOR 잠금 로직 적용 (파이썬에서 __SECRET_HASH__로 주입됨)
-    const TARGET_HASH = __SECRET_HASH__;
-    const XOR_KEY = 42;
-
-    function checkPassword() {
-        const pin = document.getElementById('pw-input').value.trim();
-        const errorMsg = document.getElementById('pw-error');
-
-        if (!pin) return;
-
-        let isValid = (pin.length === TARGET_HASH.length);
-
-        if (isValid) {
-            for (let i = 0; i < pin.length; i++) {
-                if ((pin.charCodeAt(i) ^ XOR_KEY) !== TARGET_HASH[i]) {
-                    isValid = false;
-                    break;
-                }
-            }
-        }
-
-        if (isValid) { 
-            sessionStorage.setItem('isUnlocked', 'true');
-            document.getElementById('lock-screen').style.display = 'none';
-        } else {
-            errorMsg.innerText = "비밀번호가 일치하지 않습니다.";
-            errorMsg.style.display = 'block';
-            document.getElementById('pw-input').value = '';
-            document.getElementById('pw-input').focus();
-        }
-    }
+    }}
 
     // --- AI Chat Logic ---
     let chatHistory = [];
     let pendingMessage = "";
 
-    function toggleChat() {
+    function toggleChat() {{
         const win = document.getElementById('chat-window');
         win.style.display = win.style.display === 'flex' ? 'none' : 'flex';
-        if (win.style.display === 'flex') {
+        if (win.style.display === 'flex') {{
             document.getElementById('chat-input').focus();
-        }
-    }
+        }}
+    }}
 
-    function handleChatEnter(e) {
+    function handleChatEnter(e) {{
         if (e.key === 'Enter') sendChatMessage();
-    }
+    }}
 
-    function closeApiModal() {
+    function closeApiModal() {{
         document.getElementById('api-modal').style.display = 'none';
         pendingMessage = ""; 
-    }
+    }}
 
-    function saveApiModal() {
+    function saveApiModal() {{
         const val = document.getElementById('custom-api-key-input').value.trim();
-        if(val) {
+        if(val) {{
             localStorage.setItem('gemini_api_key', val);
             document.getElementById('api-modal').style.display = 'none';
-            if (pendingMessage) {
+            if (pendingMessage) {{
                 document.getElementById('chat-input').value = pendingMessage;
                 pendingMessage = "";
                 sendChatMessage();
-            }
-        }
-    }
+            }}
+        }}
+    }}
 
-    async function sendChatMessage() {
+    async function sendChatMessage() {{
         let apiKey = localStorage.getItem('gemini_api_key');
         const inputEl = document.getElementById('chat-input');
         const msg = inputEl.value.trim();
         
         if (!msg) return;
 
-        if (!apiKey) {
+        if (!apiKey) {{
             pendingMessage = msg;
             document.getElementById('api-modal').style.display = 'flex';
             document.getElementById('custom-api-key-input').focus();
             return;
-        }
+        }}
 
         const btnEl = document.getElementById('chat-send');
         
@@ -1200,296 +1172,326 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         btnEl.disabled = true;
         inputEl.disabled = true;
 
-        chatHistory.push({ role: "user", parts: [{ text: msg }] });
+        chatHistory.push({{ role: "user", parts: [{{ text: msg }}] }});
 
         const loadingId = 'msg-' + Date.now();
         addMessageToUI('ai', '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...', loadingId);
 
-        try {
+        try {{
+            // 💡 1. 챗봇이 사용자의 DART 대시보드를 실시간으로 무조건 동적 스크래핑하게 만듦 (완벽 우회)
             let liveDartData = "실시간 공시 데이터를 찾을 수 없습니다.";
-            try {
+            try {{
                 const dartRes = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://rmadh6418-ai.github.io/dart-dashboard/?_=' + Date.now()));
-                if (dartRes.ok) {
+                if (dartRes.ok) {{
                     const dartJson = await dartRes.json();
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(dartJson.contents, "text/html");
+                    // 스크립트와 메뉴 등 방해 요소 제거
                     doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
-                    liveDartData = doc.body.innerText.replace(/\s+/g, ' ').substring(0, 3500);
+                    liveDartData = doc.body.innerText.replace(/\\s+/g, ' ').substring(0, 3500);
                     if(liveDartData.length < 20) liveDartData = "수집된 공시 데이터 내용이 너무 짧거나 없습니다.";
-                }
-            } catch(e) {
+                }}
+            }} catch(e) {{
                 console.error("DART 실시간 스크래핑 실패:", e);
+                // 실패할 경우 정적으로 생성된 데이터를 폴백(Fallback)으로 사용
                 liveDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
-            }
+            }}
 
             let indicesData = "";
-            document.querySelectorAll('.grid-indices .card').forEach(card => {
+            document.querySelectorAll('.grid-indices .card').forEach(card => {{
                 const title = card.querySelector('.card-title') ? card.querySelector('.card-title').innerText : '';
                 const val = card.querySelector('.card-value') ? card.querySelector('.card-value').innerText : '';
                 const badge = card.querySelector('.badge') ? card.querySelector('.badge').innerText : '';
                 const trend = card.querySelector('.trend-badge') ? card.querySelector('.trend-badge').innerText : '알 수 없음';
-                if (title) indicesData += `- ${title}: ${val} (${badge}) / 기술적 추세: ${trend}\n`;
-            });
+                if (title) indicesData += `- ${{title}}: ${{val}} (${{badge}}) / 기술적 추세: ${{trend}}\\n`;
+            }});
 
+            // 💡 2. 챗봇 뉴스 본문 요약 인식을 위한 로직 강화
             let newsData = "";
-            document.querySelectorAll('.sector-news').forEach(newsEl => {
+            document.querySelectorAll('.sector-news').forEach(newsEl => {{
                 const aTag = newsEl.querySelector('a');
                 let title = aTag ? aTag.innerText : '';
-                if (title) title = title.replace(/^\[.*?\]\s*/, '');
+                // 프롬프트에 방해되는 기사 제목 앞의 언론사명 텍스트 제거
+                if (title) title = title.replace(/^\\[.*?\\]\\s*/, '');
                 
                 const contentSpan = newsEl.querySelector('.news-content-hidden');
                 let content = contentSpan ? contentSpan.innerText.trim() : '';
                 
+                // 기사 내용이 비어있더라도 AI가 제목을 바탕으로 추론하도록 강력하게 지시
                 if (!content || content.length < 10) content = "(내용 요약 없음 - AI는 반드시 제공된 기사 제목을 바탕으로 해당 뉴스의 배경과 시장에 미칠 영향을 상세히 추론하여 답변할 것)";
                 
-                if(title) newsData += `- [기사 제목]: ${title}\n  [핵심 본문]: ${content}\n`;
-            });
+                if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
+            }});
             if (!newsData || newsData.length < 20) newsData = "현재 대시보드에 수집된 뉴스가 없습니다.";
 
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
 
-            const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\n` +
-                               `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\n\n` +
-                               `[실시간 데이터]\n` +
-                               `- 주요 지수/거시경제:\n${indicesData}\n` +
-                               `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\n${liveDartData}\n` +
-                               `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\n${newsData}\n` +
-                               `- 캘린더 데이터:\n${calendarData}\n\n` +
-                               `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\n` +
-                               `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요! "실시간 주요 뉴스 링크만 제공된다" 혹은 "본문이 없어 요약할 수 없다"는 식의 회피성 답변은 절대 금지합니다. 제공된 텍스트가 짧더라도 당신의 배경지식을 더해 해당 뉴스의 의미를 3줄 이상 상세히 설명하세요.\n` +
-                               `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트를 읽고 현재 어떤 기업들이 어떤 공시를 올렸는지 명확하게 요약하여 설명해주세요.\n` +
-                               `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\n` +
-                               `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\n` +
+            // 💡 3. AI에게 회피성 답변 금지를 매우 강하게 명령하는 프롬프트
+            const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
+                               `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
+                               `[실시간 데이터]\\n` +
+                               `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
+                               `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n${{liveDartData}}\\n` +
+                               `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
+                               `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
+                               `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\\n` +
+                               `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요! "실시간 주요 뉴스 링크만 제공된다" 혹은 "본문이 없어 요약할 수 없다"는 식의 회피성 답변은 절대 금지합니다. 제공된 텍스트가 짧더라도 당신의 배경지식을 더해 해당 뉴스의 의미를 3줄 이상 상세히 설명하세요.\\n` +
+                               `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트를 읽고 현재 어떤 기업들이 어떤 공시를 올렸는지 명확하게 요약하여 설명해주세요.\\n` +
+                               `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
+                               `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. "정확한 수치는 확인이 필요합니다" 등으로 선을 그으세요.\\n` +
                                `5. 가독성: 마크다운(굵은 글씨, 줄바꿈)을 적극 사용하여 가독성 높게 답변하세요.`;
 
-            const payload = {
+            const payload = {{
                 contents: chatHistory,
-                systemInstruction: { parts: [{ text: systemText }] },
-                generationConfig: {
+                systemInstruction: {{ parts: [{{ text: systemText }}] }},
+                generationConfig: {{
                     temperature: 0.2,
                     topK: 20,
                     topP: 0.8
-                }
-            };
+                }}
+            }};
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${{apiKey}}`, {{
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify(payload)
-            });
+            }});
 
             const data = await response.json();
 
-            if (!response.ok) {
+            if (!response.ok) {{
                 throw new Error(data.error?.message || '알 수 없는 API 오류가 발생했습니다.');
-            }
+            }}
 
             const aiText = data.candidates[0].content.parts[0].text;
-            chatHistory.push({ role: "model", parts: [{ text: aiText }] });
+            chatHistory.push({{ role: "model", parts: [{{ text: aiText }}] }});
             updateMessageUI(loadingId, aiText);
 
-        } catch (error) {
+        }} catch (error) {{
             chatHistory.pop();
-            updateMessageUI(loadingId, `🚨 오류 발생: ${error.message}<br>API 키가 잘못되었거나 네트워크 오류가 발생했습니다.`);
-        } finally {
+            updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 네트워크 오류가 발생했습니다.`);
+        }} finally {{
             btnEl.disabled = false;
             inputEl.disabled = false;
             inputEl.focus();
-        }
-    }
+        }}
+    }}
 
-    function addMessageToUI(sender, text, id = null) {
+    function addMessageToUI(sender, text, id = null) {{
         const container = document.getElementById('chat-messages');
         const msgDiv = document.createElement('div');
-        msgDiv.className = `message ${sender}`;
+        msgDiv.className = `message ${{sender}}`;
         if (id) msgDiv.id = id;
-        let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+        let formattedText = text.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>').replace(/\\n/g, '<br>');
         msgDiv.innerHTML = formattedText;
         container.appendChild(msgDiv);
         container.scrollTop = container.scrollHeight;
-    }
+    }}
 
-    function updateMessageUI(id, text) {
+    function updateMessageUI(id, text) {{
         const msgDiv = document.getElementById(id);
-        if (msgDiv) {
-            let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+        if (msgDiv) {{
+            let formattedText = text.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>').replace(/\\n/g, '<br>');
             msgDiv.innerHTML = formattedText;
-        }
-    }
+        }}
+    }}
 
-    async function syncServerAiAndSectors() {
+    async function checkPassword() {{
+        const input = document.getElementById('pw-input').value;
+        try {{
+            const encoder = new TextEncoder();
+            const data = encoder.encode(input);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            if (hashHex === TARGET_HASH) {{
+                document.getElementById('lock-screen').style.display = 'none';
+                sessionStorage.setItem('isUnlocked', 'true');
+            }} else {{
+                document.getElementById('pw-error').style.display = 'block';
+            }}
+        }} catch (e) {{
+            console.error("Hash error:", e);
+            document.getElementById('pw-error').innerText = "보안 인증 처리 중 오류가 발생했습니다.";
+            document.getElementById('pw-error').style.display = 'block';
+        }}
+    }}
+
+    async function syncServerAiAndSectors() {{
         const basePath = window.location.pathname.endsWith('/')
             ? window.location.pathname
-            : window.location.pathname.replace(/\/[^\/]*$/, '/');
+            : window.location.pathname.replace(/\\/[^\\/]*$/, '/');
 
-        try {
-            const aiRes = await fetch(`${basePath}ai_summary_cache.json?_=${Date.now()}`, {
+        try {{
+            const aiRes = await fetch(`${{basePath}}ai_summary_cache.json?_=${{Date.now()}}`, {{
                 cache: "no-store",
-                headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
-            });
-            if (aiRes.ok) {
+                headers: {{ "Pragma": "no-cache", "Cache-Control": "no-cache" }}
+            }});
+            if (aiRes.ok) {{
                 const aiData = await aiRes.json();
                 const aiTextEl = document.getElementById("ai-summary-text");
                 const aiTimeEl = document.getElementById("ai-update-time");
-                if (aiData && aiData.text && aiTextEl) {
+                if (aiData && aiData.text && aiTextEl) {{
                     aiTextEl.innerHTML = aiData.text;
-                }
-                if (aiData && aiData.updated_at && aiTimeEl) {
-                    aiTimeEl.innerText = `${aiData.updated_at} 기준 (30분 주기 갱신)`;
-                }
-            }
-        } catch (e) {}
+                }}
+                if (aiData && aiData.updated_at && aiTimeEl) {{
+                    aiTimeEl.innerText = `${{aiData.updated_at}} 기준 (30분 주기 갱신)`;
+                }}
+            }}
+        }} catch (e) {{}}
 
-        try {
-            const htmlRes = await fetch(`${basePath}index.html?_=${Date.now()}`, {
+        try {{
+            const htmlRes = await fetch(`${{basePath}}index.html?_=${{Date.now()}}`, {{
                 cache: "no-store",
-                headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
-            });
-            if (htmlRes.ok) {
+                headers: {{ "Pragma": "no-cache", "Cache-Control": "no-cache" }}
+            }});
+            if (htmlRes.ok) {{
                 const htmlText = await htmlRes.text();
                 const doc = new DOMParser().parseFromString(htmlText, "text/html");
 
                 const newSectors = doc.getElementById("sectors-root");
                 const curSectors = document.getElementById("sectors-root");
-                if (newSectors && curSectors) {
+                if (newSectors && curSectors) {{
                     curSectors.innerHTML = newSectors.innerHTML;
-                }
+                }}
 
                 const macroKeys = ["FX_USDKRW", "JPYKRW", "US10Y", "US30Y", "GOLD_DON", "SILVER_DON", "OIL"];
-                for (const key of macroKeys) {
-                    const newVal = doc.getElementById(`val-${key}`);
-                    const newBadge = doc.getElementById(`badge-${key}`);
-                    const curVal = document.getElementById(`val-${key}`);
-                    const curBadge = document.getElementById(`badge-${key}`);
+                for (const key of macroKeys) {{
+                    const newVal = doc.getElementById(`val-${{key}}`);
+                    const newBadge = doc.getElementById(`badge-${{key}}`);
+                    const curVal = document.getElementById(`val-${{key}}`);
+                    const curBadge = document.getElementById(`badge-${{key}}`);
                     if (newVal && curVal) curVal.innerText = newVal.innerText;
-                    if (newBadge && curBadge) {
+                    if (newBadge && curBadge) {{
                         curBadge.innerText = newBadge.innerText;
                         curBadge.className = newBadge.className;
-                    }
-                }
-            }
-        } catch (e) {}
-    }
+                    }}
+                }}
+            }}
+        }} catch (e) {{}}
+    }}
 
-    function fetchNaverDirectJsonp(queryStr) {
-        return new Promise((resolve) => {
+    function fetchNaverDirectJsonp(queryStr) {{
+        return new Promise((resolve) => {{
             const cbName = "__nv_cb_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
             const script = document.createElement("script");
-            const timer = setTimeout(() => {
+            const timer = setTimeout(() => {{
                 cleanup();
                 resolve(null);
-            }, 3500);
+            }}, 3500);
 
-            function cleanup() {
+            function cleanup() {{
                 clearTimeout(timer);
                 if (script.parentNode) script.parentNode.removeChild(script);
-                try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
-            }
+                try {{ delete window[cbName]; }} catch (e) {{ window[cbName] = undefined; }}
+            }}
 
-            window[cbName] = function(res) {
+            window[cbName] = function(res) {{
                 cleanup();
-                if (res && res.result && Array.isArray(res.result.areas)) {
+                if (res && res.result && Array.isArray(res.result.areas)) {{
                     resolve(res.result.areas);
-                } else {
+                }} else {{
                     resolve(null);
-                }
-            };
+                }}
+            }};
 
-            script.onerror = function() {
+            script.onerror = function() {{
                 cleanup();
                 resolve(null);
-            };
+            }};
 
             script.charset = "euc-kr";
-            script.src = `https://polling.finance.naver.com/api/realtime?query=${encodeURIComponent(queryStr)}&_callback=${cbName}&_=${Date.now()}_${Math.random()}`;
+            script.src = `https://polling.finance.naver.com/api/realtime?query=${{encodeURIComponent(queryStr)}}&_callback=${{cbName}}&_=${{Date.now()}}_${{Math.random()}}`;
             document.head.appendChild(script);
-        });
-    }
+        }});
+    }}
 
-    async function fetchProxyUncached(targetUrl) {
-        const bustUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + `_nocache=${Date.now()}_${Math.random()}`;
+    async function fetchProxyUncached(targetUrl) {{
+        const bustUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + `_nocache=${{Date.now()}}_${{Math.random()}}`;
         const encoded = encodeURIComponent(bustUrl);
         const candidates = [
-            { url: `https://corsproxy.io/?${encoded}` },
-            { url: `https://api.allorigins.win/raw?url=${encoded}` },
-            { url: `https://api.codetabs.com/v1/proxy?quest=${encoded}` }
+            {{ url: `https://corsproxy.io/?${{encoded}}` }},
+            {{ url: `https://api.allorigins.win/raw?url=${{encoded}}` }},
+            {{ url: `https://api.codetabs.com/v1/proxy?quest=${{encoded}}` }}
         ];
 
-        for (const cand of candidates) {
+        for (const cand of candidates) {{
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 3500);
-            try {
-                const res = await fetch(cand.url, { signal: controller.signal, cache: "no-store" });
+            try {{
+                const res = await fetch(cand.url, {{ signal: controller.signal, cache: "no-store" }});
                 clearTimeout(timer);
                 if (!res.ok) continue;
                 const data = await res.json();
                 if (data && Array.isArray(data.datas)) return data;
-            } catch (e) {
+            }} catch (e) {{
                 clearTimeout(timer);
-            }
-        }
+            }}
+        }}
         return null;
-    }
+    }}
 
-    async function syncLiveMarketData() {
+    async function syncLiveMarketData() {{
         const syncText = document.getElementById('sync-time-text');
-        if (syncText) {
+        if (syncText) {{
             syncText.innerText = "🔄 실시간 체결가 및 최신 AI 분석 동기화 중...";
-        }
+        }}
 
         await syncServerAiAndSectors();
 
         const codeSet = new Set();
-        document.querySelectorAll('.stock-pill[data-stock-code]').forEach(el => {
+        document.querySelectorAll('.stock-pill[data-stock-code]').forEach(el => {{
             const c = el.getAttribute('data-stock-code');
             if (c) codeSet.add(c);
-        });
-        document.querySelectorAll('.sector-item[data-sector-codes]').forEach(el => {
+        }});
+        document.querySelectorAll('.sector-item[data-sector-codes]').forEach(el => {{
             const codes = (el.getAttribute('data-sector-codes') || '').split(',');
-            codes.forEach(c => { if (c.trim()) codeSet.add(c.trim()); });
-        });
+            codes.forEach(c => {{ if (c.trim()) codeSet.add(c.trim()); }});
+        }});
 
         const allCodes = Array.from(codeSet);
-        const liveStockMap = {};
+        const liveStockMap = {{}};
         let updatedCount = 0;
 
         const chunks = [];
-        for (let i = 0; i < allCodes.length; i += 40) {
+        for (let i = 0; i < allCodes.length; i += 40) {{
             chunks.push(allCodes.slice(i, i + 40));
-        }
+        }}
 
         const indexAreas = await fetchNaverDirectJsonp("SERVICE_INDEX:KOSPI,KOSDAQ");
-        if (indexAreas) {
-            for (const area of indexAreas) {
-                for (const d of (area.datas || [])) {
+        if (indexAreas) {{
+            for (const area of indexAreas) {{
+                for (const d of (area.datas || [])) {{
                     const key = d.cd;
-                    const valEl = document.getElementById(`val-${key}`);
-                    const badgeEl = document.getElementById(`badge-${key}`);
-                    if (valEl && badgeEl && d.nv) {
+                    const valEl = document.getElementById(`val-${{key}}`);
+                    const badgeEl = document.getElementById(`badge-${{key}}`);
+                    if (valEl && badgeEl && d.nv) {{
                         const rf = String(d.rf || "3");
                         const isUp = ["1", "2"].includes(rf);
                         const isDown = ["4", "5"].includes(rf);
                         const sign = isUp ? "▲ +" : (isDown ? "▼ -" : "― ");
-                        const priceStr = (d.nv / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        const diffVal = (Math.abs(d.cv || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        const diffStr = isDown ? `-${diffVal}` : diffVal;
+                        const priceStr = (d.nv / 100).toLocaleString('en-US', {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
+                        const diffVal = (Math.abs(d.cv || 0) / 100).toLocaleString('en-US', {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
+                        const diffStr = isDown ? `-${{diffVal}}` : diffVal;
                         const rateStr = Math.abs(parseFloat(d.cr || 0)).toFixed(2);
 
                         valEl.innerText = priceStr;
-                        badgeEl.innerText = `${sign}${rateStr}% (${diffStr})`;
-                        badgeEl.className = `badge ${isUp ? 'bg-up-light text-up' : (isDown ? 'bg-down-light text-down' : 'bg-gray-100 text-flat')}`;
+                        badgeEl.innerText = `${{sign}}${{rateStr}}% (${{diffStr}})`;
+                        badgeEl.className = `badge ${{isUp ? 'bg-up-light text-up' : (isDown ? 'bg-down-light text-down' : 'bg-gray-100 text-flat')}}`;
                         updatedCount++;
-                    }
-                }
-            }
-        }
+                    }}
+                }}
+            }}
+        }}
 
-        await Promise.all(chunks.map(async (chunk) => {
-            const areas = await fetchNaverDirectJsonp(`SERVICE_ITEM:${chunk.join(',')}`);
-            if (areas) {
-                for (const area of areas) {
-                    for (const st of (area.datas || [])) {
+        await Promise.all(chunks.map(async (chunk) => {{
+            const areas = await fetchNaverDirectJsonp(`SERVICE_ITEM:${{chunk.join(',')}}`);
+            if (areas) {{
+                for (const area of areas) {{
+                    for (const st of (area.datas || [])) {{
                         if (!st.cd || !st.nv) continue;
                         const rf = String(st.rf || "3");
                         const isUp = ["1", "2"].includes(rf);
@@ -1497,140 +1499,125 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         const absRate = Math.abs(parseFloat(st.cr || 0));
                         const signedRate = isDown ? -absRate : (isUp ? absRate : 0);
 
-                        liveStockMap[st.cd] = {
+                        liveStockMap[st.cd] = {{
                             price: Number(st.nv).toLocaleString('ko-KR'),
                             rate: signedRate,
                             isUp: isUp,
                             isDown: isDown
-                        };
+                        }};
                         updatedCount++;
-                    }
-                }
-            } else {
-                const backup = await fetchProxyUncached(`https://polling.finance.naver.com/api/realtime/domestic/stock/${chunk.join(',')}`);
-                if (backup && Array.isArray(backup.datas)) {
-                    for (const st of backup.datas) {
+                    }}
+                }}
+            }} else {{
+                const backup = await fetchProxyUncached(`https://polling.finance.naver.com/api/realtime/domestic/stock/${{chunk.join(',')}}`);
+                if (backup && Array.isArray(backup.datas)) {{
+                    for (const st of backup.datas) {{
                         const cd = String(st.compareToPreviousPrice?.code || "3");
                         const rawStr = String(st.fluctuationsRatio || "0").replace(/,/g, "");
                         const absRate = Math.abs(parseFloat(rawStr) || 0);
                         const isDown = ["4", "5"].includes(cd) || rawStr.startsWith("-");
                         const isUp = ["1", "2"].includes(cd);
-                        liveStockMap[st.itemCode] = {
+                        liveStockMap[st.itemCode] = {{
                             price: String(st.closePrice || "0").replace(".0", ""),
                             rate: isDown ? -absRate : (isUp ? absRate : 0),
                             isUp: isUp,
                             isDown: isDown
-                        };
+                        }};
                         updatedCount++;
-                    }
-                }
-            }
-        }));
+                    }}
+                }}
+            }}
+        }}));
 
-        document.querySelectorAll('.stock-pill').forEach(pill => {
+        document.querySelectorAll('.stock-pill').forEach(pill => {{
             const code = pill.getAttribute('data-stock-code');
             const info = code && liveStockMap[code];
-            if (info) {
+            if (info) {{
                 const rateEl = pill.querySelector('.stock-rate');
                 const priceEl = pill.querySelector('.stock-price');
-                if (rateEl) {
-                    rateEl.innerText = `${info.rate >= 0 ? '+' : ''}${info.rate.toFixed(2)}%`;
-                    rateEl.className = `stock-rate ${info.isUp ? 'text-up' : (info.isDown ? 'text-down' : 'text-flat')}`;
+                if (rateEl) {{
+                    rateEl.innerText = `${{info.rate >= 0 ? '+' : ''}}${{info.rate.toFixed(2)}}%`;
+                    rateEl.className = `stock-rate ${{info.isUp ? 'text-up' : (info.isDown ? 'text-down' : 'text-flat')}}`;
                     rateEl.setAttribute('data-live-rate', info.rate);
-                }
-                if (priceEl && info.price) {
-                    priceEl.innerText = `(${info.price}원)`;
-                }
-            }
-        });
+                }}
+                if (priceEl && info.price) {{
+                    priceEl.innerText = `(${{info.price}}원)`;
+                }}
+            }}
+        }});
 
-        document.querySelectorAll('.sector-item').forEach(item => {
+        document.querySelectorAll('.sector-item').forEach(item => {{
             const sectorCodes = (item.getAttribute('data-sector-codes') || '').split(',').map(s => s.trim()).filter(Boolean);
             const rates = [];
-            for (const c of sectorCodes) {
-                if (liveStockMap[c] !== undefined) {
+            for (const c of sectorCodes) {{
+                if (liveStockMap[c] !== undefined) {{
                     rates.push(liveStockMap[c].rate);
-                }
-            }
-            if (rates.length > 0) {
+                }}
+            }}
+            if (rates.length > 0) {{
                 const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
                 const secRateEl = item.querySelector('.sector-rate');
-                if (secRateEl) {
-                    secRateEl.innerText = `${avg >= 0 ? '+' : ''}${avg.toFixed(2)}%`;
-                    secRateEl.className = `sector-rate ${avg > 0 ? 'text-up' : (avg < 0 ? 'text-down' : 'text-flat')}`;
-                }
-            }
-        });
+                if (secRateEl) {{
+                    secRateEl.innerText = `${{avg >= 0 ? '+' : ''}}${{avg.toFixed(2)}}%`;
+                    secRateEl.className = `sector-rate ${{avg > 0 ? 'text-up' : (avg < 0 ? 'text-down' : 'text-flat')}}`;
+                }}
+            }}
+        }});
 
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, '0');
         const mi = String(now.getMinutes()).padStart(2, '0');
         const ss = String(now.getSeconds()).padStart(2, '0');
-        if (syncText) {
-            if (updatedCount > 0) {
-                syncText.innerText = `실시간 직통 동기화 완료: ${hh}:${mi}:${ss} (클릭 또는 새로고침 시 즉시 갱신)`;
-            } else {
-                syncText.innerText = `기준 시각: __KST_NOW__ (네트워크 재연결 대기 중)`;
-            }
-        }
-    }
+        if (syncText) {{
+            if (updatedCount > 0) {{
+                syncText.innerText = `실시간 직통 동기화 완료: ${{hh}}:${{mi}}:${{ss}} (클릭 또는 새로고침 시 즉시 갱신)`;
+            }} else {{
+                syncText.innerText = `기준 시각: {kst_now} (네트워크 재연결 대기 중)`;
+            }}
+        }}
+    }}
 
-    window.onload = function() {
-        if (sessionStorage.getItem('isUnlocked') === 'true') {
+    window.onload = function() {{
+        if (sessionStorage.getItem('isUnlocked') === 'true') {{
             document.getElementById('lock-screen').style.display = 'none';
-        }
-        
+        }}
+        document.getElementById('pw-input').addEventListener('keypress', function (e) {{
+            if (e.key === 'Enter') {{
+                checkPassword();
+            }}
+        }});
+
         syncLiveMarketData();
         setInterval(syncLiveMarketData, 30000);
-    };
+    }};
 
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js').then(reg => {
+    if ('serviceWorker' in navigator) {{
+        window.addEventListener('load', () => {{
+            navigator.serviceWorker.register('./sw.js').then(reg => {{
                 console.log('Service Worker Registered!', reg);
-            }).catch(err => {
+            }}).catch(err => {{
                 console.log('Service Worker registration failed: ', err);
-            });
-        });
-    }
+            }});
+        }});
+    }}
 </script>
 </body>
-</html>"""
-
-    # 생성된 문자열에 파이썬 변수 매핑 (.replace 활용)
-    template = template.replace("__SECRET_HASH__", secret_hash_str)
-    template = template.replace("__KST_NOW__", kst_now)
-    template = template.replace("__INDEX_CARDS__", index_cards)
-    template = template.replace("__AI_UPDATED_TIME__", ai_updated_time)
-    template = template.replace("__AI_MARKET_SUMMARY__", ai_market_summary)
-    template = template.replace("__DART_SUMMARY__", dart_summary)
-    template = template.replace("__K200_TOP__", build_sector_list(k200_top))
-    template = template.replace("__K200_BOT__", build_sector_list(k200_bot))
-    template = template.replace("__K150_TOP__", build_sector_list(k150_top))
-    template = template.replace("__K150_BOT__", build_sector_list(k150_bot))
-
+</html>
+"""
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(template)
 
 if __name__ == "__main__":
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        future_indices = executor.submit(get_market_indices)
-        future_stocks = executor.submit(get_market_stocks)
-        future_dart = executor.submit(fetch_dart_disclosures)
+    indices = get_market_indices()
+    stock_data = get_market_stocks()
 
-        indices = future_indices.result()
-        stock_data = future_stocks.result()
-        dart_summary = future_dart.result()
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_k200 = executor.submit(calculate_sectors, KOSPI200_SECTORS, stock_data)
-        future_k150 = executor.submit(calculate_sectors, KOSDAQ150_SECTORS, stock_data)
-
-        k200_top, k200_bot = future_k200.result()
-        k150_top, k150_bot = future_k150.result()
+    k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
+    k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
     ai_market_summary, ai_updated_time = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
     
+    dart_summary = fetch_dart_disclosures()
+
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
 
     kst_now = datetime.now(timezone(timedelta(hours=9)))
