@@ -885,16 +885,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
+        abs_rate = abs(idx['change_rate'])
         
-        # 상승추세/하락추세 배지를 등락률 뱃지와 나란히 배치하기 위한 HTML 구조
-        trend_html = f'<div class="trend-badge">{idx["trend"]}</div>' if idx.get('trend') else ''
+        # 추세 배지를 등락률 바로 옆에 붙임
+        trend_html = f'<span class="trend-badge">{idx["trend"]}</span>' if idx.get('trend') else ''
 
         index_cards += f"""
         <div class="card clickable" data-index-target="{idx['code_key']}" onclick="openTradingView('{tv_symbol}')" title="클릭하여 실시간 차트 보기">
             <div class="card-title">{idx['name']}</div>
             <div class="card-value" id="val-{idx['code_key']}">{idx['value']}</div>
             <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom:4px;">
-                <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs(idx['change_rate']):.2f}%{diff_text}</div>
+                <div class="badge {badge_bg} {color_class}" id="badge-{idx['code_key']}">{sign}{abs_rate:.2f}%{diff_text}</div>
                 {trend_html}
             </div>
             {sparkline_svg}
@@ -971,16 +972,17 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
+        /* 클릭 가능한 카드 디자인 */
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
 
         .card-title {{ font-size: 0.80rem; font-weight: 600; color: #475569; margin-bottom: 6px; }}
         .card-value {{ font-size: 1.20rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
-        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
+        .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; align-self: center; }}
         
         /* 📈 추세 배지 스타일 수정 */
-        .trend-badge {{ font-size: 0.75rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; color: #475569; }}
+        .trend-badge {{ font-size: 0.72rem; font-weight: 700; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; color: #475569; }}
 
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }}
