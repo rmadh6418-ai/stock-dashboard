@@ -170,38 +170,51 @@ def fetch_dart_disclosures():
 def fetch_real_news(keyword, stock_code="", limit=3):
     candidates = []
     try:
-        import xml.etree.ElementTree as ET
+        from bs4 import BeautifulSoup
+        import urllib.parse
+        import requests
+        import re
         
-        search_query = f'"{keyword}" (경제 OR 비즈니스 OR 증시 OR 투자)'
+        # 검색어 최적화 (기업명 + 경제/주식 키워드)
+        search_query = f"{keyword} 주식 OR 경제 OR 실적"
         encoded_query = urllib.parse.quote(search_query)
         
-        # rss2json API를 거치지 않고 구글 뉴스 RSS 원본 직접 호출
-        rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+        # API 키 없이 네이버 뉴스 검색 결과 페이지를 직접 호출
+        url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
         
-        res = requests.get(rss_url, headers=get_headers(), timeout=10)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        res = requests.get(url, headers=headers, timeout=10)
         
         if res.status_code == 200:
-            # 파이썬 기본 내장 라이브러리인 ElementTree를 활용해 XML 직접 파싱
-            root = ET.fromstring(res.content)
-            for item in root.findall('.//item'):
-                title_elem = item.find('title')
-                raw_title = title_elem.text if title_elem is not None else ''
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            # 네이버 뉴스 리스트 추출
+            articles = soup.select(".list_news > .bx")
+            
+            for article in articles:
+                # 기사 제목 및 링크
+                title_el = article.select_one(".news_tit")
+                if not title_el:
+                    continue
+                    
+                raw_title = title_el.text
+                link = title_el["href"]
                 
-                link_elem = item.find('link')
-                link = link_elem.text if link_elem is not None else ''
+                # 언론사 이름
+                press_el = article.select_one(".info.press")
+                press = press_el.text.replace("언론사 선정", "").strip() if press_el else "네이버뉴스"
                 
-                source_elem = item.find('source')
-                press = source_elem.text if source_elem is not None else '구글뉴스'
+                # 기사 본문 요약
+                desc_el = article.select_one(".dsc_txt_wrap")
+                desc = desc_el.text.strip() if desc_el else ""
                 
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
-                    desc_elem = item.find('description')
-                    desc = desc_elem.text if desc_elem is not None else ''
-                    desc_soup = BeautifulSoup(desc, "html.parser")
-                    content_preview = desc_soup.get_text(separator=' ', strip=True)
-                    
-                    # 렌더링 충돌을 막기 위해 HTML 엔티티 치환
-                    content_preview = content_preview.replace("<", "<").replace(">", ">").replace('\n', ' ')
+                    # HTML 엔티티 치환 (렌더링 오류 방지)
+                    desc = desc.replace("<", "<").replace(">", ">").replace('\n', ' ')
                     raw_title = raw_title.replace("<", "<").replace(">", ">")
                     
                     candidates.append({
@@ -209,17 +222,17 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "press": press, 
                         "link": link, 
                         "score": score, 
-                        "content": content_preview
+                        "content": desc
                     })
-    except Exception: 
+    except Exception as e: 
+        print(f"네이버 뉴스 수집 중 오류 발생: {e}")
         pass
 
-    # 점수순으로 정렬
+    # 점수순 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
     
-    # 중복 기사 필터링 및 limit 개수만큼 자르기
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]|-.*$', '', item['title']).strip()
         clean_title = re.sub(r'\W+', '', clean_title)
@@ -228,7 +241,8 @@ def fetch_real_news(keyword, stock_code="", limit=3):
         if clean_title not in seen_titles:
             seen_titles.add(clean_title)
             unique_news.append(item)
-            if len(unique_news) == limit: break
+            if len(unique_news) == limit: 
+                break
 
     return unique_news
 
