@@ -174,7 +174,6 @@ def fetch_real_news(keyword, stock_code="", limit=3):
     client_id = os.environ.get("NAVER_CLIENT_ID", "").strip()
     client_secret = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
     
-    # API 키가 설정되지 않은 경우 처리
     if not client_id or not client_secret:
         print("네이버 API 인증 정보가 환경변수에 설정되지 않았습니다.")
         return []
@@ -187,11 +186,14 @@ def fetch_real_news(keyword, stock_code="", limit=3):
         
         search_query = f"{keyword} 주식 OR 실적"
         encoded_query = urllib.parse.quote(search_query)
-        url = f"https://openapi.naver.com/v1/search/news.json?query={encoded_query}&display=15&sort=sim"
         
+        # NAVER API HUB (클라우드 플랫폼) 엔드포인트 URL
+        url = f"https://naverapihub.apigw.ntruss.com/search/v1/news?query={encoded_query}&display=15&sort=sim"
+        
+        # NAVER API HUB 전용 헤더 규격
         headers = {
-            "X-Naver-Client-Id": client_id,
-            "X-Naver-Client-Secret": client_secret
+            "X-NCP-APIGW-API-KEY-ID": client_id,
+            "X-NCP-APIGW-API-KEY": client_secret
         }
         
         res = requests.get(url, headers=headers, timeout=10)
