@@ -169,54 +169,49 @@ def fetch_dart_disclosures():
 
 def fetch_real_news(keyword, stock_code="", limit=3):
     candidates = []
+    
+    # 환경변수에서 네이버 API 키 불러오기
+    client_id = os.environ.get("NAVER_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
+    
+    # API 키가 설정되지 않은 경우 처리
+    if not client_id or not client_secret:
+        print("네이버 API 인증 정보가 환경변수에 설정되지 않았습니다.")
+        return []
+        
     try:
-        from bs4 import BeautifulSoup
         import urllib.parse
         import requests
         import re
+        import html
         
-        # 검색어 최적화 (기업명 + 경제/주식 키워드)
-        search_query = f"{keyword} 주식 OR 경제 OR 실적"
+        search_query = f"{keyword} 주식 OR 실적"
         encoded_query = urllib.parse.quote(search_query)
-        
-        # API 키 없이 네이버 뉴스 검색 결과 페이지를 직접 호출
-        url = f"https://search.naver.com/search.naver?where=news&query={encoded_query}"
+        url = f"https://openapi.naver.com/v1/search/news.json?query={encoded_query}&display=15&sort=sim"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "X-Naver-Client-Id": client_id,
+            "X-Naver-Client-Secret": client_secret
         }
         
         res = requests.get(url, headers=headers, timeout=10)
         
         if res.status_code == 200:
-            soup = BeautifulSoup(res.text, "html.parser")
+            data = res.json()
+            items = data.get("items", [])
             
-            # 네이버 뉴스 리스트 추출
-            articles = soup.select(".list_news > .bx")
-            
-            for article in articles:
-                # 기사 제목 및 링크
-                title_el = article.select_one(".news_tit")
-                if not title_el:
-                    continue
-                    
-                raw_title = title_el.text
-                link = title_el["href"]
+            for item in items:
+                raw_title = re.sub(r'<[^>]+>', '', item.get("title", ""))
+                raw_title = html.unescape(raw_title)
                 
-                # 언론사 이름
-                press_el = article.select_one(".info.press")
-                press = press_el.text.replace("언론사 선정", "").strip() if press_el else "네이버뉴스"
+                desc = re.sub(r'<[^>]+>', '', item.get("description", ""))
+                desc = html.unescape(desc).replace('\n', ' ')
                 
-                # 기사 본문 요약
-                desc_el = article.select_one(".dsc_txt_wrap")
-                desc = desc_el.text.strip() if desc_el else ""
+                link = item.get("link", "")
+                press = "네이버뉴스"
                 
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
-                    # HTML 엔티티 치환 (렌더링 오류 방지)
-                    desc = desc.replace("<", "<").replace(">", ">").replace('\n', ' ')
-                    raw_title = raw_title.replace("<", "<").replace(">", ">")
-                    
                     candidates.append({
                         "title": raw_title, 
                         "press": press, 
@@ -224,11 +219,12 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "score": score, 
                         "content": desc
                     })
+        else:
+            print(f"네이버 API 호출 실패: {res.status_code} - {res.text}")
+            
     except Exception as e: 
-        print(f"네이버 뉴스 수집 중 오류 발생: {e}")
-        pass
+        print(f"네이버 API 뉴스 수집 중 오류 발생: {e}")
 
-    # 점수순 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
