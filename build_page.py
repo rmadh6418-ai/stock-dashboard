@@ -170,43 +170,56 @@ def fetch_dart_disclosures():
 def fetch_real_news(keyword, stock_code="", limit=3):
     candidates = []
     try:
+        import xml.etree.ElementTree as ET
+        
         search_query = f'"{keyword}" (경제 OR 비즈니스 OR 증시 OR 투자)'
         encoded_query = urllib.parse.quote(search_query)
-        rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
-        api_url = f"https://api.rss2json.com/v1/api.json?rss_url={urllib.parse.quote(rss_url)}"
         
-        res = requests.get(api_url, headers=get_headers(), timeout=10)
+        # rss2json API를 거치지 않고 구글 뉴스 RSS 원본 직접 호출
+        rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+        
+        res = requests.get(rss_url, headers=get_headers(), timeout=10)
+        
         if res.status_code == 200:
-            data = res.json()
-            if data.get('status') == 'ok':
-                for item in data.get('items', []):
-                    raw_title = item.get('title', '')
-                    link = item.get('link', '')
-                    press = item.get('author', '구글뉴스')
-                    if not press: press = '구글뉴스'
+            # 파이썬 기본 내장 라이브러리인 ElementTree를 활용해 XML 직접 파싱
+            root = ET.fromstring(res.content)
+            for item in root.findall('.//item'):
+                title_elem = item.find('title')
+                raw_title = title_elem.text if title_elem is not None else ''
+                
+                link_elem = item.find('link')
+                link = link_elem.text if link_elem is not None else ''
+                
+                source_elem = item.find('source')
+                press = source_elem.text if source_elem is not None else '구글뉴스'
+                
+                score = get_news_score(raw_title, keyword)
+                if score > 0:
+                    desc_elem = item.find('description')
+                    desc = desc_elem.text if desc_elem is not None else ''
+                    desc_soup = BeautifulSoup(desc, "html.parser")
+                    content_preview = desc_soup.get_text(separator=' ', strip=True)
                     
-                    score = get_news_score(raw_title, keyword)
-                    if score > 0:
-                        desc = item.get('description', '') or item.get('content', '')
-                        desc_soup = BeautifulSoup(desc, "html.parser")
-                        content_preview = desc_soup.get_text(separator=' ', strip=True)
-                        
-                        content_preview = content_preview.replace("<", "<").replace(">", ">").replace('\n', ' ')
-                        raw_title = raw_title.replace("<", "<").replace(">", ">")
-                        
-                        candidates.append({
-                            "title": raw_title, 
-                            "press": press, 
-                            "link": link, 
-                            "score": score, 
-                            "content": content_preview
-                        })
-    except: 
+                    # 렌더링 충돌을 막기 위해 HTML 엔티티 치환
+                    content_preview = content_preview.replace("<", "<").replace(">", ">").replace('\n', ' ')
+                    raw_title = raw_title.replace("<", "<").replace(">", ">")
+                    
+                    candidates.append({
+                        "title": raw_title, 
+                        "press": press, 
+                        "link": link, 
+                        "score": score, 
+                        "content": content_preview
+                    })
+    except Exception: 
         pass
 
+    # 점수순으로 정렬
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
+    
+    # 중복 기사 필터링 및 limit 개수만큼 자르기
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]|-.*$', '', item['title']).strip()
         clean_title = re.sub(r'\W+', '', clean_title)
@@ -752,7 +765,7 @@ def calculate_sectors(sector_dict, stock_data):
             n["stock_name"] = stock["name"] 
         return sector_ref, news
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
         target_sectors = top_sectors + bot_sectors
         
