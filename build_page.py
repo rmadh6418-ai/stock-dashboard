@@ -168,32 +168,33 @@ def fetch_dart_disclosures():
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
 def fetch_real_news(keyword, stock_code="", limit=3):
+    import os
+    import urllib.parse
+    import requests
+    import re
+    import html
+
     candidates = []
     
-    # 환경변수에서 네이버 API 키 불러오기
+    # 환경변수에서 키를 가져오되, 실수로 들어간 앞뒤 공백을 완벽히 제거합니다.
     client_id = os.environ.get("NAVER_CLIENT_ID", "").strip()
     client_secret = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
     
     if not client_id or not client_secret:
-        print("네이버 API 인증 정보가 환경변수에 설정되지 않았습니다.")
+        print(f"❌ [{keyword}] 네이버 API 키가 환경변수에 없습니다.")
         return []
         
     try:
-        import urllib.parse
-        import requests
-        import re
-        import html
-        
         search_query = f"{keyword} 주식 OR 실적"
         encoded_query = urllib.parse.quote(search_query)
         
-        # NAVER API HUB (클라우드 플랫폼) 엔드포인트 URL
-        url = f"https://naverapihub.apigw.ntruss.com/search/v1/news?query={encoded_query}&display=15&sort=sim"
+        # 정답: 네이버 검색 API는 클라우드 플랫폼에서 발급받았어도 기존 주소를 사용합니다.
+        url = f"https://openapi.naver.com/v1/search/news.json?query={encoded_query}&display=15&sort=sim"
         
-        # NAVER API HUB 전용 헤더 규격
+        # 정답: 헤더 역시 화면에 적힌 NCP 규격이 아닌 기존 규격을 사용해야 합니다.
         headers = {
-            "X-NCP-APIGW-API-KEY-ID": client_id,
-            "X-NCP-APIGW-API-KEY": client_secret
+            "X-Naver-Client-Id": client_id,
+            "X-Naver-Client-Secret": client_secret
         }
         
         res = requests.get(url, headers=headers, timeout=10)
@@ -210,22 +211,22 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                 desc = html.unescape(desc).replace('\n', ' ')
                 
                 link = item.get("link", "")
-                press = "네이버뉴스"
                 
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
                     candidates.append({
                         "title": raw_title, 
-                        "press": press, 
+                        "press": "네이버뉴스", 
                         "link": link, 
                         "score": score, 
                         "content": desc
                     })
         else:
-            print(f"네이버 API 호출 실패: {res.status_code} - {res.text}")
+            # 401 에러 등이 날 경우 로그에 정확히 찍히도록 처리
+            print(f"❌ [{keyword}] API 호출 실패: {res.status_code} - {res.text}")
             
     except Exception as e: 
-        print(f"네이버 API 뉴스 수집 중 오류 발생: {e}")
+        print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
