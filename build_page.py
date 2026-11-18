@@ -168,49 +168,42 @@ def fetch_dart_disclosures():
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
 def fetch_real_news(keyword, stock_code="", limit=3):
-    import os
     import urllib.parse
     import requests
     import re
     import html
 
     candidates = []
-    
-    # 환경변수에서 키를 가져오되, 실수로 들어간 앞뒤 공백을 완벽히 제거합니다.
-    client_id = os.environ.get("NAVER_CLIENT_ID", "").strip()
-    client_secret = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
-    
-    if not client_id or not client_secret:
-        print(f"❌ [{keyword}] 네이버 API 키가 환경변수에 없습니다.")
-        return []
-        
     try:
-        search_query = f"{keyword} 주식 OR 실적"
+        # 검색어 최적화
+        search_query = f"{keyword} 주식"
         encoded_query = urllib.parse.quote(search_query)
         
-        # 정답: 네이버 검색 API는 클라우드 플랫폼에서 발급받았어도 기존 주소를 사용합니다.
-        url = f"https://openapi.naver.com/v1/search/news.json?query={encoded_query}&display=15&sort=sim"
+        # AI 퀀트 대시보드에서 100% 정상 작동 중인 구글 GAS 보안 서버 URL 그대로 사용
+        gas_url = f"https://script.google.com/macros/s/AKfycbyiBAIzD0ruvViKFKIF34WrXrXwa-UkOHLrwGN-InhSYMA4LVS0JZYPoamUR8NX_bBO/exec?query={encoded_query}"
         
-        # 정답: 헤더 역시 화면에 적힌 NCP 규격이 아닌 기존 규격을 사용해야 합니다.
-        headers = {
-            "X-Naver-Client-Id": client_id,
-            "X-Naver-Client-Secret": client_secret
-        }
-        
-        res = requests.get(url, headers=headers, timeout=10)
+        # 헤더 없이 구글 서버로 직접 요청
+        res = requests.get(gas_url, timeout=10)
         
         if res.status_code == 200:
             data = res.json()
+            
+            # 구글 서버에서 에러를 뱉었는지 체크
+            if "error" in data:
+                print(f"❌ [{keyword}] NCP API 에러 (구글 서버 응답): {data['error']}")
+                return []
+
             items = data.get("items", [])
             
             for item in items:
-                raw_title = re.sub(r'<[^>]+>', '', item.get("title", ""))
-                raw_title = html.unescape(raw_title)
+                # HTML 태그 제거 및 엔티티 정제 (AI 퀀트 JS 로직과 동일하게 구현)
+                raw_title = re.sub(r'</?[^>]+(>|$)', '', item.get("title", ""))
+                raw_title = html.unescape(raw_title).replace('"', '"').replace('&', '&')
                 
-                desc = re.sub(r'<[^>]+>', '', item.get("description", ""))
-                desc = html.unescape(desc).replace('\n', ' ')
+                desc = re.sub(r'</?[^>]+(>|$)', '', item.get("description", ""))
+                desc = html.unescape(desc).replace('\n', ' ').replace('"', '"').replace('&', '&')
                 
-                link = item.get("link", "")
+                link = item.get("originallink") or item.get("link", "")
                 
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
@@ -222,12 +215,12 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "content": desc
                     })
         else:
-            # 401 에러 등이 날 경우 로그에 정확히 찍히도록 처리
-            print(f"❌ [{keyword}] API 호출 실패: {res.status_code} - {res.text}")
+            print(f"❌ [{keyword}] 구글 GAS 서버 통신 실패: {res.status_code}")
             
     except Exception as e: 
         print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
 
+    # 점수순 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
