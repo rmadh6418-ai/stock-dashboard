@@ -176,7 +176,6 @@ def fetch_real_news(keyword, stock_code="", limit=3):
 
     candidates = []
     
-    # GitHub Secrets에서 구글 스크립트 주소를 불러옵니다.
     gas_base_url = os.environ.get("NEWS_API_URL", "").strip()
     
     if not gas_base_url:
@@ -187,7 +186,6 @@ def fetch_real_news(keyword, stock_code="", limit=3):
         search_query = f"{keyword} 주식"
         encoded_query = urllib.parse.quote(search_query)
         
-        # 환경변수 주소에 검색어 파라미터 결합
         gas_url = f"{gas_base_url}?query={encoded_query}"
         
         res = requests.get(gas_url, timeout=10)
@@ -328,17 +326,17 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     오늘 한국 주식시장(코스피, 코스닥) [{market_phase}] 데이터와 미국주식 시장 상황과 글로벌 거시경제 흐름을 바탕으로 시황을 아주 상세하게 분석해주세요.
 
     [오늘의 핵심 데이터 - {market_phase}]
-    - 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {'+' if kospi.get('is_up') else ('-' if kospi.get('is_down') else '')}{kospi.get('change_rate')}%)
-    - 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {'+' if kosdaq.get('is_up') else ('-' if kosdaq.get('is_down') else '')}{kosdaq.get('change_rate')}%)
-    - 코스피 강세 섹터: {k200_strong} / 약세 섹터: {k200_weak}
-    - 코스닥 강세 섹터: {k150_strong} / 약세 섹터: {k150_weak}
+- 코스피 지수: {kospi.get('value')} (변동: {kospi.get('change_val')} / {'+' if kospi.get('is_up') else ('-' if kospi.get('is_down') else '')}{kospi.get('change_rate')}%)
+- 코스닥 지수: {kosdaq.get('value')} (변동: {kosdaq.get('change_val')} / {'+' if kosdaq.get('is_up') else ('-' if kosdaq.get('is_down') else '')}{kosdaq.get('change_rate')}%)
+- 코스피 강세 섹터: {k200_strong} / 약세 섹터: {k200_weak}
+- 코스닥 강세 섹터: {k150_strong} / 약세 섹터: {k150_weak}
 
     [작성 지침]
-    1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 것.
-    2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
-    3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
-    4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
-    5. [핵심 주의사항] 제공된 핵심 데이터(수치, 섹터명 등)를 절대 변경하거나 지어내지 마세요. 불확실한 종목이나 실적 수치 등 환각이 발생하지 않도록 철저히 팩트 기반으로만 분석하세요.
+1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 것.
+2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
+3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
+4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
+5. [핵심 주의사항] 제공된 핵심 데이터(수치, 섹터명 등)를 절대 변경하거나 지어내지 마세요. 불확실한 종목이나 실적 수치 등 환각이 발생하지 않도록 철저히 팩트 기반으로만 분석하세요.
     """
 
     available_models = get_candidate_models(API_KEY)
@@ -384,10 +382,8 @@ def get_news_score(title, stock_name):
     if has_stock: 
         score += 5
         
-    # 💡 [핵심 변경] 제목에 중요 키워드가 여러 개 겹칠수록 점수를 폭발적으로 높여 최상단으로 끌어올림
     matched_biz_count = sum(1 for biz in BUSINESS_NEWS_KEYWORDS if biz in title)
     if matched_biz_count > 0:
-        # 매칭된 키워드 1개당 4점씩 추가 (최대 20점 제한)
         score += min(matched_biz_count * 4, 20)
         
     return score
@@ -776,7 +772,6 @@ def calculate_sectors(sector_dict, stock_data):
     bot_sectors = sector_stats[-3:][::-1]
     
     def _fetch_stock_news(sector_ref, stock):
-        # 💡 [핵심 수정] 수집하는 뉴스 개수를 3개에서 10개로 늘림
         news = fetch_real_news(stock["name"], stock.get("code", ""), limit=10)
         for n in news:
             n["stock_name"] = stock["name"] 
@@ -943,11 +938,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if not n_list: continue
                 news_html += f'<div class="news-group"><div class="news-group-title">📌 {st_name} 실시간 뉴스</div>'
                 
-                # 💡 [핵심 수정] 사용자 UI에는 3개만 할당, 나머지는 AI 전용으로 분리
                 ui_news = n_list[:3]
                 ai_news = n_list[3:]
                 
-                # 1) 사람에게 보여줄 3개의 뉴스 (더보기 버튼으로 토글 가능)
                 for idx, n in enumerate(ui_news):
                     hidden_class = ' hidden-news' if idx >= 1 else ''
                     news_html += f'''
@@ -960,7 +953,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if len(ui_news) > 1:
                     news_html += f'<div class="btn-more-container"><button class="btn-more" onclick="toggleNews(this)" data-expanded="false">+ {len(ui_news)-1}개 더보기</button></div>'
                 
-                # 2) 챗봇(AI)만 긁어갈 수 있도록 숨겨둔 7개의 뉴스 (더보기 버튼에 반응하지 않음)
                 for n in ai_news:
                     news_html += f'''
                     <div class="sector-news" style="display:none;">
@@ -999,7 +991,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
     <style>
-        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+- {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ 
             background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; 
             -webkit-tap-highlight-color: transparent; 
@@ -1135,7 +1127,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div class="market-ai-content" id="ai-summary-text">{ai_market_summary}</div>
     </div>
 
-    <!-- 💡 iframe을 통해 DART 대시보드를 직접 임베딩 -->
     <div class="market-ai-box" style="background:#f8fafc; border-color:#cbd5e1; padding: 0; overflow: hidden;">
         <div class="market-ai-header" style="color:#0f172a; padding: 18px 18px 0 18px;">
             <span>🏢 실시간 DART 주요 공시</span>
@@ -1265,7 +1256,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         try {{
             let liveDartData = "실시간 공시 데이터를 찾을 수 없습니다.";
             
-            // 💡 1순위: 화면에 렌더링된 iframe 내부의 데이터를 직접 복사해 스크래핑 (SPA 렌더링 문제 완벽 해결)
             try {{
                 const dartIframe = document.querySelector('iframe[title="DART 실시간 대시보드"]');
                 if (dartIframe && dartIframe.contentWindow && dartIframe.contentWindow.document) {{
@@ -1282,7 +1272,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 console.warn("iframe DOM 직접 접근 실패 (CORS 등), 우회 스크래핑 시도:", e);
             }}
 
-            // 2순위: 접근 실패 시 기존 Proxy 방식으로 폴백
             if (liveDartData.includes("찾을 수 없") || liveDartData.length < 20) {{
                 try {{
                     const dartRes = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://rmadh6418-ai.github.io/dart-dashboard/?_=' + Date.now()));
@@ -1326,7 +1315,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             const calendarDataEl = document.getElementById('calendar-data');
             const calendarData = calendarDataEl && calendarDataEl.innerText.trim() ? calendarDataEl.innerText : '현재 등록된 캘린더 정보 없음';
 
+            const currentDateStr = new Date().toLocaleString('ko-KR', {{ timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }});
+
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
+                               `현재 한국 시간은 ${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n` +
                                `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
                                `[실시간 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
