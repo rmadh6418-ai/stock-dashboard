@@ -168,27 +168,33 @@ def fetch_dart_disclosures():
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
 def fetch_real_news(keyword, stock_code="", limit=3):
+    import os
     import urllib.parse
     import requests
     import re
     import html
 
     candidates = []
+    
+    # GitHub Secrets에서 구글 스크립트 주소를 불러옵니다.
+    gas_base_url = os.environ.get("NEWS_API_URL", "").strip()
+    
+    if not gas_base_url:
+        print(f"❌ [{keyword}] 뉴스 API 주소가 환경변수에 없습니다.")
+        return []
+
     try:
-        # 검색어 최적화
         search_query = f"{keyword} 주식"
         encoded_query = urllib.parse.quote(search_query)
         
-        # AI 퀀트 대시보드에서 100% 정상 작동 중인 구글 GAS 보안 서버 URL 그대로 사용
-        gas_url = f"https://script.google.com/macros/s/AKfycbyiBAIzD0ruvViKFKIF34WrXrXwa-UkOHLrwGN-InhSYMA4LVS0JZYPoamUR8NX_bBO/exec?query={encoded_query}"
+        # 환경변수 주소에 검색어 파라미터 결합
+        gas_url = f"{gas_base_url}?query={encoded_query}"
         
-        # 헤더 없이 구글 서버로 직접 요청
         res = requests.get(gas_url, timeout=10)
         
         if res.status_code == 200:
             data = res.json()
             
-            # 구글 서버에서 에러를 뱉었는지 체크
             if "error" in data:
                 print(f"❌ [{keyword}] NCP API 에러 (구글 서버 응답): {data['error']}")
                 return []
@@ -196,7 +202,6 @@ def fetch_real_news(keyword, stock_code="", limit=3):
             items = data.get("items", [])
             
             for item in items:
-                # HTML 태그 제거 및 엔티티 정제 (AI 퀀트 JS 로직과 동일하게 구현)
                 raw_title = re.sub(r'</?[^>]+(>|$)', '', item.get("title", ""))
                 raw_title = html.unescape(raw_title).replace('"', '"').replace('&', '&')
                 
@@ -220,7 +225,6 @@ def fetch_real_news(keyword, stock_code="", limit=3):
     except Exception as e: 
         print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
 
-    # 점수순 정렬 및 중복 기사 필터링
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
@@ -237,7 +241,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                 break
 
     return unique_news
-
+    
 def call_gemini_rest_api(model_name, prompt, api_key):
     clean_model = model_name.replace("models/", "").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
@@ -766,11 +770,13 @@ def calculate_sectors(sector_dict, stock_data):
     bot_sectors = sector_stats[-3:][::-1]
     
     def _fetch_stock_news(sector_ref, stock):
-        news = fetch_real_news(stock["name"], stock.get("code", ""), limit=3)
+        # 💡 [핵심 수정] 수집하는 뉴스 개수를 3개에서 10개로 늘림
+        news = fetch_real_news(stock["name"], stock.get("code", ""), limit=10)
         for n in news:
             n["stock_name"] = stock["name"] 
         return sector_ref, news
 
+    import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
         target_sectors = top_sectors + bot_sectors
@@ -930,7 +936,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             for st_name, n_list in news_by_stock.items():
                 if not n_list: continue
                 news_html += f'<div class="news-group"><div class="news-group-title">📌 {st_name} 실시간 뉴스</div>'
-                for idx, n in enumerate(n_list):
+                
+                # 💡 [핵심 수정] 사용자 UI에는 3개만 할당, 나머지는 AI 전용으로 분리
+                ui_news = n_list[:3]
+                ai_news = n_list[3:]
+                
+                # 1) 사람에게 보여줄 3개의 뉴스 (더보기 버튼으로 토글 가능)
+                for idx, n in enumerate(ui_news):
                     hidden_class = ' hidden-news' if idx >= 1 else ''
                     news_html += f'''
                     <div class="sector-news{hidden_class}">
@@ -938,8 +950,19 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         <span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>
                     </div>
                     '''
-                if len(n_list) > 1:
-                    news_html += f'<div class="btn-more-container"><button class="btn-more" onclick="toggleNews(this)" data-expanded="false">+ {len(n_list)-1}개 더보기</button></div>'
+                
+                if len(ui_news) > 1:
+                    news_html += f'<div class="btn-more-container"><button class="btn-more" onclick="toggleNews(this)" data-expanded="false">+ {len(ui_news)-1}개 더보기</button></div>'
+                
+                # 2) 챗봇(AI)만 긁어갈 수 있도록 숨겨둔 7개의 뉴스 (더보기 버튼에 반응하지 않음)
+                for n in ai_news:
+                    news_html += f'''
+                    <div class="sector-news" style="display:none;">
+                        📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>
+                        <span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>
+                    </div>
+                    '''
+                    
                 news_html += '</div>'
 
             html += f"""
