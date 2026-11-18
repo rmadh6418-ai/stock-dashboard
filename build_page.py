@@ -27,7 +27,7 @@ DASHBOARD_URL = "https://rmadh6418-ai.github.io/stock-dashboard/"
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 EXCLUDE_NEWS_KEYWORDS = ["콘서트", "포크", "음악회", "축제", "페스티벌", "공연", "전시회", "문화", "봉사", "기부", "나눔", "장학", "사회공헌", "바자회", "캠페인", "후원", "부고", "부음", "화혼", "결혼", "인사", "동정", "알림", "모집", "채용", "이벤트", "경품", "할인", "프로모션", "쿠폰", "체험단", "선착순", "추첨", "골프대회", "마라톤", "시상식", "장학금", "헌혈", "가을", "여행", "맛집"]
-BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약"]
+BUSINESS_NEWS_KEYWORDS = ["실적", "매출", "영업익", "영업이익", "순이익", "수주", "계약", "투자", "공급", "인수", "합병", "M&A", "증설", "공시", "주가", "상승", "하락", "급등", "급락", "수출", "양산", "출시", "기술", "개발", "협력", "제휴", "공장", "가동", "수혜", "흑자", "적자", "전망", "목표가", "배당", "지분", "증자", "특허", "사업", "성장", "생산", "상장", "신제품", "AI", "반도체", "배터리", "로봇", "방산", "원전", "바이오", "임상", "승인", "신약", "수주잔고", "체결", "공급계약", "정치", "세계", "글로벌", "미국", "중국", "유럽", "대통령", "정부", "정책", "규제", "법안", "지원", "보조금", "관세", "무역", "전쟁", "갈등", "경제", "증시", "지수", "금리", "환율", "인플레이션", "물가", "거시", "시장", "외인", "기관", "매수", "매도", "수급", "코스피", "코스닥", "FOMC"]
 
 KOSPI200_SECTORS = {
     "화학·에너지": ["LG화학", "S-Oil", "SK이노베이션", "롯데케미칼", "SK가스", "GS", "한국가스공사", "한화솔루션", "금호석유", "OCI홀딩스", "대한유화", "SKC", "효성첨단소재", "효성티앤씨", "코오롱인더", "태광산업", "롯데정밀화학", "후성", "애경케미칼", "KCC", "금호타이어", "넥센타이어"],
@@ -184,7 +184,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
         return []
 
     try:
-        search_query = f"{keyword} 주식"
+        search_query = f"{keyword} (주식 OR 증시 OR 경제 OR 글로벌 OR 정책)"
         encoded_query = urllib.parse.quote(search_query)
         
         # 환경변수 주소에 검색어 파라미터 결합
@@ -380,10 +380,16 @@ def get_news_score(title, stock_name):
     elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
 
     has_stock = any(alias in title for alias in aliases if len(alias) >= 2)
-    has_biz = any(biz in title for biz in BUSINESS_NEWS_KEYWORDS)
-
-    if has_stock: score += 5
-    if has_biz: score += 4
+    
+    if has_stock: 
+        score += 5
+        
+    # 💡 [핵심 변경] 제목에 중요 키워드가 여러 개 겹칠수록 점수를 폭발적으로 높여 최상단으로 끌어올림
+    matched_biz_count = sum(1 for biz in BUSINESS_NEWS_KEYWORDS if biz in title)
+    if matched_biz_count > 0:
+        # 매칭된 키워드 1개당 4점씩 추가 (최대 20점 제한)
+        score += min(matched_biz_count * 4, 20)
+        
     return score
 
 def get_exchange_rate():
