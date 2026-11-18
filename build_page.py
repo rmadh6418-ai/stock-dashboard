@@ -1163,6 +1163,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div id="chat-header">
             <span>AI 국내증시 비서</span>
             <div class="chat-header-controls">
+                <button id="chat-clear" onclick="clearChat()" title="대화 초기화">🗑️</button>
                 <button id="chat-resize" onclick="toggleChatSize()" title="확대/축소">⛶</button>
                 <button id="chat-close" onclick="toggleChat()" title="닫기">✖</button>
             </div>
@@ -1205,6 +1206,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     let chatHistory = [];
     let pendingMessage = "";
     let isChatExpanded = false;
+
+    function clearChat() {{
+        if (confirm("대화 내역을 모두 초기화하시겠습니까?")) {{
+            chatHistory = [];
+            const container = document.getElementById('chat-messages');
+            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 방금 올라온 공시 내용 요약해줘"</div>';
+        }}
+    }}
 
     function toggleChatSize() {{
         const win = document.getElementById('chat-window');
