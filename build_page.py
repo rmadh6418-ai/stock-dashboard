@@ -184,7 +184,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
         return []
 
     try:
-        search_query = f"{keyword} (주식 OR 증시 OR 경제 OR 글로벌 OR 정책)"
+        search_query = f"{keyword} 주식"
         encoded_query = urllib.parse.quote(search_query)
         
         # 환경변수 주소에 검색어 파라미터 결합
