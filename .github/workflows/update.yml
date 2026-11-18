@@ -50,8 +50,7 @@ jobs:
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
           DASHBOARD_PW: ${{ secrets.DASHBOARD_PW }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
-          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
-          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          NEWS_API_URL: ${{ secrets.NEWS_API_URL }}
         run: python build_page.py
 
       - name: Update Kakao Secret (If Renewed)
