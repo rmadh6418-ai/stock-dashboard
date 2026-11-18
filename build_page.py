@@ -1062,9 +1062,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
         #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
         #chat-button:hover {{ transform: scale(1.05); }}
-        #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; }}
+        
+        #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; resize: both; min-width: 320px; min-height: 400px; }}
         #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
-        #chat-close {{ background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0; }}
+        
+        .chat-header-controls {{ display: flex; gap: 15px; align-items: center; }}
+        .chat-header-controls button {{ background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 0; line-height: 1; transition: transform 0.2s; }}
+        .chat-header-controls button:hover {{ transform: scale(1.2); }}
+
         #chat-messages {{ flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }}
         .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; }}
         .message.user {{ align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }}
@@ -1157,7 +1162,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <div id="chat-window">
         <div id="chat-header">
             <span>AI 국내증시 비서</span>
-            <button id="chat-close" onclick="toggleChat()">✖</button>
+            <div class="chat-header-controls">
+                <button id="chat-resize" onclick="toggleChatSize()" title="확대/축소">⛶</button>
+                <button id="chat-close" onclick="toggleChat()" title="닫기">✖</button>
+            </div>
         </div>
         <div id="chat-messages">
             <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 방금 올라온 공시 내용 요약해줘"</div>
@@ -1196,6 +1204,28 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
     let chatHistory = [];
     let pendingMessage = "";
+    let isChatExpanded = false;
+
+    function toggleChatSize() {{
+        const win = document.getElementById('chat-window');
+        const btn = document.getElementById('chat-resize');
+        isChatExpanded = !isChatExpanded;
+        if (isChatExpanded) {{
+            win.style.width = '85vw';
+            win.style.height = '85vh';
+            win.style.maxWidth = '1000px';
+            win.style.maxHeight = '90vh';
+            btn.innerHTML = '🗗';
+            btn.title = "기본 크기로 축소";
+        }} else {{
+            win.style.width = '350px';
+            win.style.height = '500px';
+            win.style.maxWidth = 'none';
+            win.style.maxHeight = '70vh';
+            btn.innerHTML = '⛶';
+            btn.title = "크게 확대하기";
+        }}
+    }}
 
     function toggleChat() {{
         const win = document.getElementById('chat-window');
