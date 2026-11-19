@@ -162,7 +162,8 @@ def fetch_dart_disclosures():
             text = re.sub(r'\s+', ' ', text)
             
             if len(text) > 50:
-                return f"[DART 대시보드 요약]\n{text[:3500]}"
+                # 챗봇이 더 많은 내용을 확인할 수 있도록 최대 추출 글자 수를 50,000자로 늘림
+                return f"[DART 대시보드 요약]\n{text[:50000]}"
     except Exception as e:
         pass
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
@@ -991,7 +992,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
     <style>
-- {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ 
             background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; 
             -webkit-tap-highlight-color: transparent; 
@@ -1169,7 +1170,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 방금 올라온 공시 내용 요약해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1211,7 +1212,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         if (confirm("대화 내역을 모두 초기화하시겠습니까?")) {{
             chatHistory = [];
             const container = document.getElementById('chat-messages');
-            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "현재 방금 올라온 공시 내용 요약해줘"</div>';
+            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>';
         }}
     }}
 
@@ -1301,10 +1302,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     const iframeDoc = dartIframe.contentWindow.document;
                     const cloneBody = iframeDoc.body.cloneNode(true);
                     cloneBody.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
-                    const extractedText = cloneBody.innerText.replace(/\\s+/g, ' ').trim();
+                    
+                    // 핵심 수정사항: 보이는 글자(innerText)만 가져오지 않고, 숨겨진 세부 내용까지 모두 가져오도록 textContent 사용
+                    const extractedText = cloneBody.textContent.replace(/\\s+/g, ' ').trim();
                     
                     if (extractedText.length > 20) {{
-                        liveDartData = extractedText.substring(0, 3500);
+                        // 글자 수 제한을 50,000자로 크게 늘려 AI에게 상세 내용까지 모두 전달
+                        liveDartData = extractedText.substring(0, 50000);
                     }}
                 }}
             }} catch (e) {{
@@ -1319,8 +1323,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         const parser = new DOMParser();
                         const doc = parser.parseFromString(dartJson.contents, "text/html");
                         doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
-                        const proxyText = doc.body.innerText.replace(/\\s+/g, ' ').trim();
-                        if(proxyText.length > 20) liveDartData = proxyText.substring(0, 3500);
+                        
+                        // Proxy 사용 시에도 textContent로 가져오고 제한을 50,000자로 상향
+                        const proxyText = doc.body.textContent.replace(/\\s+/g, ' ').trim();
+                        if(proxyText.length > 20) liveDartData = proxyText.substring(0, 50000);
                     }}
                 }} catch(e) {{
                     liveDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '공시 정보 없음';
@@ -1356,6 +1362,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
             const currentDateStr = new Date().toLocaleString('ko-KR', {{ timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }});
 
+            // 핵심 수정사항: 프롬프트에서 '숨겨진 세부 본문 포함'을 지시하여 AI가 본문 텍스트에 깊게 관여하도록 명시
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
                                `현재 한국 시간은 ${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n` +
                                `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
@@ -1366,7 +1373,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\\n` +
                                `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n` +
-                               `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트를 읽고 현재 어떤 기업들이 어떤 공시를 올렸는지 명확하게 요약하여 설명해주세요.\\n` +
+                               `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트(숨겨진 세부 본문 포함)를 모두 분석하여, 제목뿐만 아니라 공시의 상세 내용과 그것이 해당 기업/시장에 가지는 의미나 영향력까지 깊이 있게 답변해주세요.\\n` +
                                `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
                                `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요.\\n` +
                                `5. 가독성: 마크다운(굵은 글씨, 줄바꿈)을 적극 사용하여 가독성 높게 답변하세요.`;
