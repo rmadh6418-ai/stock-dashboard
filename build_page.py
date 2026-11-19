@@ -323,7 +323,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 1. 지수 등락과 강세·약세 주도 섹터의 수급 및 증시 추세를 바탕으로 시장 분위기를 깊이 있게 분석할 것.
 2. {kst_now_str} 기준 현재 주가 흐름에서 미국의 주요 정치·경제적 리스크 요인(미국 주요 경제지표 발표 등)을 반드시 연계하여 주의해야 할 리스크 요인과 향후 대응 전략을 구체적으로 제시할 것.
 3. 전체 분량은 15문장 분량으로 매끄러운 단일 문단 평문으로 작성하고 숫자는 숫자 그대로 나오게 할 것.
-4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 것.
+4. 마크다운 기호(*, #, 굵게 등)는 일절 쓰지 말 일.
 5. [핵심 주의사항] 제공된 핵심 데이터(수치, 섹터명 등)를 절대 변경하거나 지어내지 마세요. 불확실한 종목이나 실적 수치 등 환각이 발생하지 않도록 철저히 팩트 기반으로만 분석하세요.
     """
 
@@ -375,135 +375,6 @@ def get_news_score(title, stock_name):
         score += min(matched_biz_count * 4, 20)
         
     return score
-
-# --- [파괴불가 무적 탐색기] 팍스넷+네이버 다중 동적 스크래핑 알고리즘 ---
-def get_market_funds():
-    funds = {
-        "date": "-", "deposit": "-", "deposit_change": "-", 
-        "credit": "-", "credit_change": "-", 
-        "dep_up": False, "dep_down": False, 
-        "cred_up": False, "cred_down": False,
-        "deposit_val": 0.0,
-        "credit_val": 0.0
-    }
-    
-    def parse_val(text):
-        # 쉼표 등 기호 전부 제거하고 순수 숫자와 소수점만 남김
-        cleaned = re.sub(r'[^\d.]', '', str(text))
-        if not cleaned: return 0.0
-        val = float(cleaned)
-        
-        # 단위 자동 스케일링 (백만원이든 억원이든 조원 단위로 자동 환산)
-        if val > 1000000: return val / 1000000
-        elif val > 10000: return val / 10000
-        elif val > 1000: return val / 1000
-        else: return val
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://finance.naver.com/"
-    }
-
-    # 1순위: 차단 확률이 0%에 가까운 팍스넷 (Paxnet)
-    # 2순위: 네이버 금융
-    # 3/4순위: 프록시 우회망
-    urls = [
-        "http://www.paxnet.co.kr/stock/sise/marketFunds",
-        "https://finance.naver.com/sise/sise_deposit.naver",
-        "https://api.allorigins.win/raw?url=" + urllib.parse.quote("https://finance.naver.com/sise/sise_deposit.naver"),
-        "https://api.codetabs.com/v1/proxy?quest=" + urllib.parse.quote("https://finance.naver.com/sise/sise_deposit.naver")
-    ]
-    
-    for url in urls:
-        try:
-            res = requests.get(url, headers=headers, timeout=6)
-            if res.status_code != 200: continue
-            
-            # 인코딩 자동 보정
-            if "naver.com" in url and "proxy" not in url and "allorigins" not in url:
-                res.encoding = 'euc-kr'
-            elif "paxnet" in url:
-                res.encoding = 'utf-8'
-                
-            soup = BeautifulSoup(res.text, "html.parser")
-            
-            valid_rows = []
-            d_col, c_col = -1, -1
-            
-            # 특정 HTML 클래스명에 의존하지 않고, 모든 <table>을 스캔하는 동적 탐색기
-            for table in soup.find_all('table'):
-                rows = []
-                for tr in table.find_all('tr'):
-                    tds = tr.find_all('td')
-                    if len(tds) >= 3: 
-                        date_str = tds[0].text.strip()
-                        # YYYY.MM.DD 또는 YY.MM.DD 등 날짜 형태를 띄는지 검증
-                        if re.search(r'\d{2}[./-]\d{2}', date_str):
-                            rows.append((date_str, tds))
-                
-                # 날짜 행을 최소 2개(오늘, 어제) 찾았다면 진짜 증시자금 테이블인지 검증
-                if len(rows) >= 2:
-                    temp_d_col, temp_c_col = -1, -1
-                    row1_tds = rows[0][1]
-                    
-                    for i in range(1, len(row1_tds)):
-                        val = parse_val(row1_tds[i].text)
-                        # 예탁금은 보통 35조~200조 사이, 신용잔고는 5조~35조 사이에 분포함을 이용해 컬럼 위치를 '스스로' 알아냄
-                        if 35.0 <= val < 200.0 and temp_d_col == -1:
-                            temp_d_col = i
-                        elif 5.0 <= val < 35.0 and temp_c_col == -1:
-                            temp_c_col = i
-                            
-                    if temp_d_col != -1 and temp_c_col != -1:
-                        valid_rows = rows
-                        d_col = temp_d_col
-                        c_col = temp_c_col
-                        break # 올바른 테이블을 찾았으므로 스캔 중지
-                        
-            # 정상적으로 데이터를 모두 찾은 경우
-            if len(valid_rows) >= 2 and d_col != -1 and c_col != -1:
-                row1_date, row1_tds = valid_rows[0] # 오늘 기준 데이터 행
-                row2_date, row2_tds = valid_rows[1] # 어제 기준 데이터 행 (증감 계산용)
-                
-                d_val = parse_val(row1_tds[d_col].text)
-                c_val = parse_val(row1_tds[c_col].text)
-                d_val_prev = parse_val(row2_tds[d_col].text)
-                c_val_prev = parse_val(row2_tds[c_col].text)
-                
-                # HTML 화살표(▲/▼)나 CSS 색상에 의존하지 않고, 수학적으로 전일 대비 직접 뺄셈 연산 (절대 고장나지 않음)
-                d_chg = d_val - d_val_prev
-                c_chg = c_val - c_val_prev
-                
-                funds["date"] = row1_date
-                funds["deposit_val"] = d_val
-                funds["credit_val"] = c_val
-                funds["deposit"] = f"{d_val:,.1f}조원"
-                funds["credit"] = f"{c_val:,.1f}조원"
-                
-                if d_chg > 0:
-                    funds["deposit_change"] = f"+{abs(d_chg):,.2f}조원"
-                    funds["dep_up"] = True
-                elif d_chg < 0:
-                    funds["deposit_change"] = f"-{abs(d_chg):,.2f}조원"
-                    funds["dep_down"] = True
-                else:
-                    funds["deposit_change"] = "0조원"
-                    
-                if c_chg > 0:
-                    funds["credit_change"] = f"+{abs(c_chg):,.2f}조원"
-                    funds["cred_up"] = True
-                elif c_chg < 0:
-                    funds["credit_change"] = f"-{abs(c_chg):,.2f}조원"
-                    funds["cred_down"] = True
-                else:
-                    funds["credit_change"] = "0조원"
-
-                return funds # 성공 시 즉시 반환
-                
-        except Exception as e:
-            print(f"Funds Scrape Error ({url}): {e}")
-
-    return funds
 
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:USDKRW"}
@@ -989,7 +860,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
 # --- HTML 렌더링 영역 ---
-def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary, funds):
+def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
 
     raw_password = os.environ.get("DASHBOARD_PW")
@@ -1024,62 +895,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             {sparkline_svg}
         </div>
         """
-
-    d_val = funds.get('deposit_val', 0.0)
-    c_val = funds.get('credit_val', 0.0)
-    
-    credit_ratio = (c_val / d_val * 100) if d_val > 0 else 0
-    credit_ratio_str = f"{credit_ratio:.1f}"
-
-    dep_color = "bg-up-light text-up" if funds['dep_up'] else ("bg-down-light text-down" if funds['dep_down'] else "bg-gray-100 text-flat")
-    cred_color = "bg-up-light text-up" if funds['cred_up'] else ("bg-down-light text-down" if funds['cred_down'] else "bg-gray-100 text-flat")
-
-    if funds['date'] == "-":
-        funds_html = """
-        <div class="card" style="margin-bottom: 24px; padding: 18px 20px; text-align: center; color: #ef4444; font-weight: bold;">
-            증시자금동향 데이터를 불러올 수 없습니다. (팍스넷 및 네이버 금융 접속 지연)
-        </div>
-        """
-        funds_str_for_ai = "현재 증시자금동향을 조회할 수 없습니다."
-    else:
-        funds_html = f"""
-        <div class="card" style="margin-bottom: 24px; padding: 18px 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
-                <div class="card-title" style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #1e293b;">⚖️ 증시자금동향 비교 차트 <span style="font-size: 0.8rem; font-weight: 600; color: #64748b; margin-left: 6px;">({funds['date']} 기준)</span></div>
-            </div>
-            
-            <div style="display: flex; flex-direction: column; gap: 18px;">
-                <!-- 예탁금 바 (기준 100%) -->
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
-                        <span style="font-weight: 800; color: #334155; font-size: 0.95rem;">💰 고객예탁금</span>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-size: 1.25rem; font-weight: 800; color: #0f172a;">{funds['deposit']}</span>
-                            <span class="badge {dep_color}">{funds['deposit_change']}</span>
-                        </div>
-                    </div>
-                    <div style="width: 100%; background: #f1f5f9; border-radius: 8px; height: 16px; overflow: hidden;">
-                        <div style="width: 100%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); border-radius: 8px;"></div>
-                    </div>
-                </div>
-
-                <!-- 신용잔고 바 (예탁금 대비 비율로 길이 설정) -->
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
-                        <span style="font-weight: 800; color: #334155; font-size: 0.95rem;">📈 신용융자잔고 <span style="font-size: 0.8rem; color: #64748b; font-weight: 700; margin-left: 6px;">(예탁금 대비 {credit_ratio_str}%)</span></span>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-size: 1.25rem; font-weight: 800; color: #0f172a;">{funds['credit']}</span>
-                            <span class="badge {cred_color}">{funds['credit_change']}</span>
-                        </div>
-                    </div>
-                    <div style="width: 100%; background: #f1f5f9; border-radius: 8px; height: 16px; overflow: hidden;">
-                        <div style="width: {credit_ratio_str}%; height: 100%; background: linear-gradient(90deg, #e11d48, #fb7185); border-radius: 8px; transition: width 1.5s ease-in-out;"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        """
-        funds_str_for_ai = f"고객예탁금: {funds['deposit']} (전일대비 {funds['deposit_change']}), 신용융자잔고: {funds['credit']} (전일대비 {funds['credit_change']}) - {funds['date']} 기준"
 
     def build_sector_list(sectors):
         if not sectors: 
@@ -1181,7 +996,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }}
+        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
@@ -1296,7 +1111,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </header>
 
     <div class="grid-indices">{index_cards}</div>
-    {funds_html}
 
     <div class="market-ai-box">
         <div class="market-ai-header">
@@ -1343,7 +1157,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 고객예탁금과 신용잔고 비율은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1537,14 +1351,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
                                `[실시간 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
-                               `- 증시자금동향: {funds_str_for_ai}\\n` +
                                `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n${{liveDartData}}\\n` +
                                `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
                                `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\\n` +
                                `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n` +
                                `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트(숨겨진 세부 본문 포함)를 모두 분석하여, 제목뿐만 아니라 공시의 상세 내용과 그것이 해당 기업/시장에 가지는 의미나 영향력까지 깊이 있게 답변해주세요.\\n` +
-                               `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 신용/예탁금 비율 분석을 바탕으로 분석해주세요.\\n` +
+                               `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
                                `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요.\\n` +
                                `5. 가독성: 마크다운(굵은 글씨, 줄바꿈)을 적극 사용하여 가독성 높게 답변하세요.`;
 
@@ -1922,7 +1735,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 if __name__ == "__main__":
     indices = get_market_indices()
     stock_data = get_market_stocks()
-    funds_data = get_market_funds() # 증시자금동향 데이터 수집 실행
 
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
@@ -1931,7 +1743,7 @@ if __name__ == "__main__":
     
     dart_summary = fetch_dart_disclosures()
 
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary, funds_data)
+    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
 
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     today_str = kst_now.strftime("%Y-%m-%d")
