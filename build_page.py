@@ -376,68 +376,83 @@ def get_news_score(title, stock_name):
         
     return score
 
-# --- 증시자금동향 수집 함수 추가 ---
+# --- [개선됨] 강력한 증시자금동향 수집 함수 ---
 def get_market_funds():
     url = "https://finance.naver.com/sise/sise_deposit.naver"
     funds = {
         "date": "-", "deposit": "-", "deposit_change": "-", 
         "credit": "-", "credit_change": "-", 
         "dep_up": False, "dep_down": False, 
-        "cred_up": False, "cred_down": False
+        "cred_up": False, "cred_down": False,
+        "deposit_val": 0.0,
+        "credit_val": 0.0
     }
     try:
-        res = requests.get(url, headers=get_headers(), timeout=5)
+        # 네이버 금융의 봇 차단을 우회하기 위해 완벽한 브라우저 헤더 설정
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://finance.naver.com/"
+        }
+        res = requests.get(url, headers=headers, timeout=5)
         res.encoding = 'euc-kr'
         soup = BeautifulSoup(res.text, "html.parser")
-        table = soup.find('table', {'class': 'type_1'})
         
-        if table:
-            for row in table.find_all('tr'):
-                cols = row.find_all('td', {'class': 'number'})
-                date_col = row.find('td', {'class': 'date'})
-                if date_col and len(cols) >= 4:
-                    date_str = date_col.text.strip()
-                    
-                    def parse_val(v_str):
-                        try: return int(v_str.replace(',', '')) / 1000000  # 백만원 단위 -> 조원 단위 환산
-                        except: return 0.0
-
-                    d_val = parse_val(cols[0].text.strip())
-                    d_chg = parse_val(cols[1].text.strip())
-                    c_val = parse_val(cols[2].text.strip())
-                    c_chg = parse_val(cols[3].text.strip())
-                    
-                    dep_img = cols[1].find('img')
-                    dep_src = dep_img['src'] if dep_img and 'src' in dep_img.attrs else ""
-                    cred_img = cols[3].find('img')
-                    cred_src = cred_img['src'] if cred_img and 'src' in cred_img.attrs else ""
-                    
-                    funds["date"] = date_str
-                    funds["deposit"] = f"{d_val:,.1f}조원"
-                    
-                    if "up" in dep_src or "상승" in str(dep_img):
-                        funds["deposit_change"] = f"+{d_chg:,.2f}조원"
-                        funds["dep_up"] = True
-                    elif "down" in dep_src or "하락" in str(dep_img):
-                        funds["deposit_change"] = f"-{d_chg:,.2f}조원"
-                        funds["dep_down"] = True
-                    else:
-                        funds["deposit_change"] = "0조원"
-                    
-                    funds["credit"] = f"{c_val:,.1f}조원"
-                    
-                    if "up" in cred_src or "상승" in str(cred_img):
-                        funds["credit_change"] = f"+{c_chg:,.2f}조원"
-                        funds["cred_up"] = True
-                    elif "down" in cred_src or "하락" in str(cred_img):
-                        funds["credit_change"] = f"-{c_chg:,.2f}조원"
-                        funds["cred_down"] = True
-                    else:
-                        funds["credit_change"] = "0조원"
+        # 특정 table class(type_1)에 의존하지 않고 td 속성들을 찾아 유연하게 대응
+        for tr in soup.find_all('tr'):
+            date_td = tr.find('td', class_='date')
+            num_tds = tr.find_all('td', class_='number')
+            
+            # 날짜 셀 1개와 데이터 셀 4개(예탁금, 증감, 신용잔고, 증감)가 있는 올바른 행을 찾음
+            if date_td and len(num_tds) >= 4:
+                date_str = date_td.text.strip()
+                
+                # 천단위 콤마 제거
+                d_val_str = num_tds[0].text.strip().replace(',', '')
+                d_chg_str = num_tds[1].text.strip().replace(',', '')
+                c_val_str = num_tds[2].text.strip().replace(',', '')
+                c_chg_str = num_tds[3].text.strip().replace(',', '')
+                
+                def to_jo(val_str):
+                    try: return float(val_str) / 1000000 # 백만원 단위를 조원으로 변환
+                    except: return 0.0
                         
-                    break # 가장 최근 일자 데이터만 가져옴
+                d_val = to_jo(d_val_str)
+                d_chg = to_jo(d_chg_str)
+                c_val = to_jo(c_val_str)
+                c_chg = to_jo(c_chg_str)
+                
+                funds["date"] = date_str
+                funds["deposit_val"] = d_val
+                funds["credit_val"] = c_val
+                funds["deposit"] = f"{d_val:,.1f}조원"
+                funds["credit"] = f"{c_val:,.1f}조원"
+                
+                # 증감(상승/하락) 여부는 img 태그 혹은 텍스트에 포함된 기호로 이중 검사
+                dep_text = num_tds[1].text.strip()
+                dep_img = num_tds[1].find('img')
+                if (dep_img and 'up' in dep_img.get('src', '')) or ('상승' in str(dep_img)) or ('+' in dep_text):
+                    funds["deposit_change"] = f"+{d_chg:,.2f}조원"
+                    funds["dep_up"] = True
+                elif (dep_img and 'down' in dep_img.get('src', '')) or ('하락' in str(dep_img)) or ('-' in dep_text):
+                    funds["deposit_change"] = f"-{d_chg:,.2f}조원"
+                    funds["dep_down"] = True
+                else:
+                    funds["deposit_change"] = "0조원"
+                    
+                cred_text = num_tds[3].text.strip()
+                cred_img = num_tds[3].find('img')
+                if (cred_img and 'up' in cred_img.get('src', '')) or ('상승' in str(cred_img)) or ('+' in cred_text):
+                    funds["credit_change"] = f"+{c_chg:,.2f}조원"
+                    funds["cred_up"] = True
+                elif (cred_img and 'down' in cred_img.get('src', '')) or ('하락' in str(cred_img)) or ('-' in cred_text):
+                    funds["credit_change"] = f"-{c_chg:,.2f}조원"
+                    funds["cred_down"] = True
+                else:
+                    funds["credit_change"] = "0조원"
+                
+                break # 가장 최근 일자 데이터만 가져오고 종료
     except Exception as e:
-        print("증시자금동향 파싱 오류:", e)
+        print(f"증시자금동향 파싱 에러: {e}")
         
     return funds
 
@@ -961,31 +976,62 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
 
-    # --- 증시자금동향 HTML 구성 ---
+    # --- [신규 추가] 예탁금 대비 신용잔고 비율 차트 HTML 생성 ---
+    d_val = funds.get('deposit_val', 0.0)
+    c_val = funds.get('credit_val', 0.0)
+    
+    credit_ratio = (c_val / d_val * 100) if d_val > 0 else 0
+    credit_ratio_str = f"{credit_ratio:.1f}"
+
     dep_color = "bg-up-light text-up" if funds['dep_up'] else ("bg-down-light text-down" if funds['dep_down'] else "bg-gray-100 text-flat")
     cred_color = "bg-up-light text-up" if funds['cred_up'] else ("bg-down-light text-down" if funds['cred_down'] else "bg-gray-100 text-flat")
-    
-    funds_html = f"""
-    <div style="display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap;">
-        <div class="card" style="flex: 1; min-width: 250px; flex-direction: row; justify-content: space-between; align-items: center; padding: 14px 16px;">
-            <div>
-                <div class="card-title">💰 고객예탁금 <span style="font-size: 0.75rem; font-weight: 500; color: #64748b;">({funds['date']} 기준)</span></div>
-                <div class="card-value" style="font-size: 1.15rem; margin-bottom: 0;">{funds['deposit']}</div>
-            </div>
-            <div class="badge {dep_color}" style="font-size: 0.85rem;">{funds['deposit_change']}</div>
-        </div>
-        <div class="card" style="flex: 1; min-width: 250px; flex-direction: row; justify-content: space-between; align-items: center; padding: 14px 16px;">
-            <div>
-                <div class="card-title">📈 신용융자잔고 <span style="font-size: 0.75rem; font-weight: 500; color: #64748b;">({funds['date']} 기준)</span></div>
-                <div class="card-value" style="font-size: 1.15rem; margin-bottom: 0;">{funds['credit']}</div>
-            </div>
-            <div class="badge {cred_color}" style="font-size: 0.85rem;">{funds['credit_change']}</div>
-        </div>
-    </div>
-    """
 
-    # AI 챗봇이 읽을 수 있도록 증시자금 정보를 텍스트 변수로 정리
-    funds_str_for_ai = f"고객예탁금: {funds['deposit']} (전일대비 {funds['deposit_change']}), 신용융자잔고: {funds['credit']} (전일대비 {funds['credit_change']}) - {funds['date']} 기준"
+    if funds['date'] == "-":
+        funds_html = """
+        <div class="card" style="margin-bottom: 24px; padding: 18px 20px; text-align: center; color: #ef4444; font-weight: bold;">
+            증시자금동향 데이터를 불러올 수 없습니다. (네이버 금융 API 접근 차단 발생)
+        </div>
+        """
+        funds_str_for_ai = "현재 증시자금동향을 조회할 수 없습니다."
+    else:
+        funds_html = f"""
+        <div class="card" style="margin-bottom: 24px; padding: 18px 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+                <div class="card-title" style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #1e293b;">⚖️ 증시자금동향 비교 차트 <span style="font-size: 0.8rem; font-weight: 600; color: #64748b; margin-left: 6px;">({funds['date']} 기준)</span></div>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 18px;">
+                <!-- 예탁금 바 (기준 100%) -->
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+                        <span style="font-weight: 800; color: #334155; font-size: 0.95rem;">💰 고객예탁금</span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.25rem; font-weight: 800; color: #0f172a;">{funds['deposit']}</span>
+                            <span class="badge {dep_color}">{funds['deposit_change']}</span>
+                        </div>
+                    </div>
+                    <div style="width: 100%; background: #f1f5f9; border-radius: 8px; height: 16px; overflow: hidden;">
+                        <div style="width: 100%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); border-radius: 8px;"></div>
+                    </div>
+                </div>
+
+                <!-- 신용잔고 바 (예탁금 대비 비율로 길이 설정) -->
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+                        <span style="font-weight: 800; color: #334155; font-size: 0.95rem;">📈 신용융자잔고 <span style="font-size: 0.8rem; color: #64748b; font-weight: 700; margin-left: 6px;">(예탁금 대비 {credit_ratio_str}%)</span></span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.25rem; font-weight: 800; color: #0f172a;">{funds['credit']}</span>
+                            <span class="badge {cred_color}">{funds['credit_change']}</span>
+                        </div>
+                    </div>
+                    <div style="width: 100%; background: #f1f5f9; border-radius: 8px; height: 16px; overflow: hidden;">
+                        <div style="width: {credit_ratio_str}%; height: 100%; background: linear-gradient(90deg, #e11d48, #fb7185); border-radius: 8px; transition: width 1.5s ease-in-out;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+        funds_str_for_ai = f"고객예탁금: {funds['deposit']} (전일대비 {funds['deposit_change']}), 신용융자잔고: {funds['credit']} (전일대비 {funds['credit_change']}) - {funds['date']} 기준"
 
     def build_sector_list(sectors):
         if not sectors: 
@@ -1087,7 +1133,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }}
+        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
@@ -1249,7 +1295,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 고객예탁금과 신용잔고는 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 고객예탁금과 신용잔고 비율은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
