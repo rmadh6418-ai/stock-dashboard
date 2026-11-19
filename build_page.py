@@ -162,21 +162,13 @@ def fetch_dart_disclosures():
             text = re.sub(r'\s+', ' ', text)
             
             if len(text) > 50:
-                # 챗봇이 더 많은 내용을 확인할 수 있도록 최대 추출 글자 수를 50,000자로 늘림
                 return f"[DART 대시보드 요약]\n{text[:50000]}"
     except Exception as e:
         pass
     return "현재 DART 대시보드에서 공시 정보를 불러올 수 없습니다."
 
 def fetch_real_news(keyword, stock_code="", limit=3):
-    import os
-    import urllib.parse
-    import requests
-    import re
-    import html
-
     candidates = []
-    
     gas_base_url = os.environ.get("NEWS_API_URL", "").strip()
     
     if not gas_base_url:
@@ -186,20 +178,18 @@ def fetch_real_news(keyword, stock_code="", limit=3):
     try:
         search_query = f"{keyword} 주식"
         encoded_query = urllib.parse.quote(search_query)
-        
         gas_url = f"{gas_base_url}?query={encoded_query}"
         
         res = requests.get(gas_url, timeout=10)
         
         if res.status_code == 200:
             data = res.json()
-            
             if "error" in data:
-                print(f"❌ [{keyword}] NCP API 에러 (구글 서버 응답): {data['error']}")
+                print(f"❌ [{keyword}] NCP API 에러: {data['error']}")
                 return []
 
+            import html
             items = data.get("items", [])
-            
             for item in items:
                 raw_title = re.sub(r'</?[^>]+(>|$)', '', item.get("title", ""))
                 raw_title = html.unescape(raw_title).replace('"', '"').replace('&', '&')
@@ -218,9 +208,6 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "score": score, 
                         "content": desc
                     })
-        else:
-            print(f"❌ [{keyword}] 구글 GAS 서버 통신 실패: {res.status_code}")
-            
     except Exception as e: 
         print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
 
@@ -388,6 +375,71 @@ def get_news_score(title, stock_name):
         score += min(matched_biz_count * 4, 20)
         
     return score
+
+# --- 증시자금동향 수집 함수 추가 ---
+def get_market_funds():
+    url = "https://finance.naver.com/sise/sise_deposit.naver"
+    funds = {
+        "date": "-", "deposit": "-", "deposit_change": "-", 
+        "credit": "-", "credit_change": "-", 
+        "dep_up": False, "dep_down": False, 
+        "cred_up": False, "cred_down": False
+    }
+    try:
+        res = requests.get(url, headers=get_headers(), timeout=5)
+        res.encoding = 'euc-kr'
+        soup = BeautifulSoup(res.text, "html.parser")
+        table = soup.find('table', {'class': 'type_1'})
+        
+        if table:
+            for row in table.find_all('tr'):
+                cols = row.find_all('td', {'class': 'number'})
+                date_col = row.find('td', {'class': 'date'})
+                if date_col and len(cols) >= 4:
+                    date_str = date_col.text.strip()
+                    
+                    def parse_val(v_str):
+                        try: return int(v_str.replace(',', '')) / 1000000  # 백만원 단위 -> 조원 단위 환산
+                        except: return 0.0
+
+                    d_val = parse_val(cols[0].text.strip())
+                    d_chg = parse_val(cols[1].text.strip())
+                    c_val = parse_val(cols[2].text.strip())
+                    c_chg = parse_val(cols[3].text.strip())
+                    
+                    dep_img = cols[1].find('img')
+                    dep_src = dep_img['src'] if dep_img and 'src' in dep_img.attrs else ""
+                    cred_img = cols[3].find('img')
+                    cred_src = cred_img['src'] if cred_img and 'src' in cred_img.attrs else ""
+                    
+                    funds["date"] = date_str
+                    funds["deposit"] = f"{d_val:,.1f}조원"
+                    
+                    if "up" in dep_src or "상승" in str(dep_img):
+                        funds["deposit_change"] = f"+{d_chg:,.2f}조원"
+                        funds["dep_up"] = True
+                    elif "down" in dep_src or "하락" in str(dep_img):
+                        funds["deposit_change"] = f"-{d_chg:,.2f}조원"
+                        funds["dep_down"] = True
+                    else:
+                        funds["deposit_change"] = "0조원"
+                    
+                    funds["credit"] = f"{c_val:,.1f}조원"
+                    
+                    if "up" in cred_src or "상승" in str(cred_img):
+                        funds["credit_change"] = f"+{c_chg:,.2f}조원"
+                        funds["cred_up"] = True
+                    elif "down" in cred_src or "하락" in str(cred_img):
+                        funds["credit_change"] = f"-{c_chg:,.2f}조원"
+                        funds["cred_down"] = True
+                    else:
+                        funds["credit_change"] = "0조원"
+                        
+                    break # 가장 최근 일자 데이터만 가져옴
+    except Exception as e:
+        print("증시자금동향 파싱 오류:", e)
+        
+    return funds
 
 def get_exchange_rate():
     base = {"name": "원·달러 환율", "code_key": "FX_USDKRW", "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": "FX_IDC:USDKRW"}
@@ -873,7 +925,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
         print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
 # --- HTML 렌더링 영역 ---
-def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
+def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary, funds):
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
 
     raw_password = os.environ.get("DASHBOARD_PW")
@@ -908,6 +960,32 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             {sparkline_svg}
         </div>
         """
+
+    # --- 증시자금동향 HTML 구성 ---
+    dep_color = "bg-up-light text-up" if funds['dep_up'] else ("bg-down-light text-down" if funds['dep_down'] else "bg-gray-100 text-flat")
+    cred_color = "bg-up-light text-up" if funds['cred_up'] else ("bg-down-light text-down" if funds['cred_down'] else "bg-gray-100 text-flat")
+    
+    funds_html = f"""
+    <div style="display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap;">
+        <div class="card" style="flex: 1; min-width: 250px; flex-direction: row; justify-content: space-between; align-items: center; padding: 14px 16px;">
+            <div>
+                <div class="card-title">💰 고객예탁금 <span style="font-size: 0.75rem; font-weight: 500; color: #64748b;">({funds['date']} 기준)</span></div>
+                <div class="card-value" style="font-size: 1.15rem; margin-bottom: 0;">{funds['deposit']}</div>
+            </div>
+            <div class="badge {dep_color}" style="font-size: 0.85rem;">{funds['deposit_change']}</div>
+        </div>
+        <div class="card" style="flex: 1; min-width: 250px; flex-direction: row; justify-content: space-between; align-items: center; padding: 14px 16px;">
+            <div>
+                <div class="card-title">📈 신용융자잔고 <span style="font-size: 0.75rem; font-weight: 500; color: #64748b;">({funds['date']} 기준)</span></div>
+                <div class="card-value" style="font-size: 1.15rem; margin-bottom: 0;">{funds['credit']}</div>
+            </div>
+            <div class="badge {cred_color}" style="font-size: 0.85rem;">{funds['credit_change']}</div>
+        </div>
+    </div>
+    """
+
+    # AI 챗봇이 읽을 수 있도록 증시자금 정보를 텍스트 변수로 정리
+    funds_str_for_ai = f"고객예탁금: {funds['deposit']} (전일대비 {funds['deposit_change']}), 신용융자잔고: {funds['credit']} (전일대비 {funds['credit_change']}) - {funds['date']} 기준"
 
     def build_sector_list(sectors):
         if not sectors: 
@@ -992,7 +1070,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
     <style>
-* {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+- {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ 
             background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; 
             -webkit-tap-highlight-color: transparent; 
@@ -1009,7 +1087,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
         
-        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }}
+        .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
         
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
@@ -1124,6 +1202,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </header>
 
     <div class="grid-indices">{index_cards}</div>
+    {funds_html}
 
     <div class="market-ai-box">
         <div class="market-ai-header">
@@ -1170,7 +1249,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 고객예탁금과 신용잔고는 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1303,11 +1382,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     const cloneBody = iframeDoc.body.cloneNode(true);
                     cloneBody.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
                     
-                    // 핵심 수정사항: 보이는 글자(innerText)만 가져오지 않고, 숨겨진 세부 내용까지 모두 가져오도록 textContent 사용
                     const extractedText = cloneBody.textContent.replace(/\\s+/g, ' ').trim();
                     
                     if (extractedText.length > 20) {{
-                        // 글자 수 제한을 50,000자로 크게 늘려 AI에게 상세 내용까지 모두 전달
                         liveDartData = extractedText.substring(0, 50000);
                     }}
                 }}
@@ -1324,7 +1401,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         const doc = parser.parseFromString(dartJson.contents, "text/html");
                         doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
                         
-                        // Proxy 사용 시에도 textContent로 가져오고 제한을 50,000자로 상향
                         const proxyText = doc.body.textContent.replace(/\\s+/g, ' ').trim();
                         if(proxyText.length > 20) liveDartData = proxyText.substring(0, 50000);
                     }}
@@ -1362,12 +1438,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
             const currentDateStr = new Date().toLocaleString('ko-KR', {{ timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }});
 
-            // 핵심 수정사항: 프롬프트에서 '숨겨진 세부 본문 포함'을 지시하여 AI가 본문 텍스트에 깊게 관여하도록 명시
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
                                `현재 한국 시간은 ${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n` +
                                `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
                                `[실시간 데이터]\\n` +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
+                               `- 증시자금동향: {funds_str_for_ai}\\n` +
                                `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n${{liveDartData}}\\n` +
                                `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
@@ -1752,6 +1828,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 if __name__ == "__main__":
     indices = get_market_indices()
     stock_data = get_market_stocks()
+    funds_data = get_market_funds() # 증시자금동향 데이터 수집 실행
 
     k200_top, k200_bot = calculate_sectors(KOSPI200_SECTORS, stock_data)
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
@@ -1760,7 +1837,7 @@ if __name__ == "__main__":
     
     dart_summary = fetch_dart_disclosures()
 
-    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
+    render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary, funds_data)
 
     kst_now = datetime.now(timezone(timedelta(hours=9)))
     today_str = kst_now.strftime("%Y-%m-%d")
