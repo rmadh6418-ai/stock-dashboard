@@ -172,6 +172,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
     gas_base_url = os.environ.get("NEWS_API_URL", "").strip()
     
     if not gas_base_url:
+        print(f"❌ [{keyword}] 뉴스 API 주소가 환경변수에 없습니다.")
         return []
 
     try:
@@ -184,6 +185,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
         if res.status_code == 200:
             data = res.json()
             if "error" in data:
+                print(f"❌ [{keyword}] NCP API 에러: {data['error']}")
                 return []
 
             import html
@@ -207,7 +209,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "content": desc
                     })
     except Exception as e: 
-        pass
+        print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
@@ -374,9 +376,8 @@ def get_news_score(title, stock_name):
         
     return score
 
-# --- [초강력 우회] 증시자금동향 수집 함수 ---
+# --- [파괴불가 무적 탐색기] 팍스넷+네이버 다중 동적 스크래핑 알고리즘 ---
 def get_market_funds():
-    url = "https://finance.naver.com/sise/sise_deposit.naver"
     funds = {
         "date": "-", "deposit": "-", "deposit_change": "-", 
         "credit": "-", "credit_change": "-", 
@@ -386,108 +387,122 @@ def get_market_funds():
         "credit_val": 0.0
     }
     
-    html_text = ""
+    def parse_val(text):
+        # 쉼표 등 기호 전부 제거하고 순수 숫자와 소수점만 남김
+        cleaned = re.sub(r'[^\d.]', '', str(text))
+        if not cleaned: return 0.0
+        val = float(cleaned)
+        
+        # 단위 자동 스케일링 (백만원이든 억원이든 조원 단위로 자동 환산)
+        if val > 1000000: return val / 1000000
+        elif val > 10000: return val / 10000
+        elif val > 1000: return val / 1000
+        else: return val
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://finance.naver.com/"
     }
 
-    # 1. 1차 시도: 네이버 직접 호출 (로컬 환경 등 차단 없을 때)
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200 and "type_1" in res.text:
-            res.encoding = 'euc-kr'
-            html_text = res.text
-    except:
-        pass
-
-    # 2. 2차 시도: 프록시 우회 (GitHub Actions 등 차단 환경 극복용)
-    if not html_text:
-        proxy_urls = [
-            f"https://api.allorigins.win/get?url={urllib.parse.quote(url)}",
-            f"https://api.codetabs.com/v1/proxy?quest={urllib.parse.quote(url)}"
-        ]
-        
-        for p_url in proxy_urls:
-            try:
-                res = requests.get(p_url, headers=headers, timeout=8)
-                if res.status_code == 200:
-                    if "allorigins" in p_url:
-                        temp_html = res.json().get("contents", "")
-                    else:
-                        res.encoding = 'euc-kr'
-                        temp_html = res.text
-                        
-                    if "type_1" in temp_html:
-                        html_text = temp_html
-                        break
-            except:
-                continue
-
-    if not html_text:
-        return funds
-
-    try:
-        soup = BeautifulSoup(html_text, "html.parser")
-        table = soup.find('table', {'class': 'type_1'})
-        if table:
-            for tr in table.find_all('tr'):
-                date_td = tr.find('td', class_='date')
-                num_tds = tr.find_all('td', class_='number')
+    # 1순위: 차단 확률이 0%에 가까운 팍스넷 (Paxnet)
+    # 2순위: 네이버 금융
+    # 3/4순위: 프록시 우회망
+    urls = [
+        "http://www.paxnet.co.kr/stock/sise/marketFunds",
+        "https://finance.naver.com/sise/sise_deposit.naver",
+        "https://api.allorigins.win/raw?url=" + urllib.parse.quote("https://finance.naver.com/sise/sise_deposit.naver"),
+        "https://api.codetabs.com/v1/proxy?quest=" + urllib.parse.quote("https://finance.naver.com/sise/sise_deposit.naver")
+    ]
+    
+    for url in urls:
+        try:
+            res = requests.get(url, headers=headers, timeout=6)
+            if res.status_code != 200: continue
+            
+            # 인코딩 자동 보정
+            if "naver.com" in url and "proxy" not in url and "allorigins" not in url:
+                res.encoding = 'euc-kr'
+            elif "paxnet" in url:
+                res.encoding = 'utf-8'
                 
-                # 올바른 데이터 행을 찾음
-                if date_td and len(num_tds) >= 4:
-                    date_str = date_td.text.strip()
-                    if len(date_str) < 5: continue # 빈 행 패스
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            valid_rows = []
+            d_col, c_col = -1, -1
+            
+            # 특정 HTML 클래스명에 의존하지 않고, 모든 <table>을 스캔하는 동적 탐색기
+            for table in soup.find_all('table'):
+                rows = []
+                for tr in table.find_all('tr'):
+                    tds = tr.find_all('td')
+                    if len(tds) >= 3: 
+                        date_str = tds[0].text.strip()
+                        # YYYY.MM.DD 또는 YY.MM.DD 등 날짜 형태를 띄는지 검증
+                        if re.search(r'\d{2}[./-]\d{2}', date_str):
+                            rows.append((date_str, tds))
+                
+                # 날짜 행을 최소 2개(오늘, 어제) 찾았다면 진짜 증시자금 테이블인지 검증
+                if len(rows) >= 2:
+                    temp_d_col, temp_c_col = -1, -1
+                    row1_tds = rows[0][1]
                     
-                    # 인코딩 깨짐 완벽 방어: 숫자가 아닌 문자(콤마 등) 모두 제거 후 파싱
-                    d_val_str = re.sub(r'[^\d.]', '', num_tds[0].text.strip())
-                    d_chg_str = re.sub(r'[^\d.]', '', num_tds[1].text.strip())
-                    c_val_str = re.sub(r'[^\d.]', '', num_tds[2].text.strip())
-                    c_chg_str = re.sub(r'[^\d.]', '', num_tds[3].text.strip())
-                    
-                    def to_jo(val_str):
-                        try: return float(val_str) / 1000000 # 백만원 단위를 조원으로 변환
-                        except: return 0.0
+                    for i in range(1, len(row1_tds)):
+                        val = parse_val(row1_tds[i].text)
+                        # 예탁금은 보통 35조~200조 사이, 신용잔고는 5조~35조 사이에 분포함을 이용해 컬럼 위치를 '스스로' 알아냄
+                        if 35.0 <= val < 200.0 and temp_d_col == -1:
+                            temp_d_col = i
+                        elif 5.0 <= val < 35.0 and temp_c_col == -1:
+                            temp_c_col = i
                             
-                    d_val = to_jo(d_val_str)
-                    d_chg = to_jo(d_chg_str)
-                    c_val = to_jo(c_val_str)
-                    c_chg = to_jo(c_chg_str)
-                    
-                    if d_val == 0.0 and c_val == 0.0: continue
-                    
-                    funds["date"] = date_str
-                    funds["deposit_val"] = d_val
-                    funds["credit_val"] = c_val
-                    funds["deposit"] = f"{d_val:,.1f}조원"
-                    funds["credit"] = f"{c_val:,.1f}조원"
-                    
-                    # 증감(상승/하락) 여부는 HTML 클래스나 img src 문자열로 판별 (문자 깨짐과 무관)
-                    dep_html = str(num_tds[1])
-                    if 'ico_up' in dep_html or 'red02' in dep_html:
-                        funds["deposit_change"] = f"+{d_chg:,.2f}조원"
-                        funds["dep_up"] = True
-                    elif 'ico_down' in dep_html or 'nv01' in dep_html:
-                        funds["deposit_change"] = f"-{d_chg:,.2f}조원"
-                        funds["dep_down"] = True
-                    else:
-                        funds["deposit_change"] = "0조원"
+                    if temp_d_col != -1 and temp_c_col != -1:
+                        valid_rows = rows
+                        d_col = temp_d_col
+                        c_col = temp_c_col
+                        break # 올바른 테이블을 찾았으므로 스캔 중지
                         
-                    cred_html = str(num_tds[3])
-                    if 'ico_up' in cred_html or 'red02' in cred_html:
-                        funds["credit_change"] = f"+{c_chg:,.2f}조원"
-                        funds["cred_up"] = True
-                    elif 'ico_down' in cred_html or 'nv01' in cred_html:
-                        funds["credit_change"] = f"-{c_chg:,.2f}조원"
-                        funds["cred_down"] = True
-                    else:
-                        funds["credit_change"] = "0조원"
+            # 정상적으로 데이터를 모두 찾은 경우
+            if len(valid_rows) >= 2 and d_col != -1 and c_col != -1:
+                row1_date, row1_tds = valid_rows[0] # 오늘 기준 데이터 행
+                row2_date, row2_tds = valid_rows[1] # 어제 기준 데이터 행 (증감 계산용)
+                
+                d_val = parse_val(row1_tds[d_col].text)
+                c_val = parse_val(row1_tds[c_col].text)
+                d_val_prev = parse_val(row2_tds[d_col].text)
+                c_val_prev = parse_val(row2_tds[c_col].text)
+                
+                # HTML 화살표(▲/▼)나 CSS 색상에 의존하지 않고, 수학적으로 전일 대비 직접 뺄셈 연산 (절대 고장나지 않음)
+                d_chg = d_val - d_val_prev
+                c_chg = c_val - c_val_prev
+                
+                funds["date"] = row1_date
+                funds["deposit_val"] = d_val
+                funds["credit_val"] = c_val
+                funds["deposit"] = f"{d_val:,.1f}조원"
+                funds["credit"] = f"{c_val:,.1f}조원"
+                
+                if d_chg > 0:
+                    funds["deposit_change"] = f"+{abs(d_chg):,.2f}조원"
+                    funds["dep_up"] = True
+                elif d_chg < 0:
+                    funds["deposit_change"] = f"-{abs(d_chg):,.2f}조원"
+                    funds["dep_down"] = True
+                else:
+                    funds["deposit_change"] = "0조원"
                     
-                    break # 가장 최근 일자 데이터를 찾으면 종료
-    except Exception as e:
-        print(f"증시자금동향 파싱 에러: {e}")
-        
+                if c_chg > 0:
+                    funds["credit_change"] = f"+{abs(c_chg):,.2f}조원"
+                    funds["cred_up"] = True
+                elif c_chg < 0:
+                    funds["credit_change"] = f"-{abs(c_chg):,.2f}조원"
+                    funds["cred_down"] = True
+                else:
+                    funds["credit_change"] = "0조원"
+
+                return funds # 성공 시 즉시 반환
+                
+        except Exception as e:
+            print(f"Funds Scrape Error ({url}): {e}")
+
     return funds
 
 def get_exchange_rate():
@@ -895,7 +910,7 @@ def calculate_sectors(sector_dict, stock_data):
                 if news_items:
                     sector_ref["news"].extend(news_items)
             except Exception as e:
-                pass
+                print(f"뉴스 수집 중 오류 발생: {e}")
 
     return top_sectors, bot_sectors
 
@@ -904,6 +919,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
     refresh_token = os.environ.get("KAKAO_REFRESH_TOKEN")
 
     if not rest_api_key or not refresh_token:
+        print("[INFO] 카카오 환경변수가 설정되지 않아 발송을 건너뜁니다.")
         return
 
     try:
@@ -917,10 +933,12 @@ def send_kakao_alert(indices, k200_top, k150_top):
         access_token = t_res.get("access_token")
 
         if not access_token:
+            print(f"[ERROR] 카카오 토큰 갱신 실패: {t_res}")
             return
 
         new_refresh_token = t_res.get("refresh_token") 
         if new_refresh_token:
+            print("[INFO] 카카오 리프레시 토큰 만료 임박으로 자동 갱신됨")
             env_file = os.getenv("GITHUB_ENV")
             if env_file:
                 with open(env_file, "a") as f:
@@ -963,8 +981,12 @@ def send_kakao_alert(indices, k200_top, k150_top):
             })
         }
         s_res = requests.post(send_url, headers=headers, data=payload, timeout=5)
+        if s_res.status_code == 200:
+            print("[SUCCESS] 카카오톡 발송 완료")
+        else:
+            print(f"[ERROR] 카카오톡 발송 실패: {s_res.text}")
     except Exception as e:
-        pass
+        print(f"[ERROR] 카카오톡 전송 중 오류: {e}")
 
 # --- HTML 렌더링 영역 ---
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary, funds):
@@ -1015,7 +1037,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     if funds['date'] == "-":
         funds_html = """
         <div class="card" style="margin-bottom: 24px; padding: 18px 20px; text-align: center; color: #ef4444; font-weight: bold;">
-            증시자금동향 데이터를 불러올 수 없습니다. (모든 우회 서버 일시 차단됨)
+            증시자금동향 데이터를 불러올 수 없습니다. (팍스넷 및 네이버 금융 접속 지연)
         </div>
         """
         funds_str_for_ai = "현재 증시자금동향을 조회할 수 없습니다."
