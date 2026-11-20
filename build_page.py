@@ -921,7 +921,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     target_names_sorted = sorted(list(target_names), key=len, reverse=True)
     all_corps_js = json.dumps(target_names_sorted, ensure_ascii=False)
 
-    safe_dart_summary = dart_summary.replace('<', '<').replace('>', '>')
+    safe_dart_summary = dart_summary.replace('<', '&lt;').replace('>', '&gt;')
 
     index_cards = ""
     for idx in indices:
@@ -1221,7 +1221,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    const TARGET_HASH = "{pw_hash}";
+    const secretHash = {secret_hash_js};
     const allCorps = {all_corps_js};
     
     function openTradingView(symbol) {{
@@ -1416,7 +1416,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             for (let filename of fileNames) {{
                                 if (filename.endsWith('.xml')) {{
                                     const xmlText = await zip.files[filename].async("string");
-                                    // 공백 뭉개짐 완벽 차단! 줄바꿈 보존하고 마크다운 표처럼 파이프로 구분
                                     let cleanText = xmlText.replace(/<\/td>|<\\/th>/gi, ' | ').replace(/<\\/tr>/gi, '\\n');
                                     cleanText = cleanText.replace(/<[^>]+>/g, ' '); 
                                     cleanText = cleanText.replace(/[ \\t]+/g, ' '); 
