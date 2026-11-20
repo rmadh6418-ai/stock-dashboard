@@ -739,15 +739,16 @@ def calculate_sectors(sector_dict, stock_data):
             else:
                 matched.sort(key=lambda x: x["rate"])
 
-            top_3_stocks = matched[:3]
+            # 기업 수를 3개에서 4개로 추출하도록 수정
+            top_4_stocks = matched[:4]
             all_codes = [s["code"] for s in matched if s.get("code")]
 
             sector_stats.append({
                 "name": sec_name, 
                 "rate": round(avg_r, 2), 
-                "stocks": top_3_stocks,
+                "stocks": top_4_stocks,
                 "all_codes": all_codes,
-                "lead_stock": top_3_stocks[0]["name"]
+                "lead_stock": top_4_stocks[0]["name"]
             })
         except Exception:
             pass
@@ -756,7 +757,7 @@ def calculate_sectors(sector_dict, stock_data):
         return [], []
 
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
-    # 4개씩 추출하도록 수정
+    # 4개씩 추출 (이전 요청사항 유지)
     top_sectors = sector_stats[:4]
     bot_sectors = sector_stats[-4:][::-1]
 
@@ -897,7 +898,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
 
-    # --- 4개씩 모아보는 요약 위젯 생성기 ---
+    # --- 클릭 시 스크롤 되도록 이벤트와 포인터 클래스 추가 ---
     def build_summary_col(title, title_class, sectors):
         html = f'<div class="summary-col"><div class="col-title {title_class}">{title}</div>'
         for s in sectors:
@@ -905,7 +906,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             codes_str = ",".join(s.get("all_codes", []))
             html += f'''
-            <div class="summary-item" data-sector-codes="{codes_str}">
+            <div class="summary-item clickable-summary" data-sector-codes="{codes_str}" onclick="scrollToSector('{s['name']}')" title="클릭하여 상세 섹터로 이동">
                 <span class="summary-item-name">{s['name']}</span>
                 <span class="summary-item-rate sector-rate {color_class}">{r:+.2f}%</span>
             </div>
@@ -926,6 +927,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
     '''
 
+    # --- 상세 섹터 리스트에 ID 부여 ---
     def build_sector_list(sectors):
         if not sectors: 
             return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 데이터를 불러오지 못했습니다. (API 지연)</div>'
@@ -982,7 +984,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 news_html += '</div>'
 
             html += f"""
-            <div class="sector-item" data-sector-codes="{all_codes_str}">
+            <div class="sector-item" id="sector-{s['name']}" data-sector-codes="{all_codes_str}">
                 <div class="sector-header">
                     <span class="sector-name">{s['name']}</span>
                     <span class="sector-rate {color_class}">{r:+.2f}%</span>
@@ -1016,6 +1018,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             -webkit-touch-callout: none; 
             user-select: none; 
             padding-bottom: env(safe-area-inset-bottom); 
+            scroll-behavior: smooth;
         }}
         input, button, .message {{ user-select: auto !important; }}
 
@@ -1048,7 +1051,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .btn-dart-link {{ font-size: 0.78rem; font-weight: 700; color: #fff; background: #1e293b; padding: 4px 10px; border-radius: 999px; text-decoration: none; transition: background 0.2s; }}
         .btn-dart-link:hover {{ background: #0f172a; }}
 
-        /* --- 새 요약 테이블 CSS 추가 --- */
         .market-summary-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .summary-header {{ font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 14px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }}
         
@@ -1060,20 +1062,22 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .summary-item {{ display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; }}
         .summary-item-name {{ font-weight: 700; color: #334155; }}
         .summary-item-rate {{ font-weight: 800; }}
+        .clickable-summary {{ cursor: pointer; transition: background 0.2s, transform 0.1s; }}
+        .clickable-summary:hover {{ background: #e2e8f0; transform: scale(0.98); }}
 
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }}
-        .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; }}
-        .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+        .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; transition: background-color 0.5s ease-out; border-radius: 8px; }}
+        .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px; }}
         .sector-name {{ font-weight: 800; font-size: 1.02rem; }}
 
-        .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
+        .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; padding: 0 4px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; cursor: pointer; transition: transform 0.15s, background 0.15s; }}
         .stock-pill:active {{ background: #e2e8f0; transform: scale(0.96); }}
         .stock-pill:hover {{ border-color: #94a3b8; }}
 
-        .news-group {{ margin-bottom: 10px; background: #f8fafc; border-radius: 8px; padding: 10px; border: 1px solid #e2e8f0; }}
+        .news-group {{ margin-bottom: 10px; background: #f8fafc; border-radius: 8px; padding: 10px; border: 1px solid #e2e8f0; margin: 0 4px; }}
         .news-group-title {{ font-size: 0.85rem; font-weight: 800; color: #334155; margin-bottom: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }}
         .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }}
         .hidden-news {{ display: none; }}
@@ -1238,6 +1242,21 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             hiddenItems.forEach(el => el.style.display = 'block');
             btn.innerText = '- 접기';
             btn.setAttribute('data-expanded', 'true');
+        }}
+    }}
+
+    // 특정 섹터로 부드럽게 스크롤 및 하이라이트 효과 적용 함수
+    function scrollToSector(sectorName) {{
+        const targetId = 'sector-' + sectorName;
+        const targetElement = document.getElementById(targetId);
+        if (targetElement) {{
+            // 스크롤 이동
+            targetElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+            // 하이라이트 효과 (연한 노란색)
+            targetElement.style.backgroundColor = '#fef08a';
+            setTimeout(() => {{
+                targetElement.style.backgroundColor = 'transparent';
+            }}, 1500); // 1.5초 후 원래 색으로
         }}
     }}
 
