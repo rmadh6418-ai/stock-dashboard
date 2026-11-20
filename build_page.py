@@ -150,7 +150,9 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
-
+# ==========================================
+# 핵심 업데이트: BeautifulSoup을 통한 강력한 XML 표 데이터 추출
+# ==========================================
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     
@@ -162,7 +164,8 @@ def fetch_dart_disclosures():
         target_names.update(s_list)
         
     now = datetime.now(timezone(timedelta(hours=9)))
-    bgn_str = (now - timedelta(days=2)).strftime("%Y%m%d")
+    # 데이터 매칭 확률을 높이기 위해 검색 범위를 4일로 확대
+    bgn_str = (now - timedelta(days=4)).strftime("%Y%m%d")
     end_str = now.strftime("%Y%m%d")
     
     url = f"https://opendart.fss.or.kr/api/list.json?crtfc_key={dart_key}&bgn_de={bgn_str}&end_de={end_str}&page_count=100"
@@ -179,7 +182,7 @@ def fetch_dart_disclosures():
                 
             result_text = "🌟 [최근 주요 DART 공시 원문 텍스트 (Open DART API 연동됨)]\n\n"
             
-            for item in filtered_items[:8]:
+            for item in filtered_items[:10]: # 추출 갯수 확대
                 corp = item.get("corp_name", "")
                 report = item.get("report_nm", "")
                 rcp_no = item.get("rcp_no", "")
@@ -198,16 +201,17 @@ def fetch_dart_disclosures():
                             for filename in z.namelist():
                                 if filename.endswith('.xml'):
                                     xml_data = z.read(filename)
-                                    root = ET.fromstring(xml_data)
-                                    texts = [elem.text for elem in root.iter() if elem.text and elem.text.strip()]
-                                    full_text = " ".join(texts)
+                                    # BeautifulSoup을 사용하여 XML 안의 <TABLE>, <TD> 등 표 안의 글자까지 싹 다 긁어옴
+                                    soup = BeautifulSoup(xml_data, 'html.parser')
+                                    full_text = soup.get_text(separator=' ', strip=True)
                                     doc_text = re.sub(r'\s+', ' ', full_text).strip()
                                     break
                     except Exception:
-                        doc_text = "(원문 XML 파싱 중 오류 발생)"
+                        doc_text = "(원문 파싱 실패)"
                 
                 if doc_text:
-                    result_text += f"- 핵심 세부내용: {doc_text[:2500]}...\n\n"
+                    # 표 내용이 포함되므로 추출 길이를 3000자로 늘림
+                    result_text += f"- 핵심 세부내용: {doc_text[:3000]}...\n\n"
                 else:
                     result_text += "- 핵심 세부내용: (데이터가 제공되지 않음)\n\n"
                     
@@ -907,11 +911,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     
     pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
-    # 전체 종목 리스트를 JS로 넘기기 위해 세팅
     target_names = set()
     for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
         target_names.update(s_list)
-    # 이름이 긴 기업명부터 매칭되도록 길이 순으로 내림차순 정렬 (예: LG생활건강이 LG보다 먼저 매칭되도록)
     target_names_sorted = sorted(list(target_names), key=len, reverse=True)
     all_corps_js = json.dumps(target_names_sorted, ensure_ascii=False)
 
@@ -1331,7 +1333,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         try {{
             let targetCorp = "";
             
-            // 1순위: 코스피/코스닥 전체 기업명 리스트(allCorps)와 직접 매칭
             for (let i = 0; i < allCorps.length; i++) {{
                 if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
                     targetCorp = allCorps[i];
@@ -1350,7 +1351,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             if (dartIframe && dartIframe.contentWindow) {{
                 let searchTarget = targetCorp;
                 if (!searchTarget) {{
-                    // 2순위: 1순위에서 매칭 실패 시 정규식 대체 사용 (주요, 최근 등 무의미한 단어 필터링)
                     const match = msg.match(/([가-힣a-zA-Z0-9]+)\\s*(공시|실적|보고서|원문|요약)/);
                     if (match) {{
                         const ignoreWords = ['주요', '최근', '오늘', '어제', '이번', '신규', '관련', '특징', '주식'];
@@ -1483,9 +1483,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
                                `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
-                               `1. 공시 분석 요구 시: 제공된 [DART 주요 공시 상세 텍스트] 최상단에 있는 🔥[실시간 다운로드 DART 원본 해독 텍스트]를 가장 최우선으로 꼼꼼히 확인하세요. 여기에 정확한 금액(수주금액, 계약금액, 지분율 등), 계약 상대방 등 세부 수치가 상세히 포함되어 있습니다. 이 수치들을 반드시 직접 언급하며 전문가 시각에서 시장 영향을 구체적으로 분석하세요.\\n` +
-                               `2. 금지어 및 금지 행동: 절대 "스크래핑 데이터에 따르면", "물리적인 한계", "시스템 상의 이유" 같은 핑계를 대지 마세요. 사람 대 사람처럼 매끄럽게 대답하세요.\\n` +
-                               `3. 원문 링크 첨부: 분석을 모두 마친 후 답변 마지막에 "상세 수치 및 원문은 다음 링크에서 확인하실 수 있습니다: [가장 적절한 원문 링크 주소 하나만 첨부]"라고 자연스럽게 안내하세요.\\n` +
+                               `1. 공시 분석 요구 시: 제공된 [DART 주요 공시 상세 텍스트]를 꼼꼼히 확인하여 계약 금액, 상대방, 기간 등 세부 수치를 빠짐없이 정확하게 전달하세요.\\n` +
+                               `2. 금지어 및 금지 행동 (매우 중요): 답변 중에 절대 "XML", "파싱", "일시적인 에러", "누락", "시스템 상의 이유", "스크래핑", "데이터 수집 오류" 같은 기술적인 핑계나 변명을 하지 마세요. AI 모델로서 백엔드의 시스템 구조를 사용자에게 설명하는 것은 엄격히 금지됩니다.\\n` +
+                               `3. 정보가 부족할 때의 우아한 대처: 만약 제공받은 텍스트 내에 정확한 계약 상대방이나 세부 수치가 없다면 절대 사과하거나 변명하지 마세요. 그저 주어진 정보(공시 제목 등)만으로 전망을 분석한 뒤, "현재 요약된 공시 내용에는 세부 계약 조건이 표기되어 있지 않습니다. 정확한 수치와 계약 상대방은 아래 안내해 드리는 DART 원문 링크를 클릭하시면 공식 문서의 표 형태로 확인하실 수 있습니다." 라고만 깔끔하고 전문적으로 안내하세요.\\n` +
                                `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
