@@ -150,10 +150,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
-# ==========================================
-# 파이썬 DART 표 파싱 로직 100% 개선
-# 줄바꿈(\n)을 훼손하지 않도록 변경
-# ==========================================
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     
@@ -202,16 +198,12 @@ def fetch_dart_disclosures():
                                 if filename.endswith('.xml'):
                                     xml_data = z.read(filename)
                                     soup = BeautifulSoup(xml_data, 'html.parser')
-                                    
-                                    # 표 데이터를 마크다운처럼 읽기 쉽게 재배치 (줄바꿈 보존)
                                     for tr in soup.find_all('tr'):
                                         for td in tr.find_all(['td', 'th']):
                                             td.append(' | ')
                                         tr.append('\n')
                                         
                                     full_text = soup.get_text()
-                                    
-                                    # 공백 뭉개짐 방지: 여러 줄바꿈은 하나로 합치고, 가로 공백만 압축
                                     lines = [line.strip() for line in full_text.split('\n') if line.strip()]
                                     doc_text = '\n'.join(lines)
                                     break
@@ -917,7 +909,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     if not raw_password:
         raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
     
-    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
+    xor_key = 42
+    pw_bytes = raw_password.strip().encode('utf-8')
+    secret_hash = [b ^ xor_key for b in pw_bytes]
+    secret_hash_js = json.dumps(secret_hash)
 
     target_names = set()
     for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
@@ -1137,7 +1132,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center;">
         <h2 style="margin-top: 0; margin-bottom: 20px; color: #111827; font-weight: 800;">🔒 대시보드 잠금</h2>
         <input type="password" id="pw-input" placeholder="비밀번호를 입력하세요" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 1.1rem; border: 1.5px solid #d1d5db; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center;">
-        <button onclick="checkPassword()" style="width: 100%; padding: 12px; font-size: 1.1rem; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">입장하기</button>
+        <button onclick="checkPassword()" style="width: 100%; padding: 12px; font-size: 1.1rem; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">접속하기</button>
         <p id="pw-error" style="color: #ef4444; margin-top: 15px; font-weight: 600; display: none;">비밀번호가 틀렸습니다.</p>
     </div>
 </div>
@@ -1213,18 +1208,18 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 대시보드에 뜬 공시를 보고 질문하셔도 되고, 팝업창의 <b>원문을 복사해서 통째로 붙여넣고 질문</b>하셔도 완벽하게 읽고 답변해 드립니다!</div>
         </div>
         <div id="chat-input-container">
-            <!-- 💡 직접 복사-붙여넣기가 쉽도록 텍스트 박스를 크게 교체했습니다. -->
-            <textarea id="chat-input" placeholder="여기에 긴 공시 원문을 복사해서 붙여넣어 보세요..." onkeypress="if(event.key==='Enter' && !event.shiftKey) {{ event.preventDefault(); sendChatMessage(); }}" style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; font-size: 0.95rem; resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;"></textarea>
+            <!-- 💡 직접 복사-붙여넣기가 쉽도록 텍스트 박스 유지 -->
+            <textarea id="chat-input" placeholder="여기에 질문이나 긴 공시 원문을 복사해서 붙여넣어 보세요..." onkeypress="if(event.key==='Enter' && !event.shiftKey) {{ event.preventDefault(); sendChatMessage(); }}" style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; font-size: 0.95rem; resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;"></textarea>
             <button id="chat-send" onclick="sendChatMessage()">전송</button>
         </div>
     </div>
 </div>
 
 <script>
-    const TARGET_HASH = "{pw_hash}";
+    const secretHash = {secret_hash_js};
     const allCorps = {all_corps_js};
     
     function openTradingView(symbol) {{
@@ -1258,7 +1253,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             chatHistory = [];
             window.lastTargetCorp = "";
             const container = document.getElementById('chat-messages');
-            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>';
+            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 대시보드에 뜬 공시를 보고 질문하셔도 되고, 팝업창의 <b>원문을 복사해서 통째로 붙여넣고 질문</b>하셔도 완벽하게 읽고 답변해 드립니다!</div>';
         }}
     }}
 
@@ -1337,7 +1332,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         try {{
             let currentTargetCorp = "";
-
             for (let i = 0; i < allCorps.length; i++) {{
                 if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
                     currentTargetCorp = allCorps[i];
@@ -1419,7 +1413,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             for (let filename of fileNames) {{
                                 if (filename.endsWith('.xml')) {{
                                     const xmlText = await zip.files[filename].async("string");
-                                    // 공백 뭉개짐 방지 완벽 해독기: 줄바꿈(\n) 보존, td를 파이프(|)로 분리
+                                    // 공백 뭉개짐 완벽 차단! 줄바꿈 보존하고 마크다운 표처럼 파이프로 구분
                                     let cleanText = xmlText.replace(/<\/td>|<\\/th>/gi, ' | ').replace(/<\\/tr>/gi, '\\n');
                                     cleanText = cleanText.replace(/<[^>]+>/g, ' '); 
                                     cleanText = cleanText.replace(/[ \\t]+/g, ' '); 
@@ -1489,9 +1483,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
                                `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
-                               `1. 공시 요약 및 분석 요구 시: 제공된 [🌟 DART 주요 공시 상세 텍스트] 영역에 있는 텍스트(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터)를 반드시 직접 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
-                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
-                               `3. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
+                               `1. 공시 분석 요구 시: 제공된 [DART 주요 공시 상세 텍스트] 영역에 있는 내용(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터) 또는 사용자가 채팅창에 직접 복사해서 붙여넣은 텍스트를 반드시 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
+                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 무조건 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
+                               `3. 문맥 파악: 사용자가 기업명을 생략하고 "누구랑 계약했어?", "금액이 얼마야?" 라고 물어볼 경우, 이전 대화에서 타겟으로 잡힌 기업의 공시 내용에서 답변을 찾아 자연스럽게 이어가세요.\\n` +
+                               `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
                 contents: chatHistory,
@@ -1552,24 +1547,33 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    async function checkPassword() {{
-        const input = document.getElementById('pw-input').value;
+    function checkPassword() {{
+        const input = document.getElementById('pw-input').value.trim();
+        const xorKey = 42;
+        
         try {{
             const encoder = new TextEncoder();
-            const data = encoder.encode(input);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const pinBytes = encoder.encode(input);
+            let isValid = (pinBytes.length === secretHash.length);
             
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            if (isValid) {{
+                for (let i = 0; i < pinBytes.length; i++) {{
+                    if ((pinBytes[i] ^ xorKey) !== secretHash[i]) {{
+                        isValid = false;
+                        break;
+                    }}
+                }}
+            }}
 
-            if (hashHex === TARGET_HASH) {{
+            if (isValid) {{
                 document.getElementById('lock-screen').style.display = 'none';
                 sessionStorage.setItem('isUnlocked', 'true');
             }} else {{
+                document.getElementById('pw-error').innerText = "비밀번호가 틀렸습니다.";
                 document.getElementById('pw-error').style.display = 'block';
             }}
         }} catch (e) {{
-            document.getElementById('pw-error').innerText = "보안 인증 처리 중 오류가 발생했습니다.";
+            document.getElementById('pw-error').innerText = "오류가 발생했습니다.";
             document.getElementById('pw-error').style.display = 'block';
         }}
     }}
