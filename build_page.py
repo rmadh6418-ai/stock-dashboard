@@ -7,11 +7,12 @@ import hashlib
 import concurrent.futures
 import io
 import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import yfinance as yf
-from bs4 import BeautifulSoup
 
 def get_headers(is_daum=False):
     headers = {
@@ -149,10 +150,6 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
-# ==========================================
-# 🚨 정규식 기반 무결점 DART XML 표 추출기 🚨
-# 웹 뼈대 파괴 원천 차단 및 칸 분리 유지
-# ==========================================
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     
@@ -202,16 +199,11 @@ def fetch_dart_disclosures():
                                     xml_bytes = z.read(filename)
                                     xml_text = xml_bytes.decode('utf-8', errors='ignore')
                                     
-                                    # 1. </td>와 </th> 뒤에 표 칸을 나누는 파이프(|) 기호 삽입
                                     xml_text = re.sub(r'</[tT][dD]>|</[tT][hH]>', ' | ', xml_text)
-                                    # 2. </tr> 뒤에 줄바꿈(\n) 삽입
                                     xml_text = re.sub(r'</[tT][rR]>', '\n', xml_text)
                                     
-                                    # 3. HTML 태그 껍데기 싹 다 지우기
                                     clean_text = re.sub(r'<[^>]+>', ' ', xml_text)
-                                    # 4. 쓸데없는 가로 공백(스페이스바)만 1개로 압축 (줄바꿈 보존)
                                     clean_text = re.sub(r'[ \t]+', ' ', clean_text)
-                                    # 5. 빈 줄 연속 방지
                                     clean_text = re.sub(r'\n\s*\n', '\n', clean_text)
                                     
                                     doc_text = clean_text.strip()
@@ -428,7 +420,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             continue
 
     if old_cached_text:
-        error_msg = f"<br><br><span style='color:#e11d48; font-size:0.85em; font-weight:700;'>⚠️ API 일시 차단(사유: {last_error}) - 기존 시 시황 유지</span>"
+        error_msg = f"<br><br><span style='color:#e11d48; font-size:0.85em; font-weight:700;'>⚠️ API 일시 차단(사유: {last_error}) - 기존 시황 유지</span>"
         return old_cached_text + error_msg, display_time_label
 
     return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", display_time_label
@@ -1023,8 +1015,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
-    safe_dart_summary = dart_summary.replace('<', '<').replace('>', '>')
-
     template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1219,7 +1209,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 대시보드에 뜬 공시를 보고 질문하셔도 되고, 팝업창의 <b>원문을 복사해서 통째로 붙여넣고 질문</b>하셔도 완벽하게 읽고 답변해 드립니다!</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>
         </div>
         <div id="chat-input-container">
             <textarea id="chat-input" placeholder="여기에 질문이나 긴 공시 원문을 복사해서 붙여넣어 보세요..." onkeypress="if(event.key==='Enter' && !event.shiftKey) {{ event.preventDefault(); sendChatMessage(); }}" style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; font-size: 0.95rem; resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;"></textarea>
@@ -1229,7 +1219,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    const TARGET_HASH = "{pw_hash}";
+    const secretHash = {secret_hash_js};
     const allCorps = {all_corps_js};
     
     function openTradingView(symbol) {{
@@ -1342,7 +1332,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         try {{
             let currentTargetCorp = "";
-
             for (let i = 0; i < allCorps.length; i++) {{
                 if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
                     currentTargetCorp = allCorps[i];
@@ -1493,9 +1482,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
                                `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
-                               `1. 공시 요약 및 분석 요구 시: 제공된 [🌟 DART 주요 공시 상세 텍스트] 영역에 있는 텍스트(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터)를 반드시 직접 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
-                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
-                               `3. 문맥 파악: 사용자가 기업명을 생략하고 "누구랑 계약했어?", "금액이 얼마야?" 라고 물어볼 경우, 이전 대화에서 타겟으로 잡힌 기업의 공시 내용에서 답변을 찾아 자연스럽게 이어가세요.\\n` +
+                               `1. 공시 분석 요구 시: 사용자가 채팅창에 복사해서 넣은 텍스트가 있다면 그것을 1순위로 분석하세요. 그렇지 않다면 [🌟 DART 주요 공시 상세 텍스트] 최상단에 있는 🔥[실시간 다운로드 DART 원본 해독 텍스트]를 꼼꼼히 확인하세요. 표 데이터가 파이프 '|' 로 구분되어 있습니다. 수치를 정확히 짚어내어 답변하세요.\\n` +
+                               `2. 절대 변명 금지: "텍스트에 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 절대로 대지 마세요.\\n` +
+                               `3. 문맥 파악: 사용자가 "누구랑 계약했어?", "금액이 얼마야?" 라고 물어볼 경우, 이전 대화에서 타겟으로 잡힌 기업의 공시 내용에서 답변을 찾아 대답하세요.\\n` +
                                `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
