@@ -63,14 +63,14 @@ KOSDAQ150_SECTORS = {
 def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     if not data or len(data) < 20:
         return "", ""
-    
+
     valid_data = [float(d) for d in data if pd.notnull(d)]
     if len(valid_data) < 20: return "", ""
 
     current = valid_data[-1]
     ma5 = sum(valid_data[-5:]) / 5
     ma20 = sum(valid_data[-20:]) / 20
-    
+
     if current >= ma5 and ma5 >= ma20:
         trend = "상승추세"
         trend_color = "#e11d48"
@@ -84,17 +84,17 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     min_val = min(valid_data)
     max_val = max(valid_data)
     val_range = max_val - min_val if max_val != min_val else 1
-    
+
     n = len(valid_data)
     pts = []
     for i, val in enumerate(valid_data):
         x = (i / (n - 1)) * 100
         y = 90 - ((val - min_val) / val_range) * 80 
         pts.append(f"{x:.1f},{y:.1f}")
-    
+
     min_idx = valid_data.index(min_val)
     max_idx = valid_data.index(max_val)
-    
+
     min_x = (min_idx / (n - 1)) * 100
     min_y = 90 - ((min_val - min_val) / val_range) * 80
     max_x = (max_idx / (n - 1)) * 100
@@ -127,7 +127,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
             </defs>
             <polyline fill="none" stroke="url(#{grad_id})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="{" ".join(pts)}"></polyline>
         </svg>
-        
+
         <div style="position: absolute; left: {min_x}%; top: {min_y}%; z-index: 5; pointer-events: none;">
             <div style="width: 6px; height: 6px; background: #2563eb; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff; transform: translate(-50%, -50%);"></div>
             <div style="position: absolute; bottom: 6px; transform: translateX({min_x_translate}); font-size: 0.7rem; color: #2563eb; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.85); padding: 1px 4px; border-radius: 4px; line-height: 1;">
@@ -143,7 +143,7 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
         </div>
     </div>
     '''
-    
+
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
@@ -154,13 +154,13 @@ def fetch_dart_disclosures():
         res.encoding = 'utf-8'
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            
+
             for script in soup(["script", "style", "nav", "footer", "header"]):
                 script.extract()
-                
-            # [수정] 챗봇이 원문의 구조를 명확히 파악할 수 있도록 공백 대신 줄바꿈(엔터)을 보존
-            text = soup.get_text(separator='\n', strip=True)
-            
+
+            text = soup.get_text(separator=' ', strip=True)
+            text = re.sub(r'\s+', ' ', text)
+
             if len(text) > 50:
                 return f"[DART 대시보드 요약]\n{text[:50000]}"
     except Exception as e:
@@ -170,7 +170,7 @@ def fetch_dart_disclosures():
 def fetch_real_news(keyword, stock_code="", limit=3):
     candidates = []
     gas_base_url = os.environ.get("NEWS_API_URL", "").strip()
-    
+
     if not gas_base_url:
         print(f"❌ [{keyword}] 뉴스 API 주소가 환경변수에 없습니다.")
         return []
@@ -179,9 +179,9 @@ def fetch_real_news(keyword, stock_code="", limit=3):
         search_query = f"{keyword} 주식"
         encoded_query = urllib.parse.quote(search_query)
         gas_url = f"{gas_base_url}?query={encoded_query}"
-        
+
         res = requests.get(gas_url, timeout=10)
-        
+
         if res.status_code == 200:
             data = res.json()
             if "error" in data:
@@ -193,12 +193,12 @@ def fetch_real_news(keyword, stock_code="", limit=3):
             for item in items:
                 raw_title = re.sub(r'</?[^>]+(>|$)', '', item.get("title", ""))
                 raw_title = html.unescape(raw_title).replace('"', '"').replace('&', '&')
-                
+
                 desc = re.sub(r'</?[^>]+(>|$)', '', item.get("description", ""))
                 desc = html.unescape(desc).replace('\n', ' ').replace('"', '"').replace('&', '&')
-                
+
                 link = item.get("originallink") or item.get("link", "")
-                
+
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
                     candidates.append({
@@ -214,7 +214,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
-    
+
     for item in candidates:
         clean_title = re.sub(r'\[.*?\]|-.*$', '', item['title']).strip()
         clean_title = re.sub(r'\W+', '', clean_title)
@@ -227,7 +227,7 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                 break
 
     return unique_news
-    
+
 def call_gemini_rest_api(model_name, prompt, api_key):
     clean_model = model_name.replace("models/", "").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
@@ -330,7 +330,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
     available_models = get_candidate_models(API_KEY)
     last_error = ""
     time.sleep(15)
-    
+
     for model_name in available_models:
         try:
             result_text = call_gemini_rest_api(model_name, prompt, API_KEY)
@@ -359,21 +359,21 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
 def get_news_score(title, stock_name):
     for bad in EXCLUDE_NEWS_KEYWORDS:
         if bad in title: return -1
-        
+
     score = 10 
     aliases = [stock_name]
     if stock_name == "S-Oil": aliases.extend(["에쓰오일", "SOil", "S-OIL"])
     elif "홀딩스" in stock_name: aliases.append(stock_name.replace("홀딩스", ""))
 
     has_stock = any(alias in title for alias in aliases if len(alias) >= 2)
-    
+
     if has_stock: 
         score += 5
-        
+
     matched_biz_count = sum(1 for biz in BUSINESS_NEWS_KEYWORDS if biz in title)
     if matched_biz_count > 0:
         score += min(matched_biz_count * 4, 20)
-        
+
     return score
 
 def get_exchange_rate():
@@ -386,9 +386,9 @@ def get_exchange_rate():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
-            
+
             svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "FX_USDKRW", is_int=False)
-            
+
             base.update({
                 "value": f"{price:,.2f}원", "change_val": f"{diff:+.2f}원",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
@@ -407,9 +407,9 @@ def get_us_10y_yield():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
-            
+
             svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "US10Y", is_int=False)
-            
+
             base.update({
                 "value": f"{price:.3f}%", "change_val": f"{abs(diff):.3f}bp",
                 "change_rate": abs(rate), "is_up": diff > 0, "is_down": diff < 0,
@@ -428,7 +428,7 @@ def get_us_30y_yield():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
-            
+
             svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "US30Y", is_int=False)
 
             base.update({
@@ -444,10 +444,10 @@ def get_gold_price():
     try:
         hist_gold = yf.Ticker("GC=F").history(period="1y")
         hist_krw = yf.Ticker("KRW=X").history(period="1y")
-        
+
         gold_closes = hist_gold['Close'].dropna()
         krw_closes = hist_krw['Close'].dropna()
-        
+
         if len(gold_closes) >= 2 and len(krw_closes) >= 2:
             gold_price = float(gold_closes.iloc[-1])
             gold_prev = float(gold_closes.iloc[-2])
@@ -474,10 +474,10 @@ def get_silver_price():
     try:
         hist_silver = yf.Ticker("SI=F").history(period="1y")
         hist_krw = yf.Ticker("KRW=X").history(period="1y")
-        
+
         silver_closes = hist_silver['Close'].dropna()
         krw_closes = hist_krw['Close'].dropna()
-        
+
         if len(silver_closes) >= 2 and len(krw_closes) >= 2:
             silver_price = float(silver_closes.iloc[-1])
             silver_prev = float(silver_closes.iloc[-2])
@@ -530,7 +530,7 @@ def get_jpy_krw_rate():
             prev = float(closes.iloc[-2])
             diff = price - prev
             rate = (diff / prev) * 100 if prev != 0 else 0
-            
+
             svg_html, trend_data = create_sparkline_and_trend(closes.tolist(), diff, "JPYKRW", is_int=False)
 
             base.update({
@@ -543,7 +543,7 @@ def get_jpy_krw_rate():
 
 def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
     base = {"name": name, "code_key": key, "value": "-", "change_val": "0", "change_rate": 0.0, "is_up": False, "is_down": False, "sparkline": "", "trend": {}, "tv_symbol": tv_symbol}
-    
+
     history = []
     try:
         h_url = f"https://m.stock.naver.com/api/index/{mobile_code}/price?pageSize=250&page=1"
@@ -602,7 +602,7 @@ def get_index_data_robust(name, key, mobile_code, pc_code, tv_symbol):
         try:
             current_price = float(base["value"].replace(",", ""))
             history[-1] = current_price  
-            
+
             diff_str = str(base["change_val"]).replace(",", "").replace("+", "")
             diff = float(diff_str)
             if base["is_down"]: diff = -abs(diff)
@@ -722,7 +722,7 @@ def get_market_stocks():
 
 def calculate_sectors(sector_dict, stock_data):
     sector_stats = []
-    
+
     for sec_name, stock_names in sector_dict.items():
         try:
             matched = []
@@ -741,7 +741,7 @@ def calculate_sectors(sector_dict, stock_data):
 
             top_3_stocks = matched[:3]
             all_codes = [s["code"] for s in matched if s.get("code")]
-            
+
             sector_stats.append({
                 "name": sec_name, 
                 "rate": round(avg_r, 2), 
@@ -758,7 +758,7 @@ def calculate_sectors(sector_dict, stock_data):
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
     top_sectors = sector_stats[:3]
     bot_sectors = sector_stats[-3:][::-1]
-    
+
     def _fetch_stock_news(sector_ref, stock):
         news = fetch_real_news(stock["name"], stock.get("code", ""), limit=10)
         for n in news:
@@ -769,12 +769,12 @@ def calculate_sectors(sector_dict, stock_data):
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
         target_sectors = top_sectors + bot_sectors
-        
+
         for s in target_sectors:
             s["news"] = [] 
             for st in s["stocks"]:
                 futures.append(executor.submit(_fetch_stock_news, s, st))
-        
+
         for future in concurrent.futures.as_completed(futures):
             try:
                 sector_ref, news_items = future.result()
@@ -866,7 +866,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     raw_password = os.environ.get("DASHBOARD_PW")
     if not raw_password:
         raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
-    
+
     pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
     index_cards = ""
@@ -877,7 +877,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         diff_text = f" ({idx['change_val']})" if idx["change_val"] != "0" else ""
         sparkline_svg = idx.get('sparkline', '')
         tv_symbol = idx.get('tv_symbol', '')
-        
+
         trend_info = idx.get('trend', {})
         if trend_info:
             trend_html = f'<span class="trend-badge" style="color: {trend_info.get("color", "#475569")};">{trend_info.get("text", "")}</span>'
@@ -904,7 +904,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             all_codes_str = ",".join(s.get("all_codes", []))
-            
+
             stock_tags = "".join([
                 f'<span class="stock-pill" data-stock-code="{st.get("code", "")}" data-stock-name="{st["name"]}" onclick="openTradingView(\'KRX:{st.get("code", "")}\')" title="클릭하여 실시간 차트 보기">'
                 f'<span class="stock-name">{st["name"]}</span> '
@@ -920,15 +920,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if st_name not in news_by_stock:
                     news_by_stock[st_name] = []
                 news_by_stock[st_name].append(n)
-                
+
             news_html = ""
             for st_name, n_list in news_by_stock.items():
                 if not n_list: continue
                 news_html += f'<div class="news-group"><div class="news-group-title">📌 {st_name} 실시간 뉴스</div>'
-                
+
                 ui_news = n_list[:3]
                 ai_news = n_list[3:]
-                
+
                 for idx, n in enumerate(ui_news):
                     hidden_class = ' hidden-news' if idx >= 1 else ''
                     news_html += f'''
@@ -937,10 +937,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         <span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>
                     </div>
                     '''
-                
+
                 if len(ui_news) > 1:
                     news_html += f'<div class="btn-more-container"><button class="btn-more" onclick="toggleNews(this)" data-expanded="false">+ {len(ui_news)-1}개 더보기</button></div>'
-                
+
                 for n in ai_news:
                     news_html += f'''
                     <div class="sector-news" style="display:none;">
@@ -948,7 +948,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         <span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>
                     </div>
                     '''
-                    
+
                 news_html += '</div>'
 
             html += f"""
@@ -979,7 +979,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
     <style>
-        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+- {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ 
             background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; 
             -webkit-tap-highlight-color: transparent; 
@@ -988,24 +988,24 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             padding-bottom: env(safe-area-inset-bottom); 
         }}
         input, button, .message {{ user-select: auto !important; }}
-        
+
         header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .sync-status {{ font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none; }}
         .sync-status:hover {{ background: #cbd5e1; }}
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
-        
+
         .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
-        
+
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
 
         .card-title {{ font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 2px; }}
         .card-value {{ font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
-        
+
         .badge-container {{ display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 2px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
         .trend-badge {{ font-size: 0.75rem; font-weight: 800; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; }}
@@ -1050,10 +1050,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
         #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
         #chat-button:hover {{ transform: scale(1.05); }}
-        
+
         #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; resize: both; min-width: 320px; min-height: 400px; }}
         #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
-        
+
         .chat-header-controls {{ display: flex; gap: 15px; align-items: center; }}
         .chat-header-controls button {{ background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 0; line-height: 1; transition: transform 0.2s; }}
         .chat-header-controls button:hover {{ transform: scale(1.2); }}
@@ -1129,7 +1129,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <iframe src="https://rmadh6418-ai.github.io/dart-dashboard/" width="100%" height="450px" style="border: 1px solid #cbd5e1; border-radius: 8px; display: block;" title="DART 실시간 대시보드"></iframe>
         </div>
     </div>
-    
+
     <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
     <div id="calendar-data" style="display: none;"></div>
 
@@ -1157,7 +1157,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 삼성전자 공시의 원문 내용과 시장 영향을 분석해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "오늘 주요 섹터 관련 기사 요약해줘", "방금 올라온 공시의 본문 내용과 시장 영향을 분석해줘"</div>
         </div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
@@ -1168,7 +1168,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
 <script>
     const TARGET_HASH = "{pw_hash}";
-    
+
     function openTradingView(symbol) {{
         if(!symbol) return;
         const tvUrl = `https://kr.tradingview.com/chart/?symbol=${{encodeURIComponent(symbol)}}`;
@@ -1179,7 +1179,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         const group = btn.closest('.news-group');
         const hiddenItems = group.querySelectorAll('.hidden-news');
         let isExpanded = btn.getAttribute('data-expanded') === 'true';
-        
+
         if (isExpanded) {{
             hiddenItems.forEach(el => el.style.display = 'none');
             btn.innerText = '+ ' + hiddenItems.length + '개 더보기';
@@ -1258,7 +1258,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         let apiKey = localStorage.getItem('gemini_api_key');
         const inputEl = document.getElementById('chat-input');
         const msg = inputEl.value.trim();
-        
+
         if (!msg) return;
 
         if (!apiKey) {{
@@ -1269,7 +1269,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
 
         const btnEl = document.getElementById('chat-send');
-        
+
         addMessageToUI('user', msg);
         inputEl.value = '';
         btnEl.disabled = true;
@@ -1282,17 +1282,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         try {{
             let liveDartData = "실시간 공시 데이터를 찾을 수 없습니다.";
-            
+
             try {{
                 const dartIframe = document.querySelector('iframe[title="DART 실시간 대시보드"]');
                 if (dartIframe && dartIframe.contentWindow && dartIframe.contentWindow.document) {{
                     const iframeDoc = dartIframe.contentWindow.document;
                     const cloneBody = iframeDoc.body.cloneNode(true);
                     cloneBody.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
-                    
-                    // [수정] 챗봇이 원문을 제대로 인식할 수 있도록 줄바꿈 보존 추출 방식으로 변경
-                    const extractedText = (cloneBody.innerText || cloneBody.textContent).trim();
-                    
+
+                    const extractedText = cloneBody.textContent.replace(/\\s+/g, ' ').trim();
+
                     if (extractedText.length > 20) {{
                         liveDartData = extractedText.substring(0, 50000);
                     }}
@@ -1309,9 +1308,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         const parser = new DOMParser();
                         const doc = parser.parseFromString(dartJson.contents, "text/html");
                         doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
-                        
-                        // [수정] 챗봇 원문 인식률 향상을 위한 줄바꿈 보존 추출
-                        const proxyText = (doc.body.innerText || doc.body.textContent).trim();
+
+                        const proxyText = doc.body.textContent.replace(/\\s+/g, ' ').trim();
                         if(proxyText.length > 20) liveDartData = proxyText.substring(0, 50000);
                     }}
                 }} catch(e) {{
@@ -1333,12 +1331,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 const aTag = newsEl.querySelector('a');
                 let title = aTag ? aTag.innerText : '';
                 if (title) title = title.replace(/^\\[.*?\\]\\s*/, '');
-                
+
                 const contentSpan = newsEl.querySelector('.news-content-hidden');
                 let content = contentSpan ? contentSpan.innerText.trim() : '';
-                
-                if (!content || content.length < 10) content = "(내용 요약 없음)";
-                
+
+                if (!content || content.length < 10) content = "(내용 요약 없음 - AI는 반드시 제공된 기사 제목을 바탕으로 해당 뉴스의 배경과 시장에 미칠 영향을 상세히 추론하여 답변할 것)";
+
                 if(title) newsData += `- [기사 제목]: ${{title}}\\n  [핵심 본문]: ${{content}}\\n`;
             }});
             if (!newsData || newsData.length < 20) newsData = "현재 대시보드에 수집된 뉴스가 없습니다.";
@@ -1348,7 +1346,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
             const currentDateStr = new Date().toLocaleString('ko-KR', {{ timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }});
 
-            // [수정] 시스템 프롬프트 대폭 강화: '공시 원문 누락 엄격 금지' 원칙 추가
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
                                `현재 한국 시간은 ${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n` +
                                `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
@@ -1357,12 +1354,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n${{liveDartData}}\\n` +
                                `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
                                `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
-                               `[답변 원칙 (할루시네이션은 막되, 공시 원문 누락 절대 금지)]\\n` +
-                               `1. 공시 내용 요구 시(최우선 원칙): 사용자가 특정 기업의 공시나 실적을 물어보면 🌟[DART 주요 공시] 텍스트를 철저히 탐색하여, 해당 기업의 **'공시 원문 본문(세부 수치, 주요 결정사항, 발행가액 등)'을 절대 생략하거나 요약만 하지 말고, 있는 그대로 최대한 발췌해서 먼저 제시**하세요. 원문을 빠짐없이 제공한 후에 그 의미와 시장 영향을 분석해야 합니다.\\n` +
-                               `2. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n` +
+                               `[답변 원칙 (할루시네이션은 막되, 회피성 대답은 절대 금지)]\\n` +
+                               `1. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n` +
+                               `2. 공시 내용 요구 시: 🌟[DART 주요 공시] 섹션에 수집된 텍스트(숨겨진 세부 본문 포함)를 모두 분석하여, 제목뿐만 아니라 공시의 상세 내용과 그것이 해당 기업/시장에 가지는 의미나 영향력까지 깊이 있게 답변해주세요.\\n` +
                                `3. 심층 분석: 사용자가 특정 기업의 향후 전망, 증시 방향성 등을 물어보면 경제적 통찰과 논리적 근거를 바탕으로 분석해주세요.\\n` +
-                               `4. 팩트 기반: 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요. 제공된 데이터에 없는 공시나 내용은 "현재 수집된 데이터에 해당 내용이 없습니다"라고 명확히 안내하세요.\\n` +
-                               `5. 가독성: 마크다운(굵은 글씨, 줄바꿈, 목록)을 적극 사용하여 가독성 높게 답변하세요.`;
+                               `4. 팩트 기반(할루시네이션 방지): 확실하지 않은 수치나 실적 액수는 절대 지어내지 마세요.\\n` +
+                               `5. 가독성: 마크다운(굵은 글씨, 줄바꿈)을 적극 사용하여 가독성 높게 답변하세요.`;
 
             const payload = {{
                 contents: chatHistory,
@@ -1425,7 +1422,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             const encoder = new TextEncoder();
             const data = encoder.encode(input);
             const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            
+
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
@@ -1492,7 +1489,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                         curBadge.className = newBadge.className;
                     }}
                 }}
-                
+
                 const newDart = doc.getElementById("dart-summary-data");
                 const curDart = document.getElementById("dart-summary-data");
                 if (newDart && curDart) {{
@@ -1743,7 +1740,7 @@ if __name__ == "__main__":
     k150_top, k150_bot = calculate_sectors(KOSDAQ150_SECTORS, stock_data)
 
     ai_market_summary, ai_updated_time = generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot)
-    
+
     dart_summary = fetch_dart_disclosures()
 
     render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary)
