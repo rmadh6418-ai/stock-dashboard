@@ -151,7 +151,8 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     return svg_html, trend_data
 
 # ==========================================
-# 핵심 업데이트: Open DART API 통신으로 원문 획득
+# 파이썬 DART 표 파싱 로직 100% 개선
+# 줄바꿈(\n)을 훼손하지 않도록 변경
 # ==========================================
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
@@ -164,7 +165,7 @@ def fetch_dart_disclosures():
         target_names.update(s_list)
         
     now = datetime.now(timezone(timedelta(hours=9)))
-    bgn_str = (now - timedelta(days=2)).strftime("%Y%m%d") # 최근 3일
+    bgn_str = (now - timedelta(days=4)).strftime("%Y%m%d")
     end_str = now.strftime("%Y%m%d")
     
     url = f"https://opendart.fss.or.kr/api/list.json?crtfc_key={dart_key}&bgn_de={bgn_str}&end_de={end_str}&page_count=100"
@@ -175,16 +176,13 @@ def fetch_dart_disclosures():
         
         if data.get("status") == "000":
             items = data.get("list", [])
-            
-            # 관심 종목만 필터링 (최근 3일 기준)
             filtered_items = [it for it in items if it.get("corp_name") in target_names]
             if not filtered_items:
-                filtered_items = items[:5] # 관심종목이 없으면 상위 5개라도
+                filtered_items = items[:5]
                 
             result_text = "🌟 [최근 주요 DART 공시 원문 텍스트 (Open DART API 연동됨)]\n\n"
             
-            # 최대 8개까지만 원문 파싱 (속도 및 토큰 제한 방지)
-            for item in filtered_items[:8]:
+            for item in filtered_items[:10]:
                 corp = item.get("corp_name", "")
                 report = item.get("report_nm", "")
                 rcp_no = item.get("rcp_no", "")
@@ -193,7 +191,6 @@ def fetch_dart_disclosures():
                 
                 result_text += f"■ [{date_str}] {corp} - {report}\n- 원문링크: {link}\n"
                 
-                # 원문 XML 파일 ZIP 다운로드 및 압축 해제
                 doc_url = f"https://opendart.fss.or.kr/api/document.xml?crtfc_key={dart_key}&rcp_no={rcp_no}"
                 doc_res = requests.get(doc_url, stream=True, timeout=5)
                 
@@ -204,19 +201,25 @@ def fetch_dart_disclosures():
                             for filename in z.namelist():
                                 if filename.endswith('.xml'):
                                     xml_data = z.read(filename)
-                                    root = ET.fromstring(xml_data)
-                                    # XML 내부의 모든 텍스트 노드 추출
-                                    texts = [elem.text for elem in root.iter() if elem.text and elem.text.strip()]
-                                    full_text = " ".join(texts)
-                                    # 여러 공백을 하나로 압축하여 데이터 경량화
-                                    doc_text = re.sub(r'\s+', ' ', full_text).strip()
-                                    break # 가장 메인 문서 하나만 읽기
+                                    soup = BeautifulSoup(xml_data, 'html.parser')
+                                    
+                                    # 표 데이터를 마크다운처럼 읽기 쉽게 재배치 (줄바꿈 보존)
+                                    for tr in soup.find_all('tr'):
+                                        for td in tr.find_all(['td', 'th']):
+                                            td.append(' | ')
+                                        tr.append('\n')
+                                        
+                                    full_text = soup.get_text()
+                                    
+                                    # 공백 뭉개짐 방지: 여러 줄바꿈은 하나로 합치고, 가로 공백만 압축
+                                    lines = [line.strip() for line in full_text.split('\n') if line.strip()]
+                                    doc_text = '\n'.join(lines)
+                                    break
                     except Exception:
-                        doc_text = "(원문 XML 파싱 중 오류 발생)"
+                        doc_text = "(원문 파싱 실패)"
                 
                 if doc_text:
-                    # AI가 읽기 쉽도록 앞부분 2500자 정도만 넘김
-                    result_text += f"- 핵심 세부내용: {doc_text[:2500]}...\n\n"
+                    result_text += f"- 핵심 세부내용:\n{doc_text[:3000]}...\n\n"
                 else:
                     result_text += "- 핵심 세부내용: (데이터가 제공되지 않음)\n\n"
                     
@@ -907,6 +910,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
 
 # --- HTML 렌더링 영역 ---
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
+    dart_key = os.environ.get("DART_API_KEY", "").strip()
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
 
     raw_password = os.environ.get("DASHBOARD_PW")
@@ -914,6 +918,12 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
     
     pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
+
+    target_names = set()
+    for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
+        target_names.update(s_list)
+    target_names_sorted = sorted(list(target_names), key=len, reverse=True)
+    all_corps_js = json.dumps(target_names_sorted, ensure_ascii=False)
 
     index_cards = ""
     for idx in indices:
@@ -1024,6 +1034,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <meta name="apple-mobile-web-app-title" content="증시 대시보드">
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
         body {{ 
@@ -1105,11 +1116,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .chat-header-controls button:hover {{ transform: scale(1.2); }}
 
         #chat-messages {{ flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }}
-        .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; }}
+        .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; white-space: pre-wrap; }}
         .message.user {{ align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }}
         .message.ai {{ align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }}
         #chat-input-container {{ display: flex; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; gap: 8px; }}
-        #chat-input {{ flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 20px; outline: none; font-size: 0.95rem; }}
         #chat-input:focus {{ border-color: #3b82f6; }}
         #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
         #chat-send:hover {{ background: #1d4ed8; }}
@@ -1203,10 +1213,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "방금 올라온 포스코퓨처엠 공시의 세부 내용과 시장 영향을 분석해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>
         </div>
         <div id="chat-input-container">
-            <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
+            <!-- 💡 직접 복사-붙여넣기가 쉽도록 텍스트 박스를 크게 교체했습니다. -->
+            <textarea id="chat-input" placeholder="여기에 긴 공시 원문을 복사해서 붙여넣어 보세요..." onkeypress="if(event.key==='Enter' && !event.shiftKey) {{ event.preventDefault(); sendChatMessage(); }}" style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; font-size: 0.95rem; resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;"></textarea>
             <button id="chat-send" onclick="sendChatMessage()">전송</button>
         </div>
     </div>
@@ -1214,6 +1225,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
 <script>
     const TARGET_HASH = "{pw_hash}";
+    const allCorps = {all_corps_js};
     
     function openTradingView(symbol) {{
         if(!symbol) return;
@@ -1244,8 +1256,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     function clearChat() {{
         if (confirm("대화 내역을 모두 초기화하시겠습니까?")) {{
             chatHistory = [];
+            window.lastTargetCorp = "";
             const container = document.getElementById('chat-messages');
-            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "방금 올라온 포스코퓨처엠 공시의 세부 내용과 시장 영향을 분석해줘"</div>';
+            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>';
         }}
     }}
 
@@ -1276,10 +1289,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         if (win.style.display === 'flex') {{
             document.getElementById('chat-input').focus();
         }}
-    }}
-
-    function handleChatEnter(e) {{
-        if (e.key === 'Enter') sendChatMessage();
     }}
 
     function closeApiModal() {{
@@ -1327,37 +1336,34 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...', loadingId);
 
         try {{
-            let targetCorp = "";
-            document.querySelectorAll('.stock-pill').forEach(pill => {{
-                const name = pill.getAttribute('data-stock-name');
-                if (name && msg.includes(name)) {{
-                    targetCorp = name;
+            let currentTargetCorp = "";
+
+            for (let i = 0; i < allCorps.length; i++) {{
+                if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
+                    currentTargetCorp = allCorps[i];
+                    break;
                 }}
-            }});
+            }}
+
+            if (!currentTargetCorp && window.lastTargetCorp) {{
+                currentTargetCorp = window.lastTargetCorp;
+            }}
+            if (currentTargetCorp) {{
+                window.lastTargetCorp = currentTargetCorp;
+            }}
 
             const dartIframe = document.querySelector('iframe[title="DART 실시간 대시보드"]');
-            
-            // 1. Python이 DART API로 긁어온 원본 ZIP 압축해제 데이터 (최고 품질)
             let apiDartData = document.getElementById('dart-summary-data') ? document.getElementById('dart-summary-data').innerText : '';
-            
-            // 2. 화면에 떠있는 iframe 데이터 (오늘 발생한 실시간 보조 데이터)
             let liveDartData = "실시간 화면 공시 데이터를 찾을 수 없습니다.";
             let dartLinks = "";
-            
-            if (dartIframe && dartIframe.contentWindow) {{
-                let searchTarget = targetCorp;
-                if (!searchTarget) {{
-                    const match = msg.match(/([가-힣a-zA-Z0-9]+)\\s*(공시|실적|보고서|원문|요약)/);
-                    if (match) searchTarget = match[1];
-                }}
+            let rcpList = [];
 
-                if (searchTarget) {{
-                    try {{
-                        dartIframe.contentWindow.postMessage({{ type: 'SEARCH_CORP', corpName: searchTarget }}, '*');
-                        await new Promise(resolve => setTimeout(resolve, 1500));
-                    }} catch (e) {{
-                        console.warn("postMessage 실패:", e);
-                    }}
+            if (dartIframe && dartIframe.contentWindow && currentTargetCorp) {{
+                try {{
+                    dartIframe.contentWindow.postMessage({{ type: 'SEARCH_CORP', corpName: currentTargetCorp }}, '*');
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }} catch (e) {{
+                    console.warn("postMessage 실패:", e);
                 }}
 
                 try {{
@@ -1365,18 +1371,24 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                     if (iframeDoc) {{
                         const cloneBody = iframeDoc.body.cloneNode(true);
                         cloneBody.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove());
-                        
+
                         const extractedText = (cloneBody.innerText || cloneBody.textContent).trim();
                         if (extractedText.length > 20) {{
                             liveDartData = extractedText.substring(0, 50000);
                         }}
-                        
+
                         const anchors = iframeDoc.querySelectorAll('a');
                         anchors.forEach(a => {{
                             const href = a.href || a.getAttribute('href');
                             const text = a.innerText.trim().replace(/\\s+/g, ' ');
                             if (href && text && !href.includes('javascript:')) {{
                                 dartLinks += `- [${{text}}] : ${{href}}\\n`;
+                                const match = href.match(/rcpNo=(\\d{{14}})/);
+                                if (match) {{
+                                    if (!rcpList.some(r => r.no === match[1])) {{
+                                        rcpList.push({{ no: match[1], title: text }});
+                                    }}
+                                }}
                             }}
                         }});
                     }}
@@ -1385,14 +1397,55 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 }}
             }}
 
-            // 두 데이터를 결합하여 챗봇에게 제공
+            let dynamicDartXmlText = "";
+            const DART_KEY = "{dart_key}";
+
+            if (rcpList.length > 0 && DART_KEY) {{
+                updateMessageUI(loadingId, 'DART 서버에서 원본 공시(표 데이터 포함)를 정밀 해독 중입니다...');
+                for (let i = 0; i < Math.min(2, rcpList.length); i++) {{
+                    try {{
+                        const rcpNo = rcpList[i].no;
+                        const zipUrl = `https://opendart.fss.or.kr/api/document.xml?crtfc_key=${{DART_KEY}}&rcp_no=${{rcpNo}}`;
+
+                        let zipRes = await fetch(`https://api.codetabs.com/v1/proxy?quest=${{encodeURIComponent(zipUrl)}}`);
+                        if (!zipRes.ok) {{
+                            zipRes = await fetch(`https://corsproxy.io/?url=${{encodeURIComponent(zipUrl)}}`);
+                        }}
+
+                        if (zipRes.ok) {{
+                            const blob = await zipRes.blob();
+                            const zip = await JSZip.loadAsync(blob);
+                            const fileNames = Object.keys(zip.files);
+                            for (let filename of fileNames) {{
+                                if (filename.endsWith('.xml')) {{
+                                    const xmlText = await zip.files[filename].async("string");
+                                    // 공백 뭉개짐 방지 완벽 해독기: 줄바꿈(\n) 보존, td를 파이프(|)로 분리
+                                    let cleanText = xmlText.replace(/<\/td>|<\\/th>/gi, ' | ').replace(/<\\/tr>/gi, '\\n');
+                                    cleanText = cleanText.replace(/<[^>]+>/g, ' '); 
+                                    cleanText = cleanText.replace(/[ \\t]+/g, ' '); 
+                                    cleanText = cleanText.replace(/\\n\\s*\\n/g, '\\n').trim();
+                                    dynamicDartXmlText += `[${{rcpList[i].title}}] 원본 내용:\\n${{cleanText.substring(0, 3500)}}...\\n\\n`;
+                                    break;
+                                }}
+                            }}
+                        }}
+                    }} catch(e) {{
+                        console.warn("JSZip DART extract failed:", e);
+                    }}
+                }}
+                updateMessageUI(loadingId, '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...');
+            }}
+
             let combinedDartData = "";
+            if (dynamicDartXmlText) {{
+                combinedDartData += "🔥 [실시간 다운로드 DART 원본 해독 텍스트 (가장 정확하고 상세함)]\\n" + dynamicDartXmlText + "\\n\\n";
+            }}
             if (apiDartData && apiDartData.includes("Open DART API")) {{
                 combinedDartData += apiDartData + "\\n\\n";
             }}
             if (!liveDartData.includes("찾을 수 없")) {{
                 combinedDartData += "🌟 [실시간 화면 스크래핑 보조 데이터]\\n" + liveDartData;
-            }} else if (!apiDartData) {{
+            }} else if (!apiDartData && !dynamicDartXmlText) {{
                 combinedDartData = '공시 정보 없음';
             }}
 
@@ -1424,7 +1477,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
             const currentDateStr = new Date().toLocaleString('ko-KR', {{ timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }});
 
-            const targetContext = targetCorp ? `[현재 분석 타겟 기업: **${{targetCorp}}**]\\n사용자가 질문한 특정 기업입니다.\\n\\n` : "";
+            const targetContext = currentTargetCorp ? `[현재 분석 타겟 기업: **${{currentTargetCorp}}**]\\n사용자가 질문한 특정 기업입니다.\\n\\n` : "";
             
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
                                `현재 한국 시간은 ${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n` +
@@ -1432,14 +1485,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `[실시간 데이터]\\n` +
                                targetContext +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
-                               `- 🌟 DART 주요 공시 상세 텍스트 (API 및 스크래핑 통합):\\n${{combinedDartData}}\\n` +
+                               `- 🌟 DART 주요 공시 상세 텍스트 (다중 엔진 통합):\\n${{combinedDartData}}\\n` +
                                `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
                                `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
-                               `1. 공시 분석 요구 시: 제공된 [DART 주요 공시 상세 텍스트]에 포함된 API 원문 내용(매수/매도 수량, 단가, 지분율 변화 등)을 꼼꼼히 찾아보고 구체적인 수치를 적극적으로 활용하여 전문적으로 설명하세요.\\n` +
-                               `2. 금지어 및 금지 행동: 답변 중에 절대 "스크래핑 데이터에 따르면", "링크가 없습니다", "물리적인 한계가 있습니다", "시스템 상의 이유로 원문을 볼 수 없다" 같은 시스템 한계나 변명, 핑계를 사용자에게 노출하지 마세요. 사람 대 사람처럼 매끄럽게 대답하세요.\\n` +
-                               `3. 세부 수치 누락 시 대처법: 수집된 텍스트 표면에 정확한 세부 수치가 없더라도 변명하지 말고 제목과 맥락만으로 전망을 풍부하게 분석해 주세요. 그런 다음 마지막에 자연스럽게 "세부 수치 및 원문은 다음 링크에서 확인하실 수 있습니다: [가장 적절한 원문 링크 주소 하나만 첨부]"라고 안내하세요 (링크가 목록에 있을 경우에만).\\n` +
-                               `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
+                               `1. 공시 요약 및 분석 요구 시: 제공된 [🌟 DART 주요 공시 상세 텍스트] 영역에 있는 텍스트(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터)를 반드시 직접 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
+                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
+                               `3. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
                 contents: chatHistory,
