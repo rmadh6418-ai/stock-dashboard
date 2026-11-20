@@ -756,8 +756,9 @@ def calculate_sectors(sector_dict, stock_data):
         return [], []
 
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
-    top_sectors = sector_stats[:3]
-    bot_sectors = sector_stats[-3:][::-1]
+    # 4개씩 추출하도록 수정
+    top_sectors = sector_stats[:4]
+    bot_sectors = sector_stats[-4:][::-1]
 
     def _fetch_stock_news(sector_ref, stock):
         news = fetch_real_news(stock["name"], stock.get("code", ""), limit=10)
@@ -896,6 +897,34 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
 
+    # --- 4개씩 모아보는 요약 위젯 생성기 ---
+    def build_summary_col(title, title_class, sectors):
+        html = f'<div class="summary-col"><div class="col-title {title_class}">{title}</div>'
+        for s in sectors:
+            r = s["rate"]
+            color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
+            codes_str = ",".join(s.get("all_codes", []))
+            html += f'''
+            <div class="summary-item" data-sector-codes="{codes_str}">
+                <span class="summary-item-name">{s['name']}</span>
+                <span class="summary-item-rate sector-rate {color_class}">{r:+.2f}%</span>
+            </div>
+            '''
+        html += '</div>'
+        return html
+
+    summary_html = f'''
+    <div class="market-summary-box">
+        <div class="summary-header">📊 오늘 장 섹터 요약 (Top 4 / Bottom 4)</div>
+        <div class="summary-grid">
+            {build_summary_col("🔴 코스피 강세", "text-up", k200_top)}
+            {build_summary_col("🔵 코스피 약세", "text-down", k200_bot)}
+            {build_summary_col("🔴 코스닥 강세", "text-up", k150_top)}
+            {build_summary_col("🔵 코스닥 약세", "text-down", k150_bot)}
+        </div>
+    </div>
+    '''
+
     def build_sector_list(sectors):
         if not sectors: 
             return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 데이터를 불러오지 못했습니다. (API 지연)</div>'
@@ -1018,6 +1047,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .btn-dart-link {{ font-size: 0.78rem; font-weight: 700; color: #fff; background: #1e293b; padding: 4px 10px; border-radius: 999px; text-decoration: none; transition: background 0.2s; }}
         .btn-dart-link:hover {{ background: #0f172a; }}
 
+        /* --- 새 요약 테이블 CSS 추가 --- */
+        .market-summary-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+        .summary-header {{ font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 14px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }}
+        .summary-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }}
+        .summary-col {{ display: flex; flex-direction: column; gap: 8px; }}
+        .col-title {{ font-size: 0.9rem; font-weight: 800; text-align: center; padding-bottom: 6px; border-bottom: 1px dashed #cbd5e1; }}
+        .summary-item {{ display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; }}
+        .summary-item-name {{ font-weight: 700; color: #334155; }}
+        .summary-item-rate {{ font-weight: 800; }}
+
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }}
@@ -1071,6 +1110,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         @media (max-width: 768px) {{
             .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
+            .summary-grid {{ grid-template-columns: repeat(2, 1fr); gap: 16px; }}
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
         }}
     </style>
@@ -1134,6 +1174,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <div id="calendar-data" style="display: none;"></div>
 
     <div id="sectors-root">
+        <!-- 4개씩 모아보는 요약 뷰 삽입 -->
+        {summary_html}
+
         <div class="group-title">🏢 코스피 200 업종 동향</div>
         <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
         <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
@@ -1568,11 +1611,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         await syncServerAiAndSectors();
 
         const codeSet = new Set();
-        document.querySelectorAll('.stock-pill[data-stock-code]').forEach(el => {{
-            const c = el.getAttribute('data-stock-code');
-            if (c) codeSet.add(c);
-        }});
-        document.querySelectorAll('.sector-item[data-sector-codes]').forEach(el => {{
+        // 상세 섹터 및 요약 그리드 섹터 모두 수집
+        document.querySelectorAll('.sector-item[data-sector-codes], .summary-item[data-sector-codes]').forEach(el => {{
             const codes = (el.getAttribute('data-sector-codes') || '').split(',');
             codes.forEach(c => {{ if (c.trim()) codeSet.add(c.trim()); }});
         }});
@@ -1671,7 +1711,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        document.querySelectorAll('.sector-item').forEach(item => {{
+        // 상세 및 요약 항목 퍼센티지 재계산
+        document.querySelectorAll('.sector-item, .summary-item').forEach(item => {{
             const sectorCodes = (item.getAttribute('data-sector-codes') || '').split(',').map(s => s.trim()).filter(Boolean);
             const rates = [];
             for (const c of sectorCodes) {{
