@@ -919,6 +919,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         <div class="summary-grid">
             {build_summary_col("🔴 코스피 강세", "text-up", k200_top)}
             {build_summary_col("🔵 코스피 약세", "text-down", k200_bot)}
+            <div class="summary-divider"></div>
             {build_summary_col("🔴 코스닥 강세", "text-up", k150_top)}
             {build_summary_col("🔵 코스닥 약세", "text-down", k150_bot)}
         </div>
@@ -1050,7 +1051,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         /* --- 새 요약 테이블 CSS 추가 --- */
         .market-summary-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .summary-header {{ font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 14px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }}
-        .summary-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }}
+        
+        .summary-grid {{ display: grid; grid-template-columns: 1fr 1fr auto 1fr 1fr; gap: 12px; }}
+        .summary-divider {{ width: 1px; background-color: #cbd5e1; margin: 0 4px; align-self: stretch; }}
+        
         .summary-col {{ display: flex; flex-direction: column; gap: 8px; }}
         .col-title {{ font-size: 0.9rem; font-weight: 800; text-align: center; padding-bottom: 6px; border-bottom: 1px dashed #cbd5e1; }}
         .summary-item {{ display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; }}
@@ -1110,7 +1114,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         @media (max-width: 768px) {{
             .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
-            .summary-grid {{ grid-template-columns: repeat(2, 1fr); gap: 16px; }}
+            
+            .summary-grid {{ grid-template-columns: repeat(2, 1fr); gap: 12px; }}
+            .summary-divider {{ grid-column: 1 / -1; width: 100%; height: 1px; margin: 4px 0; }}
+            
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
         }}
     </style>
