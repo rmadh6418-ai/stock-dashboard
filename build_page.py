@@ -7,12 +7,11 @@ import hashlib
 import concurrent.futures
 import io
 import zipfile
-import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import yfinance as yf
+from bs4 import BeautifulSoup
 
 def get_headers(is_daum=False):
     headers = {
@@ -150,6 +149,10 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     trend_data = {"text": trend, "color": trend_color}
     return svg_html, trend_data
 
+# ==========================================
+# 🚨 정규식 기반 무결점 DART XML 표 추출기 🚨
+# 웹 뼈대 파괴 원천 차단 및 칸 분리 유지
+# ==========================================
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     
@@ -196,16 +199,22 @@ def fetch_dart_disclosures():
                         with zipfile.ZipFile(io.BytesIO(doc_res.content)) as z:
                             for filename in z.namelist():
                                 if filename.endswith('.xml'):
-                                    xml_data = z.read(filename)
-                                    soup = BeautifulSoup(xml_data, 'html.parser')
-                                    for tr in soup.find_all('tr'):
-                                        for td in tr.find_all(['td', 'th']):
-                                            td.append(' | ')
-                                        tr.append('\n')
-                                        
-                                    full_text = soup.get_text()
-                                    lines = [line.strip() for line in full_text.split('\n') if line.strip()]
-                                    doc_text = '\n'.join(lines)
+                                    xml_bytes = z.read(filename)
+                                    xml_text = xml_bytes.decode('utf-8', errors='ignore')
+                                    
+                                    # 1. </td>와 </th> 뒤에 표 칸을 나누는 파이프(|) 기호 삽입
+                                    xml_text = re.sub(r'</[tT][dD]>|</[tT][hH]>', ' | ', xml_text)
+                                    # 2. </tr> 뒤에 줄바꿈(\n) 삽입
+                                    xml_text = re.sub(r'</[tT][rR]>', '\n', xml_text)
+                                    
+                                    # 3. HTML 태그 껍데기 싹 다 지우기
+                                    clean_text = re.sub(r'<[^>]+>', ' ', xml_text)
+                                    # 4. 쓸데없는 가로 공백(스페이스바)만 1개로 압축 (줄바꿈 보존)
+                                    clean_text = re.sub(r'[ \t]+', ' ', clean_text)
+                                    # 5. 빈 줄 연속 방지
+                                    clean_text = re.sub(r'\n\s*\n', '\n', clean_text)
+                                    
+                                    doc_text = clean_text.strip()
                                     break
                     except Exception:
                         doc_text = "(원문 파싱 실패)"
@@ -419,7 +428,7 @@ def generate_ai_market_summary(indices, k200_top, k200_bot, k150_top, k150_bot):
             continue
 
     if old_cached_text:
-        error_msg = f"<br><br><span style='color:#e11d48; font-size:0.85em; font-weight:700;'>⚠️ API 일시 차단(사유: {last_error}) - 기존 시황 유지</span>"
+        error_msg = f"<br><br><span style='color:#e11d48; font-size:0.85em; font-weight:700;'>⚠️ API 일시 차단(사유: {last_error}) - 기존 시 시황 유지</span>"
         return old_cached_text + error_msg, display_time_label
 
     return f"⏳ <b>AI 호출 지연</b> (사유: {last_error})<br><br>{fallback_text}", display_time_label
@@ -901,7 +910,6 @@ def send_kakao_alert(indices, k200_top, k150_top):
         pass
 
 # --- HTML 렌더링 영역 ---
-# --- HTML 렌더링 영역 ---
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
@@ -910,7 +918,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     if not raw_password:
         raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
     
-    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
+    xor_key = 42
+    pw_bytes = raw_password.strip().encode('utf-8')
+    secret_hash = [b ^ xor_key for b in pw_bytes]
+    secret_hash_js = json.dumps(secret_hash)
 
     target_names = set()
     for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
@@ -1012,6 +1023,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             """
         return html
 
+    safe_dart_summary = dart_summary.replace('<', '<').replace('>', '>')
+
     template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1027,7 +1040,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <meta name="apple-mobile-web-app-title" content="증시 대시보드">
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
-    <!-- JSZip 라이브러리 (브라우저에서 ZIP 파일 해독용) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
@@ -1113,9 +1125,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; white-space: pre-wrap; }}
         .message.user {{ align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }}
         .message.ai {{ align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }}
-        #chat-input-container {{ display: flex; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; gap: 8px; }}
+        #chat-input-container {{ display: flex; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; gap: 8px; align-items: flex-end; }}
         #chat-input:focus {{ border-color: #3b82f6; }}
-        #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
+        #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; height: 42px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
         #chat-send:hover {{ background: #1d4ed8; }}
         #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
 
@@ -1180,7 +1192,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
     </div>
     
-    <div id="dart-summary-data" style="display: none;">{dart_summary}</div>
+    <div id="dart-summary-data" style="display: none;">__DART_SUMMARY_PLACEHOLDER__</div>
     <div id="calendar-data" style="display: none;"></div>
 
     <div id="sectors-root">
@@ -1412,32 +1424,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             for (let filename of fileNames) {{
                                 if (filename.endsWith('.xml')) {{
                                     const xmlText = await zip.files[filename].async("string");
-                                    // [해독기 최적화] 줄바꿈 완벽 보존 및 마크다운 표 생성
-                                    const parser = new DOMParser();
-                                    const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-                                    
-                                    let cleanData = "";
-                                    const elements = xmlDoc.body ? xmlDoc.body.childNodes : xmlDoc.childNodes;
-                                    
-                                    function traverseNodes(node) {{
-                                        if (node.nodeType === 3) {{
-                                            cleanData += node.nodeValue.trim() + " ";
-                                        }} else if (node.nodeName.toLowerCase() === 'tr') {{
-                                            node.childNodes.forEach(traverseNodes);
-                                            cleanData += "\\n";
-                                        }} else if (node.nodeName.toLowerCase() === 'td' || node.nodeName.toLowerCase() === 'th') {{
-                                            node.childNodes.forEach(traverseNodes);
-                                            cleanData += " | ";
-                                        }} else if (node.nodeType === 1) {{
-                                            node.childNodes.forEach(traverseNodes);
-                                        }}
-                                    }}
-                                    
-                                    if (xmlDoc.documentElement) traverseNodes(xmlDoc.documentElement);
-                                    
-                                    cleanData = cleanData.replace(/\\s*\\|\\s*/g, ' | ').replace(/\\s*\\n\\s*/g, '\\n').trim();
-                                    
-                                    dynamicDartXmlText += `[${{rcpList[i].title}}] 원본 내용:\\n${{cleanData.substring(0, 4500)}}...\\n\\n`;
+                                    let cleanText = xmlText.replace(/<\/td>|<\\/th>/gi, ' | ').replace(/<\\/tr>/gi, '\\n');
+                                    cleanText = cleanText.replace(/<[^>]+>/g, ' '); 
+                                    cleanText = cleanText.replace(/[ \\t]+/g, ' '); 
+                                    cleanText = cleanText.replace(/\\n\\s*\\n/g, '\\n').trim();
+                                    dynamicDartXmlText += `[${{rcpList[i].title}}] 원본 내용:\\n${{cleanText.substring(0, 3500)}}...\\n\\n`;
                                     break;
                                 }}
                             }}
@@ -1504,7 +1495,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
                                `1. 공시 요약 및 분석 요구 시: 제공된 [🌟 DART 주요 공시 상세 텍스트] 영역에 있는 텍스트(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터)를 반드시 직접 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
                                `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
-                               `3. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
+                               `3. 문맥 파악: 사용자가 기업명을 생략하고 "누구랑 계약했어?", "금액이 얼마야?" 라고 물어볼 경우, 이전 대화에서 타겟으로 잡힌 기업의 공시 내용에서 답변을 찾아 자연스럽게 이어가세요.\\n` +
+                               `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
                 contents: chatHistory,
@@ -1886,6 +1878,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </body>
 </html>
 """
+    template = template.replace("__DART_SUMMARY_PLACEHOLDER__", safe_dart_summary)
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(template)
 
