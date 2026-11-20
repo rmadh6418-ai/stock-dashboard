@@ -1271,7 +1271,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         addMessageToUI('ai', '실시간 데이터(뉴스/공시)를 수집 및 분석 중입니다...', loadingId);
 
         try {{
-            // [AI 퀀트 Pro 이식 파트 1] 대화 내용에서 특정 종목명 추출 
             let targetCorp = "";
             document.querySelectorAll('.stock-pill').forEach(pill => {{
                 const name = pill.getAttribute('data-stock-name');
@@ -1285,18 +1284,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             let dartLinks = "";
             
             if (dartIframe && dartIframe.contentWindow) {{
-                // [AI 퀀트 Pro 이식 파트 2] DART 프레임에 postMessage로 특정 종목만 검색하도록 명령
                 if (targetCorp) {{
                     try {{
                         dartIframe.contentWindow.postMessage({{ type: 'SEARCH_CORP', corpName: targetCorp }}, '*');
-                        // 종목 검색 렌더링이 완료될 때까지 잠깐 대기 (800ms)
                         await new Promise(resolve => setTimeout(resolve, 800));
                     }} catch (e) {{
                         console.warn("postMessage 실패:", e);
                     }}
                 }}
 
-                // [수정된 스크래핑 로직] 필터링된 깨끗한 화면에서 텍스트와 URL 링크 동시 추출
                 try {{
                     const iframeDoc = dartIframe.contentWindow.document;
                     if (iframeDoc) {{
@@ -1308,11 +1304,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             liveDartData = extractedText.substring(0, 50000);
                         }}
                         
-                        // 사용자가 직접 원문을 클릭해 볼 수 있도록 a 태그 href 주소 확보
                         const anchors = iframeDoc.querySelectorAll('a');
                         anchors.forEach(a => {{
                             if (a.href && (a.innerText.includes('보고서') || a.innerText.includes('상황') || a.innerText.includes('공시'))) {{
-                                dartLinks += `- [${{a.innerText.trim().replace(/\\s+/g, ' ')}] : ${{a.href}}\\n`;
+                                dartLinks += `- [${{a.innerText.trim().replace(/\\s+/g, ' ')}}] : ${{a.href}}\\n`;
                             }}
                         }});
                     }}
@@ -1353,24 +1348,23 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
             const currentDateStr = new Date().toLocaleString('ko-KR', {{ timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }});
 
-            // [AI 퀀트 Pro 이식 파트 3] 동적 타겟 주입 및 답변 가이드라인 강화 (링크 필수 노출)
-            const targetContext = targetCorp ? `[현재 분석 타겟 기업: **${{targetCorp}}**]\\n사용자가 질문한 특정 기업입니다. DART 공시 데이터는 이 기업 위주로 필터링되었습니다.\\n\\n` : "";
+            const targetContext = targetCorp ? \`[현재 분석 타겟 기업: **\${{targetCorp}}**]\\n사용자가 질문한 특정 기업입니다. DART 공시 데이터는 이 기업 위주로 필터링되었습니다.\\n\\n\` : "";
             
-            const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
-                               `현재 한국 시간은 ${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n` +
-                               `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
-                               `[실시간 데이터]\\n` +
+            const systemText = \`당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n\` +
+                               \`현재 한국 시간은 \${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n\` +
+                               \`제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n\` +
+                               \`[실시간 데이터]\\n\` +
                                targetContext +
-                               `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
-                               `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n${{liveDartData}}\\n` +
-                               `- 🔗 DART 팝업창 다이렉트 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
-                               `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
-                               `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
-                               `[답변 원칙 (할루시네이션은 막되, 공시 원문 링크 필수 제공)]\\n` +
-                               `1. 공시 내용 요구 시(최우선 원칙): 사용자가 특정 기업의 공시 내용이나 세부 사항(매도 수량, 단가 등)을 물어볼 때, 제공된 🌟[DART 주요 공시] 텍스트에 해당 수치가 상세히 표기되어 있다면 그대로 알려주세요.\\n` +
-                               `2. 만약 해당 텍스트가 목록형 데이터라서 팝업 안쪽의 상세 수치(정확한 지분 변동 등)가 보이지 않는다면, 절대 "데이터가 없어서 모른다"거나 "구체적인 수치가 포함되어 있지 않다"고 변명하며 대화를 끝내지 마세요. 대신 해당 공시의 제목을 바탕으로 시장에 미칠 영향을 분석해 주고, **반드시 제공받은 🔗[DART 팝업창 다이렉트 원문 링크 목록] 중 가장 관련 깊은 링크 주소를 답변 마지막에 첨부하며 "상세 수치는 다음 공시 원문 링크에서 직접 확인하실 수 있습니다: [링크주소]"라고 명확히 안내하세요.**\\n` +
-                               `3. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n` +
-                               `4. 가독성: 마크다운(굵은 글씨, 줄바꿈, 목록)을 적극 사용하여 가독성 높게 답변하세요.`;
+                               \`- 주요 지수/거시경제:\\n\${{indicesData}}\\n\` +
+                               \`- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n\${{liveDartData}}\\n\` +
+                               \`- 🔗 DART 팝업창 다이렉트 원문 링크 목록:\\n\${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n\` +
+                               \`- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n\${{newsData}}\\n\` +
+                               \`- 캘린더 데이터:\\n\${{calendarData}}\\n\\n\` +
+                               \`[답변 원칙 (할루시네이션은 막되, 공시 원문 링크 필수 제공)]\\n\` +
+                               \`1. 공시 내용 요구 시(최우선 원칙): 사용자가 특정 기업의 공시 내용이나 세부 사항(매도 수량, 단가 등)을 물어볼 때, 제공된 🌟[DART 주요 공시] 텍스트에 해당 수치가 상세히 표기되어 있다면 그대로 알려주세요.\\n\` +
+                               \`2. 만약 해당 텍스트가 목록형 데이터라서 팝업 안쪽의 상세 수치(정확한 지분 변동 등)가 보이지 않는다면, 절대 "데이터가 없어서 모른다"거나 "구체적인 수치가 포함되어 있지 않다"고 변명하며 대화를 끝내지 마세요. 대신 해당 공시의 제목을 바탕으로 시장에 미칠 영향을 분석해 주고, **반드시 제공받은 🔗[DART 팝업창 다이렉트 원문 링크 목록] 중 가장 관련 깊은 링크 주소를 답변 마지막에 첨부하며 "상세 수치는 다음 공시 원문 링크에서 직접 확인하실 수 있습니다: [링크주소]"라고 명확히 안내하세요.**\\n\` +
+                               \`3. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n\` +
+                               \`4. 가독성: 마크다운(굵은 글씨, 줄바꿈, 목록)을 적극 사용하여 가독성 높게 답변하세요.\`;
 
             const payload = {{
                 contents: chatHistory,
@@ -1382,7 +1376,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 }}
             }};
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${{apiKey}}`, {{
+            const response = await fetch(\`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=\${{apiKey}}\`, {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify(payload)
@@ -1400,7 +1394,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         }} catch (error) {{
             chatHistory.pop();
-            updateMessageUI(loadingId, `🚨 오류 발생: ${{error.message}}<br>API 키가 잘못되었거나 네트워크 오류가 발생했습니다.`);
+            updateMessageUI(loadingId, \`🚨 오류 발생: \${{error.message}}<br>API 키가 잘못되었거나 네트워크 오류가 발생했습니다.\`);
         }} finally {{
             btnEl.disabled = false;
             inputEl.disabled = false;
