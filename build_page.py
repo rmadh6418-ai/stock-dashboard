@@ -898,7 +898,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
 
-    # --- 클릭 시 스크롤 되도록 이벤트와 포인터 클래스 추가 ---
+    # --- 4개씩 모아보는 요약 위젯 생성기 ---
     def build_summary_col(title, title_class, sectors):
         html = f'<div class="summary-col"><div class="col-title {title_class}">{title}</div>'
         for s in sectors:
@@ -914,8 +914,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         html += '</div>'
         return html
 
+    # id="sector-summary-box" 추가
     summary_html = f'''
-    <div class="market-summary-box">
+    <div class="market-summary-box" id="sector-summary-box">
         <div class="summary-header">📊 오늘 장 섹터 요약 (Top 4 / Bottom 4)</div>
         <div class="summary-grid">
             {build_summary_col("🔴 코스피 강세", "text-up", k200_top)}
@@ -927,7 +928,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
     '''
 
-    # --- 상세 섹터 리스트에 ID 부여 ---
+    # --- 상세 섹터 리스트에 ID 및 요약버튼 부여 ---
     def build_sector_list(sectors):
         if not sectors: 
             return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 데이터를 불러오지 못했습니다. (API 지연)</div>'
@@ -986,8 +987,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             html += f"""
             <div class="sector-item" id="sector-{s['name']}" data-sector-codes="{all_codes_str}">
                 <div class="sector-header">
-                    <span class="sector-name">{s['name']}</span>
-                    <span class="sector-rate {color_class}">{r:+.2f}%</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="sector-name">{s['name']}</span>
+                        <span class="sector-rate {color_class}">{r:+.2f}%</span>
+                    </div>
+                    <button class="btn-back-to-summary" onclick="scrollToSummary()" title="섹터 요약으로 돌아가기">⬆️ 요약</button>
                 </div>
                 <div class="stock-container">{stock_tags}</div>
                 {news_html}
@@ -1071,6 +1075,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; transition: background-color 0.5s ease-out; border-radius: 8px; }}
         .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px; }}
         .sector-name {{ font-weight: 800; font-size: 1.02rem; }}
+
+        /* --- 뒤로가기(요약으로) 버튼 CSS 추가 --- */
+        .btn-back-to-summary {{ background: #eff6ff; color: #3b82f6; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.2s; }}
+        .btn-back-to-summary:hover {{ background: #3b82f6; color: #fff; }}
 
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; padding: 0 4px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; cursor: pointer; transition: transform 0.15s, background 0.15s; }}
@@ -1245,18 +1253,32 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // 특정 섹터로 부드럽게 스크롤 및 하이라이트 효과 적용 함수
+    // 특정 상세 섹터로 스크롤 이동
     function scrollToSector(sectorName) {{
         const targetId = 'sector-' + sectorName;
         const targetElement = document.getElementById(targetId);
         if (targetElement) {{
-            // 스크롤 이동
             targetElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-            // 하이라이트 효과 (연한 노란색)
             targetElement.style.backgroundColor = '#fef08a';
             setTimeout(() => {{
                 targetElement.style.backgroundColor = 'transparent';
-            }}, 1500); // 1.5초 후 원래 색으로
+            }}, 1500);
+        }}
+    }}
+
+    // 요약 박스로 부드럽게 위로 스크롤 이동
+    function scrollToSummary() {{
+        const summaryElement = document.getElementById('sector-summary-box');
+        if (summaryElement) {{
+            summaryElement.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+            
+            const originalBg = summaryElement.style.backgroundColor || '#fff';
+            summaryElement.style.backgroundColor = '#fef08a';
+            summaryElement.style.transition = 'background-color 0.5s ease-out';
+            
+            setTimeout(() => {{
+                summaryElement.style.backgroundColor = originalBg;
+            }}, 1500);
         }}
     }}
 
