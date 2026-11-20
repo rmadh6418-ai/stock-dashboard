@@ -1284,10 +1284,18 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             let dartLinks = "";
             
             if (dartIframe && dartIframe.contentWindow) {{
-                if (targetCorp) {{
+                // 대화에서 기업명 자동 추출 로직 강화 (버튼을 클릭하지 않고 텍스트로 쳐도 인식)
+                let searchTarget = targetCorp;
+                if (!searchTarget) {{
+                    const match = msg.match(/([가-힣a-zA-Z0-9]+)\s*(공시|실적|보고서|원문|요약)/);
+                    if (match) searchTarget = match[1];
+                }}
+
+                if (searchTarget) {{
                     try {{
-                        dartIframe.contentWindow.postMessage({{ type: 'SEARCH_CORP', corpName: targetCorp }}, '*');
-                        await new Promise(resolve => setTimeout(resolve, 800));
+                        dartIframe.contentWindow.postMessage({{ type: 'SEARCH_CORP', corpName: searchTarget }}, '*');
+                        // DART 화면이 검색 결과로 바뀔 때까지 충분히 대기 (0.8초 -> 1.5초로 연장)
+                        await new Promise(resolve => setTimeout(resolve, 1500));
                     }} catch (e) {{
                         console.warn("postMessage 실패:", e);
                     }}
@@ -1304,10 +1312,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             liveDartData = extractedText.substring(0, 50000);
                         }}
                         
+                        // 링크 추출 조건 완화 (모든 유효한 a 태그 수집)
                         const anchors = iframeDoc.querySelectorAll('a');
                         anchors.forEach(a => {{
-                            if (a.href && (a.innerText.includes('보고서') || a.innerText.includes('상황') || a.innerText.includes('공시'))) {{
-                                dartLinks += `- [${{a.innerText.trim().replace(/\\s+/g, ' ')}}] : ${{a.href}}\\n`;
+                            const href = a.href || a.getAttribute('href');
+                            const text = a.innerText.trim().replace(/\\s+/g, ' ');
+                            if (href && text && !href.includes('javascript:')) {{
+                                dartLinks += `- [${{text}}] : ${{href}}\\n`;
                             }}
                         }});
                     }}
@@ -1350,21 +1361,21 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
             const targetContext = targetCorp ? `[현재 분석 타겟 기업: **${{targetCorp}}**]\\n사용자가 질문한 특정 기업입니다. DART 공시 데이터는 이 기업 위주로 필터링되었습니다.\\n\\n` : "";
             
+            // 프롬프트 대폭 수정: 로봇 같은 변명 완전 차단, 원문을 읽은 것처럼 매끄럽게 응답하도록 강제
             const systemText = `당신은 월가 최고 수준의 거시경제 분석가이자 주식/투자 전문 AI 비서입니다.\\n` +
                                `현재 한국 시간은 ${{currentDateStr}}입니다. 모든 분석과 답변은 반드시 오늘 날짜를 기준으로 작성하세요.\\n` +
-                               `제공되는 [실시간 데이터]를 바탕으로, 당신의 방대한 전문 지식을 총동원하여 완벽하게 요약하고 답변하세요.\\n\\n` +
+                               `제공되는 [실시간 데이터]를 바탕으로, 전문 지식을 총동원하여 깊이 있게 답변하세요.\\n\\n` +
                                `[실시간 데이터]\\n` +
                                targetContext +
                                `- 주요 지수/거시경제:\\n${{indicesData}}\\n` +
-                               `- 🌟 DART 주요 공시 (사용자의 실시간 DART 대시보드 스크래핑 데이터):\\n${{liveDartData}}\\n` +
-                               `- 🔗 DART 팝업창 다이렉트 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
-                               `- 📰 주요 뉴스 (기사 제목 및 핵심 본문):\\n${{newsData}}\\n` +
-                               `- 캘린더 데이터:\\n${{calendarData}}\\n\\n` +
-                               `[답변 원칙 (할루시네이션은 막되, 공시 원문 링크 필수 제공)]\\n` +
-                               `1. 공시 내용 요구 시(최우선 원칙): 사용자가 특정 기업의 공시 내용이나 세부 사항(매도 수량, 단가 등)을 물어볼 때, 제공된 🌟[DART 주요 공시] 텍스트에 해당 수치가 상세히 표기되어 있다면 그대로 알려주세요.\\n` +
-                               `2. 만약 해당 텍스트가 목록형 데이터라서 팝업 안쪽의 상세 수치(정확한 지분 변동 등)가 보이지 않는다면, 절대 "데이터가 없어서 모른다"거나 "구체적인 수치가 포함되어 있지 않다"고 변명하며 대화를 끝내지 마세요. 대신 해당 공시의 제목을 바탕으로 시장에 미칠 영향을 분석해 주고, **반드시 제공받은 🔗[DART 팝업창 다이렉트 원문 링크 목록] 중 가장 관련 깊은 링크 주소를 답변 마지막에 첨부하며 "상세 수치는 다음 공시 원문 링크에서 직접 확인하실 수 있습니다: [링크주소]"라고 명확히 안내하세요.**\\n` +
-                               `3. 뉴스 요약 요구 시: 제공된 뉴스 데이터의 '[핵심 본문]'과 '[기사 제목]'을 반드시 직접 읽고 풀어서 요약해주세요!\\n` +
-                               `4. 가독성: 마크다운(굵은 글씨, 줄바꿈, 목록)을 적극 사용하여 가독성 높게 답변하세요.`;
+                               `- 🌟 DART 주요 공시 텍스트:\\n${{liveDartData}}\\n` +
+                               `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
+                               `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
+                               `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
+                               `1. 공시 분석 요구 시: 제공된 [DART 주요 공시 텍스트]를 꼼꼼히 분석하여 해당 기업이 공시를 낸 목적과 이것이 향후 주가에 미칠 영향을 전문가적 시각에서 풍부하게 풀어 설명하세요.\\n` +
+                               `2. 금지어 및 금지 행동 (매우 중요): 답변 중에 절대 "스크래핑 데이터에 따르면", "링크가 없습니다", "물리적인 한계가 있습니다", "시스템 상의 이유로 원문을 볼 수 없다" 같은 시스템 한계나 변명, 핑계를 사용자에게 노출하지 마세요.\\n` +
+                               `3. 세부 수치 누락 시 대처법: 수집된 텍스트 표면에 정확한 세부 수치가 없더라도 "수치가 없어서 요약할 수 없다"고 변명하지 마세요. 제목과 맥락만으로도 알 수 있는 현재 상황과 전망을 풍부하게 분석해 주고, 답변 마지막에 자연스럽게 "세부 수치 및 원문은 다음 링크에서 확인하실 수 있습니다: [가장 적절한 원문 링크 주소 하나만 첨부]"라고 안내하세요 (링크가 목록에 있을 경우에만).\\n` +
+                               `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
                 contents: chatHistory,
