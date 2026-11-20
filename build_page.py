@@ -901,6 +901,7 @@ def send_kakao_alert(indices, k200_top, k150_top):
         pass
 
 # --- HTML 렌더링 영역 ---
+# --- HTML 렌더링 영역 ---
 def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summary, ai_updated_time, dart_summary):
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
@@ -909,10 +910,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     if not raw_password:
         raise ValueError("보안 오류: 환경변수 'DASHBOARD_PW'가 설정되지 않았습니다.")
     
-    xor_key = 42
-    pw_bytes = raw_password.strip().encode('utf-8')
-    secret_hash = [b ^ xor_key for b in pw_bytes]
-    secret_hash_js = json.dumps(secret_hash)
+    pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
     target_names = set()
     for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
@@ -1029,6 +1027,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <meta name="apple-mobile-web-app-title" content="증시 대시보드">
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
+    <!-- JSZip 라이브러리 (브라우저에서 ZIP 파일 해독용) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
@@ -1039,7 +1038,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             user-select: none; 
             padding-bottom: env(safe-area-inset-bottom); 
         }}
-        input, button, .message {{ user-select: auto !important; }}
+        input, button, textarea, .message {{ user-select: auto !important; }}
         
         header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
@@ -1211,7 +1210,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 대시보드에 뜬 공시를 보고 질문하셔도 되고, 팝업창의 <b>원문을 복사해서 통째로 붙여넣고 질문</b>하셔도 완벽하게 읽고 답변해 드립니다!</div>
         </div>
         <div id="chat-input-container">
-            <!-- 💡 직접 복사-붙여넣기가 쉽도록 텍스트 박스 유지 -->
             <textarea id="chat-input" placeholder="여기에 질문이나 긴 공시 원문을 복사해서 붙여넣어 보세요..." onkeypress="if(event.key==='Enter' && !event.shiftKey) {{ event.preventDefault(); sendChatMessage(); }}" style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; font-size: 0.95rem; resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;"></textarea>
             <button id="chat-send" onclick="sendChatMessage()">전송</button>
         </div>
@@ -1219,7 +1217,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    const secretHash = {secret_hash_js};
+    const TARGET_HASH = "{pw_hash}";
     const allCorps = {all_corps_js};
     
     function openTradingView(symbol) {{
@@ -1332,6 +1330,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         try {{
             let currentTargetCorp = "";
+
             for (let i = 0; i < allCorps.length; i++) {{
                 if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
                     currentTargetCorp = allCorps[i];
@@ -1413,12 +1412,32 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             for (let filename of fileNames) {{
                                 if (filename.endsWith('.xml')) {{
                                     const xmlText = await zip.files[filename].async("string");
-                                    // 공백 뭉개짐 완벽 차단! 줄바꿈 보존하고 마크다운 표처럼 파이프로 구분
-                                    let cleanText = xmlText.replace(/<\/td>|<\\/th>/gi, ' | ').replace(/<\\/tr>/gi, '\\n');
-                                    cleanText = cleanText.replace(/<[^>]+>/g, ' '); 
-                                    cleanText = cleanText.replace(/[ \\t]+/g, ' '); 
-                                    cleanText = cleanText.replace(/\\n\\s*\\n/g, '\\n').trim();
-                                    dynamicDartXmlText += `[${{rcpList[i].title}}] 원본 내용:\\n${{cleanText.substring(0, 3500)}}...\\n\\n`;
+                                    // [해독기 최적화] 줄바꿈 완벽 보존 및 마크다운 표 생성
+                                    const parser = new DOMParser();
+                                    const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+                                    
+                                    let cleanData = "";
+                                    const elements = xmlDoc.body ? xmlDoc.body.childNodes : xmlDoc.childNodes;
+                                    
+                                    function traverseNodes(node) {{
+                                        if (node.nodeType === 3) {{
+                                            cleanData += node.nodeValue.trim() + " ";
+                                        }} else if (node.nodeName.toLowerCase() === 'tr') {{
+                                            node.childNodes.forEach(traverseNodes);
+                                            cleanData += "\\n";
+                                        }} else if (node.nodeName.toLowerCase() === 'td' || node.nodeName.toLowerCase() === 'th') {{
+                                            node.childNodes.forEach(traverseNodes);
+                                            cleanData += " | ";
+                                        }} else if (node.nodeType === 1) {{
+                                            node.childNodes.forEach(traverseNodes);
+                                        }}
+                                    }}
+                                    
+                                    if (xmlDoc.documentElement) traverseNodes(xmlDoc.documentElement);
+                                    
+                                    cleanData = cleanData.replace(/\\s*\\|\\s*/g, ' | ').replace(/\\s*\\n\\s*/g, '\\n').trim();
+                                    
+                                    dynamicDartXmlText += `[${{rcpList[i].title}}] 원본 내용:\\n${{cleanData.substring(0, 4500)}}...\\n\\n`;
                                     break;
                                 }}
                             }}
@@ -1483,10 +1502,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
                                `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
-                               `1. 공시 분석 요구 시: 제공된 [DART 주요 공시 상세 텍스트] 영역에 있는 내용(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터) 또는 사용자가 채팅창에 직접 복사해서 붙여넣은 텍스트를 반드시 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
-                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 무조건 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
-                               `3. 문맥 파악: 사용자가 기업명을 생략하고 "누구랑 계약했어?", "금액이 얼마야?" 라고 물어볼 경우, 이전 대화에서 타겟으로 잡힌 기업의 공시 내용에서 답변을 찾아 자연스럽게 이어가세요.\\n` +
-                               `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
+                               `1. 공시 요약 및 분석 요구 시: 제공된 [🌟 DART 주요 공시 상세 텍스트] 영역에 있는 텍스트(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터)를 반드시 직접 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
+                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
+                               `3. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
                 contents: chatHistory,
