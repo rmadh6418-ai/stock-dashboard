@@ -1125,6 +1125,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
         }}
     </style>
+    <!-- ▼▼ 여기부터 복사해서 붙여넣으세요 ▼▼ -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js');
+        });
+      }
+    </script>
+    <!-- ▲▲ 여기까지 ▲▲ -->
 </head>
 <body>
 <!-- 🔐 비밀번호 잠금 화면 시작 -->
