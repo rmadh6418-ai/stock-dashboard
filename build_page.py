@@ -151,7 +151,8 @@ def create_sparkline_and_trend(data, diff, code_key, is_int=False):
     return svg_html, trend_data
 
 # ==========================================
-# 파이썬 크롤러에서도 표 구분을 위해 ' | ' 사용
+# 파이썬 DART 표 파싱 로직 100% 개선
+# 줄바꿈(\n)을 훼손하지 않도록 변경
 # ==========================================
 def fetch_dart_disclosures():
     dart_key = os.environ.get("DART_API_KEY", "").strip()
@@ -201,15 +202,24 @@ def fetch_dart_disclosures():
                                 if filename.endswith('.xml'):
                                     xml_data = z.read(filename)
                                     soup = BeautifulSoup(xml_data, 'html.parser')
-                                    # [수정] 표의 열(Column) 구분을 위해 파이프(|) 기호 삽입
-                                    full_text = soup.get_text(separator=' | ', strip=True)
-                                    doc_text = re.sub(r'\s+', ' ', full_text).strip()
+                                    
+                                    # 표 데이터를 마크다운처럼 읽기 쉽게 재배치 (줄바꿈 보존)
+                                    for tr in soup.find_all('tr'):
+                                        for td in tr.find_all(['td', 'th']):
+                                            td.append(' | ')
+                                        tr.append('\n')
+                                        
+                                    full_text = soup.get_text()
+                                    
+                                    # 공백 뭉개짐 방지: 여러 줄바꿈은 하나로 합치고, 가로 공백만 압축
+                                    lines = [line.strip() for line in full_text.split('\n') if line.strip()]
+                                    doc_text = '\n'.join(lines)
                                     break
                     except Exception:
                         doc_text = "(원문 파싱 실패)"
                 
                 if doc_text:
-                    result_text += f"- 핵심 세부내용: {doc_text[:3000]}...\n\n"
+                    result_text += f"- 핵심 세부내용:\n{doc_text[:3000]}...\n\n"
                 else:
                     result_text += "- 핵심 세부내용: (데이터가 제공되지 않음)\n\n"
                     
@@ -1106,11 +1116,10 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .chat-header-controls button:hover {{ transform: scale(1.2); }}
 
         #chat-messages {{ flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }}
-        .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; }}
+        .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; white-space: pre-wrap; }}
         .message.user {{ align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }}
         .message.ai {{ align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }}
         #chat-input-container {{ display: flex; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; gap: 8px; }}
-        #chat-input {{ flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 20px; outline: none; font-size: 0.95rem; }}
         #chat-input:focus {{ border-color: #3b82f6; }}
         #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
         #chat-send:hover {{ background: #1d4ed8; }}
@@ -1204,10 +1213,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "방금 올라온 삼성전자 공시의 세부 금액과 수량 등 원문을 분석해줘"</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>
         </div>
         <div id="chat-input-container">
-            <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleChatEnter(event)">
+            <!-- 💡 직접 복사-붙여넣기가 쉽도록 텍스트 박스를 크게 교체했습니다. -->
+            <textarea id="chat-input" placeholder="여기에 긴 공시 원문을 복사해서 붙여넣어 보세요..." onkeypress="if(event.key==='Enter' && !event.shiftKey) {{ event.preventDefault(); sendChatMessage(); }}" style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; font-size: 0.95rem; resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;"></textarea>
             <button id="chat-send" onclick="sendChatMessage()">전송</button>
         </div>
     </div>
@@ -1248,7 +1258,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             chatHistory = [];
             window.lastTargetCorp = "";
             const container = document.getElementById('chat-messages');
-            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>예) "지금 환율이랑 유가 상황은 어때?", "방금 올라온 기업의 세부 금액과 수량 등 원문을 분석해줘"</div>';
+            container.innerHTML = '<div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>';
         }}
     }}
 
@@ -1279,10 +1289,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         if (win.style.display === 'flex') {{
             document.getElementById('chat-input').focus();
         }}
-    }}
-
-    function handleChatEnter(e) {{
-        if (e.key === 'Enter') sendChatMessage();
     }}
 
     function closeApiModal() {{
@@ -1332,7 +1338,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         try {{
             let currentTargetCorp = "";
 
-            // 1순위: 코스피/코스닥 전체 기업명 리스트(allCorps)와 직접 매칭
             for (let i = 0; i < allCorps.length; i++) {{
                 if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
                     currentTargetCorp = allCorps[i];
@@ -1340,11 +1345,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 }}
             }}
 
-            // 2순위: 사용자가 종목명을 명시하지 않고 "누구랑 했어?", "계약금액은?" 등으로 물어볼 경우 이전 문맥 유지
             if (!currentTargetCorp && window.lastTargetCorp) {{
                 currentTargetCorp = window.lastTargetCorp;
             }}
-
             if (currentTargetCorp) {{
                 window.lastTargetCorp = currentTargetCorp;
             }}
@@ -1416,9 +1419,11 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             for (let filename of fileNames) {{
                                 if (filename.endsWith('.xml')) {{
                                     const xmlText = await zip.files[filename].async("string");
-                                    // 정밀 파싱: 표(Table) 구조의 컬럼을 보존하기 위해 태그를 ' | ' 로 치환
+                                    // 공백 뭉개짐 방지 완벽 해독기: 줄바꿈(\n) 보존, td를 파이프(|)로 분리
                                     let cleanText = xmlText.replace(/<\/td>|<\\/th>/gi, ' | ').replace(/<\\/tr>/gi, '\\n');
-                                    cleanText = cleanText.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();
+                                    cleanText = cleanText.replace(/<[^>]+>/g, ' '); 
+                                    cleanText = cleanText.replace(/[ \\t]+/g, ' '); 
+                                    cleanText = cleanText.replace(/\\n\\s*\\n/g, '\\n').trim();
                                     dynamicDartXmlText += `[${{rcpList[i].title}}] 원본 내용:\\n${{cleanText.substring(0, 3500)}}...\\n\\n`;
                                     break;
                                 }}
@@ -1484,10 +1489,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
                                `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
-                               `1. 공시 분석 요구 시: 제공된 [DART 주요 공시 상세 텍스트] 중 🔥[실시간 다운로드 DART 원본 해독 텍스트]를 가장 최우선으로 꼼꼼히 확인하세요. 여기에 정확한 금액(수주금액, 계약금액, 지분율 등), 계약 상대방, 계약 기간 등 표(Table) 형태의 세부 수치가 파이프(|) 기호 또는 공백과 함께 나열되어 있습니다. 이 수치들을 반드시 직접 찾아내어 전문가 시각에서 구체적으로 답변하세요.\\n` +
-                               `2. 문맥 파악: 사용자가 이전 대화에서 언급한 기업(현재 타겟 기업)에 대한 후속 질문(예: "누구랑 계약했어?", "금액이 얼마야?")을 할 경우, 해당 기업의 공시 내용에서 정확한 답을 찾아 바로 대답하세요.\\n` +
-                               `3. 금지어 및 금지 행동: 절대 "텍스트로 표기되어 있지 않습니다", "확인할 수 없습니다", "XML", "파싱", "일시적인 에러", "누락", "시스템 상의 이유", "시스템 한계", "스크래핑", "데이터 수집 오류" 같은 기술적인 핑계나 변명을 하지 마세요.\\n` +
-                               `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
+                               `1. 공시 요약 및 분석 요구 시: 제공된 [🌟 DART 주요 공시 상세 텍스트] 영역에 있는 텍스트(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터)를 반드시 직접 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
+                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
+                               `3. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
                 contents: chatHistory,
