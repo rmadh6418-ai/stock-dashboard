@@ -921,6 +921,8 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     target_names_sorted = sorted(list(target_names), key=len, reverse=True)
     all_corps_js = json.dumps(target_names_sorted, ensure_ascii=False)
 
+    safe_dart_summary = dart_summary.replace('<', '<').replace('>', '>')
+
     index_cards = ""
     for idx in indices:
         sign = "▲ +" if idx["is_up"] else ("▼ -" if idx["is_down"] else "― ")
@@ -1209,7 +1211,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             </div>
         </div>
         <div id="chat-messages">
-            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 팝업창에서 확인하신 공시 원문을 <b>복사해서 아래 입력창에 통째로 붙여넣고 질문</b>하셔도 정확하게 답변해 드립니다!</div>
+            <div class="message ai">안녕하세요! 실시간 지수, 속보 뉴스 및 <b>DART 실시간 공시</b> 데이터를 분석해드립니다. 궁금한 점을 물어보세요.<br><br>💡 대시보드에 뜬 공시를 보고 질문하셔도 되고, 팝업창의 <b>원문을 복사해서 통째로 붙여넣고 질문</b>하셔도 완벽하게 읽고 답변해 드립니다!</div>
         </div>
         <div id="chat-input-container">
             <textarea id="chat-input" placeholder="여기에 질문이나 긴 공시 원문을 복사해서 붙여넣어 보세요..." onkeypress="if(event.key==='Enter' && !event.shiftKey) {{ event.preventDefault(); sendChatMessage(); }}" style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; font-size: 0.95rem; resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;"></textarea>
@@ -1219,7 +1221,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 </div>
 
 <script>
-    const secretHash = {secret_hash_js};
+    const TARGET_HASH = "{pw_hash}";
     const allCorps = {all_corps_js};
     
     function openTradingView(symbol) {{
@@ -1332,6 +1334,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         try {{
             let currentTargetCorp = "";
+
             for (let i = 0; i < allCorps.length; i++) {{
                 if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
                     currentTargetCorp = allCorps[i];
@@ -1413,6 +1416,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                             for (let filename of fileNames) {{
                                 if (filename.endsWith('.xml')) {{
                                     const xmlText = await zip.files[filename].async("string");
+                                    // 공백 뭉개짐 완벽 차단! 줄바꿈 보존하고 마크다운 표처럼 파이프로 구분
                                     let cleanText = xmlText.replace(/<\/td>|<\\/th>/gi, ' | ').replace(/<\\/tr>/gi, '\\n');
                                     cleanText = cleanText.replace(/<[^>]+>/g, ' '); 
                                     cleanText = cleanText.replace(/[ \\t]+/g, ' '); 
@@ -1482,9 +1486,9 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                                `- 🔗 DART 원문 링크 목록:\\n${{dartLinks ? dartLinks : '원문 링크 없음'}}\\n` +
                                `- 📰 주요 뉴스:\\n${{newsData}}\\n\\n` +
                                `[답변 절대 원칙 (할루시네이션 방지 및 자연스러운 전문가 대화)]\\n` +
-                               `1. 공시 분석 요구 시: 사용자가 채팅창에 복사해서 넣은 텍스트가 있다면 그것을 1순위로 분석하세요. 그렇지 않다면 [🌟 DART 주요 공시 상세 텍스트] 최상단에 있는 🔥[실시간 다운로드 DART 원본 해독 텍스트]를 꼼꼼히 확인하세요. 표 데이터가 파이프 '|' 로 구분되어 있습니다. 수치를 정확히 짚어내어 답변하세요.\\n` +
-                               `2. 절대 변명 금지: "텍스트에 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 절대로 대지 마세요.\\n` +
-                               `3. 문맥 파악: 사용자가 "누구랑 계약했어?", "금액이 얼마야?" 라고 물어볼 경우, 이전 대화에서 타겟으로 잡힌 기업의 공시 내용에서 답변을 찾아 대답하세요.\\n` +
+                               `1. 공시 요약 및 분석 요구 시: 제공된 [🌟 DART 주요 공시 상세 텍스트] 영역에 있는 텍스트(계약 상대방, 수주 금액, 계약 기간, 주요 조건 등 파이프 '|' 로 구분된 표 데이터)를 반드시 직접 꼼꼼히 읽고, 사용자가 원하는 내용을 완벽하게 찾아내어 요약하세요.\\n` +
+                               `2. 절대 변명 금지: "텍스트에 수치가 표기되어 있지 않다", "확인할 수 없다", "파싱 에러", "물리적 한계", "스크래핑의 한계" 등의 핑계를 대지 마세요. 사용자가 직접 붙여넣은 텍스트가 있다면 거기서 찾고, 없으면 제공된 데이터에서 찾으세요.\\n` +
+                               `3. 문맥 파악: 사용자가 기업명을 생략하고 "누구랑 계약했어?", "금액이 얼마야?" 라고 물어볼 경우, 이전 대화에서 타겟으로 잡힌 기업의 공시 내용에서 답변을 찾아 자연스럽게 이어가세요.\\n` +
                                `4. 마크다운을 적극 사용하여 핵심 내용은 굵은 글씨(**)로 강조하고 가독성을 높이세요.`;
 
             const payload = {{
