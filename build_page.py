@@ -907,6 +907,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     
     pw_hash = hashlib.sha256(raw_password.strip().encode('utf-8')).hexdigest()
 
+    # 전체 종목 리스트를 JS로 넘기기 위해 세팅
+    target_names = set()
+    for s_list in list(KOSPI200_SECTORS.values()) + list(KOSDAQ150_SECTORS.values()):
+        target_names.update(s_list)
+    # 이름이 긴 기업명부터 매칭되도록 길이 순으로 내림차순 정렬 (예: LG생활건강이 LG보다 먼저 매칭되도록)
+    target_names_sorted = sorted(list(target_names), key=len, reverse=True)
+    all_corps_js = json.dumps(target_names_sorted, ensure_ascii=False)
+
     index_cards = ""
     for idx in indices:
         sign = "▲ +" if idx["is_up"] else ("▼ -" if idx["is_down"] else "― ")
@@ -1207,6 +1215,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
 <script>
     const TARGET_HASH = "{pw_hash}";
+    const allCorps = {all_corps_js};
     
     function openTradingView(symbol) {{
         if(!symbol) return;
@@ -1321,12 +1330,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
 
         try {{
             let targetCorp = "";
-            document.querySelectorAll('.stock-pill').forEach(pill => {{
-                const name = pill.getAttribute('data-stock-name');
-                if (name && msg.includes(name)) {{
-                    targetCorp = name;
+            
+            // 1순위: 코스피/코스닥 전체 기업명 리스트(allCorps)와 직접 매칭
+            for (let i = 0; i < allCorps.length; i++) {{
+                if (msg.toLowerCase().includes(allCorps[i].toLowerCase())) {{
+                    targetCorp = allCorps[i];
+                    break;
                 }}
-            }});
+            }}
 
             const dartIframe = document.querySelector('iframe[title="DART 실시간 대시보드"]');
             
@@ -1339,8 +1350,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             if (dartIframe && dartIframe.contentWindow) {{
                 let searchTarget = targetCorp;
                 if (!searchTarget) {{
+                    // 2순위: 1순위에서 매칭 실패 시 정규식 대체 사용 (주요, 최근 등 무의미한 단어 필터링)
                     const match = msg.match(/([가-힣a-zA-Z0-9]+)\\s*(공시|실적|보고서|원문|요약)/);
-                    if (match) searchTarget = match[1];
+                    if (match) {{
+                        const ignoreWords = ['주요', '최근', '오늘', '어제', '이번', '신규', '관련', '특징', '주식'];
+                        if (!ignoreWords.includes(match[1])) {{
+                            searchTarget = match[1];
+                        }}
+                    }}
                 }}
 
                 if (searchTarget) {{
