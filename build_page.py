@@ -200,7 +200,6 @@ def fetch_real_news(keyword, stock_code="", limit=3):
 
                 link = item.get("originallink") or item.get("link", "")
                 
-                # 뉴스 발행일(pubDate) 파싱 로직
                 raw_date = item.get("pubDate", "")
                 formatted_date = ""
                 dt_obj = None
@@ -224,12 +223,11 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "score": score, 
                         "content": desc,
                         "date": formatted_date,
-                        "dt_obj": dt_obj # 정렬을 위해 저장
+                        "dt_obj": dt_obj 
                     })
     except Exception as e: 
         print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
 
-    # 1. 스코어(관련도) 순으로 양질의 뉴스 선별
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
@@ -245,10 +243,8 @@ def fetch_real_news(keyword, stock_code="", limit=3):
             if len(unique_news) == limit: 
                 break
 
-    # 2. 선별된 최종 뉴스들을 날짜 최신순으로 재정렬
     unique_news.sort(key=lambda x: x["dt_obj"], reverse=True)
     
-    # 내부 정렬용 객체 삭제 처리
     for n in unique_news:
         if "dt_obj" in n:
             del n["dt_obj"]
@@ -923,14 +919,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
 
-    def build_summary_col(title, title_class, sectors):
+    def build_summary_col(title, title_class, sectors, market_prefix):
         html = f'<div class="summary-col"><div class="col-title {title_class}">{title}</div>'
         for s in sectors:
             r = s["rate"]
             color_class = "text-up" if r > 0 else ("text-down" if r < 0 else "text-flat")
             codes_str = ",".join(s.get("all_codes", []))
             html += f'''
-            <div class="summary-item clickable-summary" data-sector-codes="{codes_str}" onclick="scrollToSector('{s['name']}')" title="클릭하여 상세 섹터로 이동">
+            <div class="summary-item clickable-summary" data-sector-codes="{codes_str}" onclick="scrollToSector('{market_prefix}_{s['name']}')" title="클릭하여 상세 섹터로 이동">
                 <span class="summary-item-name">{s['name']}</span>
                 <span class="summary-item-rate sector-rate {color_class}">{r:+.2f}%</span>
             </div>
@@ -942,16 +938,16 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <div class="market-summary-box" id="sector-summary-box">
         <div class="summary-header">📊 오늘 장 섹터 요약 (Top 4 / Bottom 4)</div>
         <div class="summary-grid">
-            {build_summary_col("🔴 코스피 강세", "text-up", k200_top)}
-            {build_summary_col("🔵 코스피 약세", "text-down", k200_bot)}
+            {build_summary_col("🔴 코스피 강세", "text-up", k200_top, "KOSPI")}
+            {build_summary_col("🔵 코스피 약세", "text-down", k200_bot, "KOSPI")}
             <div class="summary-divider"></div>
-            {build_summary_col("🔴 코스닥 강세", "text-up", k150_top)}
-            {build_summary_col("🔵 코스닥 약세", "text-down", k150_bot)}
+            {build_summary_col("🔴 코스닥 강세", "text-up", k150_top, "KOSDAQ")}
+            {build_summary_col("🔵 코스닥 약세", "text-down", k150_bot, "KOSDAQ")}
         </div>
     </div>
     '''
 
-    def build_sector_list(sectors):
+    def build_sector_list(sectors, market_prefix):
         if not sectors: 
             return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 데이터를 불러오지 못했습니다. (API 지연)</div>'
         html = ""
@@ -1011,7 +1007,7 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 news_html += '</div>'
 
             html += f"""
-            <div class="sector-item" id="sector-{s['name']}" data-sector-codes="{all_codes_str}">
+            <div class="sector-item" id="sector-{market_prefix}_{s['name']}" data-sector-codes="{all_codes_str}">
                 <div class="sector-header">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span class="sector-name">{s['name']}</span>
@@ -1041,52 +1037,35 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
     <style>
-- {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
-        body {{ 
-            background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; 
-            -webkit-tap-highlight-color: transparent; 
-            -webkit-touch-callout: none; 
-            user-select: none; 
-            padding-bottom: env(safe-area-inset-bottom); 
-            scroll-behavior: smooth;
-        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+        body {{ background-color: #f8fafc; color: #1e293b; padding: 16px; max-width: 960px; margin: 0 auto; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; padding-bottom: env(safe-area-inset-bottom); scroll-behavior: smooth; }}
         input, button, .message {{ user-select: auto !important; }}
-
         header {{ text-align: center; margin-bottom: 18px; }}
         h1 {{ font-size: 1.45rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }}
         .sync-status {{ font-size: 0.82rem; color: #475569; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: #e2e8f0; padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none; }}
         .sync-status:hover {{ background: #cbd5e1; }}
         .live-dot {{ width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }}
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
-
         .grid-indices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }}
         .card {{ background: #fff; padding: 14px 10px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; position: relative; }}
-
         .clickable {{ cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }}
         .clickable:active {{ transform: scale(0.97); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }}
         .clickable:hover {{ border-color: #94a3b8; }}
-
         .card-title {{ font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 2px; }}
         .card-value {{ font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
-
         .badge-container {{ display: flex; justify-content: center; align-items: center; gap: 6px; margin-bottom: 2px; }}
         .badge {{ display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }}
         .trend-badge {{ font-size: 0.75rem; font-weight: 800; padding: 3px 6px; background: #f1f5f9; border-radius: 6px; display: inline-block; }}
-
         .market-ai-box {{ background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .market-ai-header {{ font-size: 1.1rem; font-weight: 800; color: #1d4ed8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }}
         .ai-time-badge {{ font-size: 0.78rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 3px 9px; border-radius: 999px; }}
         .market-ai-content {{ font-size: 0.98rem; line-height: 1.65; color: #1e293b; font-weight: 500; text-align: justify; word-break: keep-all; }}
-
         .btn-dart-link {{ font-size: 0.78rem; font-weight: 700; color: #fff; background: #1e293b; padding: 4px 10px; border-radius: 999px; text-decoration: none; transition: background 0.2s; }}
         .btn-dart-link:hover {{ background: #0f172a; }}
-
         .market-summary-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         .summary-header {{ font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 14px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }}
-        
         .summary-grid {{ display: grid; grid-template-columns: 1fr 1fr auto 1fr 1fr; gap: 12px; }}
         .summary-divider {{ width: 1px; background-color: #cbd5e1; margin: 0 4px; align-self: stretch; }}
-        
         .summary-col {{ display: flex; flex-direction: column; gap: 8px; }}
         .col-title {{ font-size: 0.9rem; font-weight: 800; text-align: center; padding-bottom: 6px; border-bottom: 1px dashed #cbd5e1; }}
         .summary-item {{ display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; }}
@@ -1094,22 +1073,18 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .summary-item-rate {{ font-weight: 800; }}
         .clickable-summary {{ cursor: pointer; transition: background 0.2s, transform 0.1s; }}
         .clickable-summary:hover {{ background: #e2e8f0; transform: scale(0.98); }}
-
         .group-title {{ font-size: 1.15rem; font-weight: 800; margin: 26px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; }}
         .section-title {{ font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }}
         .sector-box {{ background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 18px; }}
         .sector-item {{ padding: 14px 0; border-bottom: 1px solid #f1f5f9; transition: background-color 0.5s ease-out; border-radius: 8px; }}
         .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px; }}
         .sector-name {{ font-weight: 800; font-size: 1.02rem; }}
-
         .btn-back-to-summary {{ background: #eff6ff; color: #3b82f6; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.2s; }}
         .btn-back-to-summary:hover {{ background: #3b82f6; color: #fff; }}
-
         .stock-container {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; padding: 0 4px; }}
         .stock-pill {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; cursor: pointer; transition: transform 0.15s, background 0.15s; }}
         .stock-pill:active {{ background: #e2e8f0; transform: scale(0.96); }}
         .stock-pill:hover {{ border-color: #94a3b8; }}
-
         .news-group {{ margin-bottom: 10px; background: #f8fafc; border-radius: 8px; padding: 10px; border: 1px solid #e2e8f0; margin: 0 4px; }}
         .news-group-title {{ font-size: 0.85rem; font-weight: 800; color: #334155; margin-bottom: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }}
         .sector-news {{ font-size: 0.86rem; line-height: 1.55; color: #1e293b; background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid #3b82f6; font-weight: 500; }}
@@ -1119,25 +1094,20 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .btn-more:hover {{ text-decoration: underline; }}
         .news-link {{ color: #1d4ed8; text-decoration: none; }}
         .news-link:hover {{ text-decoration: underline; }}
-
         .text-up {{ color: #e11d48 !important; font-weight: 700; }}
         .text-down {{ color: #2563eb !important; font-weight: 700; }}
         .text-flat {{ color: #64748b !important; font-weight: 700; }}
         .bg-up-light {{ background-color: #ffe4e6 !important; }}
         .bg-down-light {{ background-color: #dbeafe !important; }}
         .bg-gray-100 {{ background-color: #f1f5f9 !important; }}
-
         #chat-widget {{ position: fixed; bottom: 20px; right: 20px; z-index: 9999; }}
         #chat-button {{ width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }}
         #chat-button:hover {{ transform: scale(1.05); }}
-
         #chat-window {{ display: none; position: fixed; bottom: 85px; right: 20px; width: 350px; height: 500px; max-height: 70vh; background: #fff; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2); border: 1px solid #e2e8f0; flex-direction: column; overflow: hidden; z-index: 10000; resize: both; min-width: 320px; min-height: 400px; }}
         #chat-header {{ background: #1e293b; color: #fff; padding: 14px 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }}
-
         .chat-header-controls {{ display: flex; gap: 15px; align-items: center; }}
         .chat-header-controls button {{ background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 0; line-height: 1; transition: transform 0.2s; }}
         .chat-header-controls button:hover {{ transform: scale(1.2); }}
-
         #chat-messages {{ flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafc; font-size: 0.95rem; }}
         .message {{ max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; word-wrap: break-word; }}
         .message.user {{ align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 2px; }}
@@ -1148,19 +1118,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         #chat-send {{ background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.2s; }}
         #chat-send:hover {{ background: #1d4ed8; }}
         #chat-send:disabled {{ background: #94a3b8; cursor: not-allowed; }}
-
         @media (max-width: 768px) {{
             .grid-indices {{ grid-template-columns: repeat(2, 1fr); }}
-            
             .summary-grid {{ grid-template-columns: repeat(2, 1fr); gap: 12px; }}
             .summary-divider {{ grid-column: 1 / -1; width: 100%; height: 1px; margin: 4px 0; }}
-            
             #chat-window {{ right: 5vw; width: 90vw; max-width: none; bottom: 85px; max-height: 60vh; }}
         }}
     </style>
 </head>
 <body>
-<!-- 🔐 비밀번호 잠금 화면 시작 -->
 <div id="lock-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #f3f4f6; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center;">
     <div style="background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center;">
         <h2 style="margin-top: 0; margin-bottom: 20px; color: #111827; font-weight: 800;">🔒 대시보드 잠금</h2>
@@ -1170,7 +1136,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
 </div>
 
-<!-- 🔑 모바일 호환 API 입력 모달창 -->
 <div id="api-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100002; justify-content: center; align-items: center;">
     <div style="background: white; padding: 25px; border-radius: 12px; width: 85%; max-width: 340px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
         <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b;">🔑 API 키 등록</h3>
@@ -1221,16 +1186,15 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         {summary_html}
 
         <div class="group-title">🏢 코스피 200 업종 동향</div>
-        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top)}</div>
-        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot)}</div>
+        <div class="section-title">🔴 코스피 200 강세 업종</div><div class="sector-box">{build_sector_list(k200_top, "KOSPI")}</div>
+        <div class="section-title">🔵 코스피 200 약세 업종</div><div class="sector-box">{build_sector_list(k200_bot, "KOSPI")}</div>
 
         <div class="group-title">🚀 코스닥 150 업종 동향</div>
-        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{build_sector_list(k150_top)}</div>
-        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{build_sector_list(k150_bot)}</div>
+        <div class="section-title">🔴 코스닥 150 강세 업종</div><div class="sector-box">{build_sector_list(k150_top, "KOSDAQ")}</div>
+        <div class="section-title">🔵 코스닥 150 약세 업종</div><div class="sector-box">{build_sector_list(k150_bot, "KOSDAQ")}</div>
     </div>
 </div>
 
-<!-- 💬 플로팅 AI 채팅창 UI -->
 <div id="chat-widget">
     <button id="chat-button" onclick="toggleChat()">💬</button>
     <div id="chat-window">
