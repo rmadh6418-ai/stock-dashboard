@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import yfinance as yf
+from email.utils import parsedate_to_datetime # 날짜 파싱을 위해 추가
 
 def get_headers(is_daum=False):
     headers = {
@@ -198,6 +199,16 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                 desc = html.unescape(desc).replace('\n', ' ').replace('"', '"').replace('&', '&')
 
                 link = item.get("originallink") or item.get("link", "")
+                
+                # 뉴스 발행일(pubDate) 파싱 로직 추가
+                raw_date = item.get("pubDate", "")
+                formatted_date = ""
+                if raw_date:
+                    try:
+                        dt = parsedate_to_datetime(raw_date)
+                        formatted_date = dt.strftime("%m/%d %H:%M")
+                    except Exception:
+                        formatted_date = str(raw_date)[:16] # 파싱 실패 시 원본 문자열 일부 사용
 
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
@@ -206,7 +217,8 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "press": "네이버뉴스", 
                         "link": link, 
                         "score": score, 
-                        "content": desc
+                        "content": desc,
+                        "date": formatted_date # 날짜 필드 추가
                     })
     except Exception as e: 
         print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
@@ -739,7 +751,6 @@ def calculate_sectors(sector_dict, stock_data):
             else:
                 matched.sort(key=lambda x: x["rate"])
 
-            # 기업 수를 3개에서 4개로 추출하도록 수정
             top_4_stocks = matched[:4]
             all_codes = [s["code"] for s in matched if s.get("code")]
 
@@ -757,7 +768,6 @@ def calculate_sectors(sector_dict, stock_data):
         return [], []
 
     sector_stats.sort(key=lambda x: x["rate"], reverse=True)
-    # 4개씩 추출 (이전 요청사항 유지)
     top_sectors = sector_stats[:4]
     bot_sectors = sector_stats[-4:][::-1]
 
@@ -898,7 +908,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         </div>
         """
 
-    # --- 4개씩 모아보는 요약 위젯 생성기 ---
     def build_summary_col(title, title_class, sectors):
         html = f'<div class="summary-col"><div class="col-title {title_class}">{title}</div>'
         for s in sectors:
@@ -914,7 +923,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         html += '</div>'
         return html
 
-    # id="sector-summary-box" 추가
     summary_html = f'''
     <div class="market-summary-box" id="sector-summary-box">
         <div class="summary-header">📊 오늘 장 섹터 요약 (Top 4 / Bottom 4)</div>
@@ -928,7 +936,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     </div>
     '''
 
-    # --- 상세 섹터 리스트에 ID 및 요약버튼 부여 ---
     def build_sector_list(sectors):
         if not sectors: 
             return '<div class="sector-item" style="color:#ef4444; font-weight:700;">섹터 데이터를 불러오지 못했습니다. (API 지연)</div>'
@@ -962,11 +969,14 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 ui_news = n_list[:3]
                 ai_news = n_list[3:]
 
+                # 날짜가 포함된 뉴스 렌더링 (UI 부분)
                 for idx, n in enumerate(ui_news):
                     hidden_class = ' hidden-news' if idx >= 1 else ''
+                    news_date = n.get("date", "")
+                    date_badge = f'<span style="font-size: 0.75rem; color: #64748b; margin-left: 6px;">({news_date})</span>' if news_date else ''
                     news_html += f'''
                     <div class="sector-news{hidden_class}">
-                        📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>
+                        📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>{date_badge}
                         <span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>
                     </div>
                     '''
@@ -974,10 +984,13 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if len(ui_news) > 1:
                     news_html += f'<div class="btn-more-container"><button class="btn-more" onclick="toggleNews(this)" data-expanded="false">+ {len(ui_news)-1}개 더보기</button></div>'
 
+                # 숨겨진 AI 뉴스 렌더링
                 for n in ai_news:
+                    news_date = n.get("date", "")
+                    date_badge = f'<span style="font-size: 0.75rem; color: #64748b; margin-left: 6px;">({news_date})</span>' if news_date else ''
                     news_html += f'''
                     <div class="sector-news" style="display:none;">
-                        📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>
+                        📰 <a href="{n["link"]}" class="news-link" target="_blank">[{n["press"]}] {n["title"]}</a>{date_badge}
                         <span class="news-content-hidden" style="display:none;">{n.get("content", "")}</span>
                     </div>
                     '''
@@ -1076,7 +1089,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         .sector-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px; }}
         .sector-name {{ font-weight: 800; font-size: 1.02rem; }}
 
-        /* --- 뒤로가기(요약으로) 버튼 CSS 추가 --- */
         .btn-back-to-summary {{ background: #eff6ff; color: #3b82f6; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.2s; }}
         .btn-back-to-summary:hover {{ background: #3b82f6; color: #fff; }}
 
@@ -1193,7 +1205,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
     <div id="calendar-data" style="display: none;"></div>
 
     <div id="sectors-root">
-        <!-- 4개씩 모아보는 요약 뷰 삽입 -->
         {summary_html}
 
         <div class="group-title">🏢 코스피 200 업종 동향</div>
@@ -1253,7 +1264,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // 특정 상세 섹터로 스크롤 이동
     function scrollToSector(sectorName) {{
         const targetId = 'sector-' + sectorName;
         const targetElement = document.getElementById(targetId);
@@ -1266,7 +1276,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         }}
     }}
 
-    // 요약 박스로 부드럽게 위로 스크롤 이동
     function scrollToSummary() {{
         const summaryElement = document.getElementById('sector-summary-box');
         if (summaryElement) {{
@@ -1659,7 +1668,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
         await syncServerAiAndSectors();
 
         const codeSet = new Set();
-        // 상세 섹터 및 요약 그리드 섹터 모두 수집
         document.querySelectorAll('.sector-item[data-sector-codes], .summary-item[data-sector-codes]').forEach(el => {{
             const codes = (el.getAttribute('data-sector-codes') || '').split(',');
             codes.forEach(c => {{ if (c.trim()) codeSet.add(c.trim()); }});
@@ -1759,7 +1767,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
             }}
         }});
 
-        // 상세 및 요약 항목 퍼센티지 재계산
         document.querySelectorAll('.sector-item, .summary-item').forEach(item => {{
             const sectorCodes = (item.getAttribute('data-sector-codes') || '').split(',').map(s => s.trim()).filter(Boolean);
             const rates = [];
