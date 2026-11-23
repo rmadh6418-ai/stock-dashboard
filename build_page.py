@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import yfinance as yf
-from email.utils import parsedate_to_datetime # 날짜 파싱을 위해 추가
+from email.utils import parsedate_to_datetime
 
 def get_headers(is_daum=False):
     headers = {
@@ -200,15 +200,20 @@ def fetch_real_news(keyword, stock_code="", limit=3):
 
                 link = item.get("originallink") or item.get("link", "")
                 
-                # 뉴스 발행일(pubDate) 파싱 로직 추가
+                # 뉴스 발행일(pubDate) 파싱 로직
                 raw_date = item.get("pubDate", "")
                 formatted_date = ""
+                dt_obj = None
                 if raw_date:
                     try:
                         dt = parsedate_to_datetime(raw_date)
                         formatted_date = dt.strftime("%m/%d %H:%M")
+                        dt_obj = dt
                     except Exception:
-                        formatted_date = str(raw_date)[:16] # 파싱 실패 시 원본 문자열 일부 사용
+                        formatted_date = str(raw_date)[:16] 
+                        dt_obj = datetime.min.replace(tzinfo=timezone.utc)
+                else:
+                    dt_obj = datetime.min.replace(tzinfo=timezone.utc)
 
                 score = get_news_score(raw_title, keyword)
                 if score > 0:
@@ -218,11 +223,13 @@ def fetch_real_news(keyword, stock_code="", limit=3):
                         "link": link, 
                         "score": score, 
                         "content": desc,
-                        "date": formatted_date # 날짜 필드 추가
+                        "date": formatted_date,
+                        "dt_obj": dt_obj # 정렬을 위해 저장
                     })
     except Exception as e: 
         print(f"❌ [{keyword}] 뉴스 수집 중 오류: {e}")
 
+    # 1. 스코어(관련도) 순으로 양질의 뉴스 선별
     candidates.sort(key=lambda x: x["score"], reverse=True)
     unique_news = []
     seen_titles = set()
@@ -237,6 +244,14 @@ def fetch_real_news(keyword, stock_code="", limit=3):
             unique_news.append(item)
             if len(unique_news) == limit: 
                 break
+
+    # 2. 선별된 최종 뉴스들을 날짜 최신순으로 재정렬
+    unique_news.sort(key=lambda x: x["dt_obj"], reverse=True)
+    
+    # 내부 정렬용 객체 삭제 처리
+    for n in unique_news:
+        if "dt_obj" in n:
+            del n["dt_obj"]
 
     return unique_news
 
@@ -969,7 +984,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 ui_news = n_list[:3]
                 ai_news = n_list[3:]
 
-                # 날짜가 포함된 뉴스 렌더링 (UI 부분)
                 for idx, n in enumerate(ui_news):
                     hidden_class = ' hidden-news' if idx >= 1 else ''
                     news_date = n.get("date", "")
@@ -984,7 +998,6 @@ def render_html(indices, k200_top, k200_bot, k150_top, k150_bot, ai_market_summa
                 if len(ui_news) > 1:
                     news_html += f'<div class="btn-more-container"><button class="btn-more" onclick="toggleNews(this)" data-expanded="false">+ {len(ui_news)-1}개 더보기</button></div>'
 
-                # 숨겨진 AI 뉴스 렌더링
                 for n in ai_news:
                     news_date = n.get("date", "")
                     date_badge = f'<span style="font-size: 0.75rem; color: #64748b; margin-left: 6px;">({news_date})</span>' if news_date else ''
